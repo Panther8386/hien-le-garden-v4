@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mùa Đẹp Nhất Để Đến Tây Nguyên | Cẩm Nang Hiền Lê Garden</title>
+  <meta name="description" content="Hoa cà phê tháng Ba, dã quỳ tháng Mười Một, thác mùa mưa — mỗi mùa ở Gia Nghĩa mang vẻ đẹp và nhịp sống riêng.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.75; }
+
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .sub-nav-logo { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); text-decoration: none; }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back { font-size: 0.82rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    .page-hero {
+      position: relative; min-height: 46vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3rem; overflow: hidden;
+    }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../../images/gallery-3.jpg'); background-size: cover; background-position: center; }
+    .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.35) 0%, rgba(13,31,20,0.88) 100%); }
+    .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
+    .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
+    .page-hero h1 { font-family: var(--font-serif); font-size: clamp(1.8rem, 4.5vw, 2.8rem); font-weight: 300; line-height: 1.25; }
+    .page-hero .sub { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.75rem; }
+
+    .content-wrap { max-width: 760px; margin: 0 auto; padding: 3rem 2rem 5rem; }
+
+    .breadcrumb { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 2rem; }
+    .breadcrumb a { color: var(--accent-gold); text-decoration: none; }
+
+    .lead { font-family: var(--font-serif); font-size: 1.2rem; color: var(--text-secondary); line-height: 1.85; margin-bottom: 1.5rem; }
+    .prose-p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.85; margin-bottom: 1.25rem; }
+
+    .s-head { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 300; color: var(--text-primary); margin: 3rem 0 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+
+    /* SEASON CARDS */
+    .season-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 1.25rem; }
+    .season-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: 12px; padding: 1.75rem;
+      display: grid; grid-template-columns: auto 1fr; gap: 1.25rem; align-items: start;
+    }
+    .season-icon { font-size: 2.2rem; }
+    .season-right {}
+    .season-title { font-family: var(--font-serif); font-size: 1.15rem; color: var(--text-primary); margin-bottom: 0.2rem; }
+    .season-time { font-size: 0.75rem; color: var(--accent-gold); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.75rem; }
+    .season-desc { font-size: 0.87rem; color: var(--text-secondary); line-height: 1.75; }
+    .season-tip { margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted); background: rgba(245,239,228,0.04); border-radius: 6px; padding: 0.6rem 0.75rem; line-height: 1.65; }
+
+    /* TIMELINE — monthly view */
+    .cal-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem;
+      margin: 1.5rem 0;
+    }
+    @media (max-width: 500px) { .cal-grid { grid-template-columns: repeat(3, 1fr); } }
+    .cal-month {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: 8px; padding: 0.75rem 0.5rem; text-align: center;
+    }
+    .cal-month.highlight { border-color: rgba(180,144,74,0.4); background: rgba(180,144,74,0.07); }
+    .cal-m-name { font-size: 0.72rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.35rem; }
+    .cal-month.highlight .cal-m-name { color: var(--accent-gold); }
+    .cal-tag { font-size: 0.65rem; color: var(--text-muted); line-height: 1.4; }
+    .cal-month.highlight .cal-tag { color: var(--text-secondary); }
+
+    /* ITINERARY */
+    .day-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: 10px; padding: 1.5rem; margin-bottom: 1rem;
+    }
+    .day-label { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 0.25rem; }
+    .day-title { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); margin-bottom: 1rem; }
+    .day-items { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+    .day-items li { font-size: 0.87rem; color: var(--text-secondary); padding-left: 1.1rem; position: relative; line-height: 1.7; }
+    .day-items li::before { content: '·'; position: absolute; left: 0; color: var(--accent-gold); }
+
+    /* PACKING */
+    .pack-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-top: 1rem; }
+    @media (max-width: 480px) { .pack-grid { grid-template-columns: 1fr; } }
+    .pack-item { font-size: 0.85rem; color: var(--text-secondary); padding: 0.75rem 1rem; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; }
+    .pack-item .pi-emoji { margin-right: 0.5rem; }
+
+    .cta-box { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 2rem; text-align: center; margin-top: 2.5rem; }
+    .cta-box p { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.25rem; line-height: 1.7; }
+    .btn-gold { display: inline-block; background: var(--accent-gold); color: #0D1F14; padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: opacity 0.2s; }
+    .btn-gold:hover { opacity: 0.88; }
+    .btn-outline { display: inline-block; border: 1px solid var(--accent-gold); color: var(--accent-gold); padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; margin-left: 0.75rem; transition: background 0.2s; }
+    .btn-outline:hover { background: rgba(180,144,74,0.1); }
+    @media (max-width: 480px) { .btn-outline { margin-left: 0; margin-top: 0.5rem; display: block; } }
+
+    .sub-footer { background: #060f09; border-top: 1px solid var(--border-subtle); padding: 2rem; text-align: center; }
+    .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Cẩm Nang Du Lịch</span>
+    </a>
+    <a href="../../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Cẩm Nang · Thời Điểm Du Lịch</span>
+      <h1>Mùa Đẹp Nhất Để Đến Tây Nguyên</h1>
+      <p class="sub">Mỗi tháng ở Gia Nghĩa đều có lý do riêng để đến</p>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="breadcrumb">
+      <a href="../../">Trang chủ</a> / <a href="../../#blog">Cẩm nang</a> / Mùa đẹp nhất
+    </div>
+
+    <p class="lead">Gia Nghĩa không có mùa đẹp nhất — mà có những mùa khác nhau, mỗi mùa mang một vẻ đẹp và nhịp sống riêng. Hiểu rõ từng mùa giúp bạn chọn được chuyến đi phù hợp với điều mình đang tìm kiếm.</p>
+
+    <h2 class="s-head">Lịch Theo Tháng</h2>
+
+    <div class="cal-grid">
+      <div class="cal-month"><div class="cal-m-name">Tháng 1</div><div class="cal-tag">Khô, mát</div></div>
+      <div class="cal-month highlight"><div class="cal-m-name">Tháng 2</div><div class="cal-tag">🌸 Hoa cà phê bắt đầu</div></div>
+      <div class="cal-month highlight"><div class="cal-m-name">Tháng 3</div><div class="cal-tag">🌸 Hoa cà phê đẹp nhất</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 4</div><div class="cal-tag">Cuối hoa cà phê, nóng dần</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 5</div><div class="cal-tag">Mưa bắt đầu, xanh mát</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 6</div><div class="cal-tag">Mùa mưa giữa cao nguyên</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 7</div><div class="cal-tag">Mưa nhiều, thác mạnh</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 8</div><div class="cal-tag">Mưa, cảnh quan xanh nhất</div></div>
+      <div class="cal-month"><div class="cal-m-name">Tháng 9</div><div class="cal-tag">Cuối mùa mưa</div></div>
+      <div class="cal-month highlight"><div class="cal-m-name">Tháng 10</div><div class="cal-tag">🌻 Dã quỳ bắt đầu, khô ráo</div></div>
+      <div class="cal-month highlight"><div class="cal-m-name">Tháng 11</div><div class="cal-tag">🌻 Dã quỳ đẹp nhất</div></div>
+      <div class="cal-month highlight"><div class="cal-m-name">Tháng 12</div><div class="cal-tag">Se lạnh, sương nhiều</div></div>
+    </div>
+
+    <h2 class="s-head">Từng Mùa Trong Năm</h2>
+
+    <div class="season-grid">
+
+      <div class="season-card">
+        <div class="season-icon">🌸</div>
+        <div class="season-right">
+          <div class="season-title">Mùa hoa cà phê</div>
+          <div class="season-time">Tháng 2 đến tháng 4</div>
+          <p class="season-desc">Hoa cà phê nở thành nhiều đợt, mỗi đợt khoảng 7–10 ngày. Cuối tháng 2 đến đầu tháng 3 thường là khoảng thời gian dễ gặp những vườn cà phê nở trắng. Khi cả khu vườn đồng loạt ra hoa, không gian như được phủ tuyết, kèm theo hương thơm nhẹ lan trong gió — đặc biệt rõ vào buổi sáng sớm khi sương còn đọng.</p>
+          <p class="season-tip">💡 Hoa nở theo đợt và phụ thuộc vào lịch tưới của từng vườn. Liên hệ Hiền Lê Garden để biết thời điểm chính xác nhất trong năm bạn đến.</p>
+        </div>
+      </div>
+
+      <div class="season-card">
+        <div class="season-icon">🌻</div>
+        <div class="season-right">
+          <div class="season-title">Mùa hoa dã quỳ</div>
+          <div class="season-time">Cuối tháng 10 đến tháng 12</div>
+          <p class="season-desc">Hoa dã quỳ bắt đầu xuất hiện từ cuối tháng 10 và thường đẹp nhất trong tháng 11. Sắc vàng nổi bật trên nền đất đỏ bazan — đặc trưng của mùa khô Tây Nguyên. Thời gian chụp tốt nhất là 6:30–8:30, khi hoa còn tươi và ánh sáng mềm. Đây cũng là thời điểm thời tiết dễ chịu nhất: không khí se lạnh, ít mưa, sương sớm đẹp.</p>
+          <p class="season-tip">💡 Tháng 11 thường là tháng được nhiều nhiếp ảnh gia và du khách yêu thích nhất khi đến Tây Nguyên.</p>
+        </div>
+      </div>
+
+      <div class="season-card">
+        <div class="season-icon">💧</div>
+        <div class="season-right">
+          <div class="season-title">Mùa thác và cảnh quan xanh nhất</div>
+          <div class="season-time">Tháng 5 đến tháng 9 (mùa mưa)</div>
+          <p class="season-desc">Mùa mưa mang đến những dòng thác đầy nước, cảnh quan xanh tốt và không khí mát mẻ. Thác Liêng Nung và Thác Ba Tầng đẹp nhất vào thời điểm này. Tuy nhiên, đường xuống thác có thể trơn và một số con đường dốc ở Gia Nghĩa dễ bị ngập nhẹ sau mưa lớn.</p>
+          <p class="season-tip">💡 Mưa thường tập trung vào chiều tối. Buổi sáng vẫn thường nắng đẹp — lên đường sớm và về trước 15:00.</p>
+        </div>
+      </div>
+
+      <div class="season-card">
+        <div class="season-icon">❄️</div>
+        <div class="season-right">
+          <div class="season-title">Mùa se lạnh và sương dày</div>
+          <div class="season-time">Tháng 11 đến tháng 1</div>
+          <p class="season-desc">Đây là thời điểm nhiệt độ xuống thấp nhất ở Gia Nghĩa — đêm và sáng sớm có thể chỉ còn 12–15°C. Sương dày phủ mặt hồ và các triền đồi tạo nên khung cảnh đặc trưng của cao nguyên. Một buổi sáng se lạnh, một ly cà phê nóng và tầm nhìn ra hồ phủ sương — đây là những gì nhiều khách lưu trú tại Hiền Lê Garden nhắc đến nhiều nhất.</p>
+          <p class="season-tip">💡 Chuẩn bị áo khoác ấm. Chênh lệch nhiệt độ ngày và đêm khá lớn — ban ngày có thể lên đến 25°C.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <h2 class="s-head">Gợi Ý Lịch Trình 2 Ngày 1 Đêm</h2>
+
+    <div class="day-card">
+      <div class="day-label">Ngày 1</div>
+      <div class="day-title">Thành phố – Hồ – Đồi chè</div>
+      <ul class="day-items">
+        <li><strong>Buổi sáng:</strong> Điểm tâm và cà phê tại Hiền Lê Garden. Khởi hành đến cầu treo Đắk R'Moan, ghé Tượng đài N'Trang Lơng và Chùa Pháp Hoa.</li>
+        <li><strong>Buổi trưa:</strong> Dùng bữa tại khu vực trung tâm Gia Nghĩa — cơm lam, gà xào măng chua hoặc món nướng địa phương.</li>
+        <li><strong>Buổi chiều:</strong> Tham quan đồi chè khi ánh nắng vẫn còn dịu, ghé cụm hồ trung tâm ngắm hoàng hôn.</li>
+        <li><strong>Buổi tối:</strong> Trở về Hiền Lê Garden, dùng bữa nhẹ và nghỉ ngơi bên hồ.</li>
+      </ul>
+    </div>
+
+    <div class="day-card">
+      <div class="day-label">Ngày 2</div>
+      <div class="day-title">Thác và văn hóa bản địa</div>
+      <ul class="day-items">
+        <li>Khởi hành sớm đến thác Liêng Nung — đây là điểm cần nhiều thời gian nhất.</li>
+        <li>Kết hợp tham quan bon N'Jriêng nếu có hoạt động cộng đồng hoặc có người hướng dẫn.</li>
+        <li>Buổi chiều: Thác Ba Tầng hoặc ghé chợ địa phương mua quà trước khi trở về.</li>
+      </ul>
+    </div>
+
+    <h2 class="s-head">Cần Chuẩn Bị Gì</h2>
+    <div class="pack-grid">
+      <div class="pack-item"><span class="pi-emoji">👟</span>Giày chống trơn — bắt buộc khi đi thác</div>
+      <div class="pack-item"><span class="pi-emoji">🧥</span>Áo khoác nhẹ — cao nguyên se lạnh buổi sáng và tối</div>
+      <div class="pack-item"><span class="pi-emoji">☀️</span>Kem chống nắng — nắng cao nguyên mạnh dù trời mát</div>
+      <div class="pack-item"><span class="pi-emoji">💧</span>Nước uống — ít cửa hàng tại các điểm xa trung tâm</div>
+      <div class="pack-item"><span class="pi-emoji">🦟</span>Thuốc chống côn trùng — cần thiết tại thác và rừng</div>
+      <div class="pack-item"><span class="pi-emoji">💵</span>Tiền mặt — nhiều quán nhỏ chưa nhận thanh toán điện tử</div>
+      <div class="pack-item"><span class="pi-emoji">📱</span>Sạc dự phòng — pin hao nhanh khi chụp nhiều ngoài trời</div>
+      <div class="pack-item"><span class="pi-emoji">🗺️</span>Bản đồ offline — sóng có thể yếu tại các điểm xa</div>
+    </div>
+
+    <div class="cta-box">
+      <p>Lên kế hoạch cho chuyến đi? Hỏi Hiền Lê Garden về thời điểm tốt nhất theo năm bạn đến — chúng tôi cập nhật thông tin thực tế từ khách lưu trú.</p>
+      <a href="https://zalo.me/0968987311" target="_blank" rel="noopener noreferrer" class="btn-gold">Hỏi qua Zalo</a>
+      <a href="../../" class="btn-outline">← Xem phòng lưu trú</a>
+    </div>
+
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../../">← Trang chủ</a></p>
+    <p style="margin-top:0.5rem;">© 2025 Hiền Lê Garden. Farmstay bên hồ gần trung tâm Gia Nghĩa.</p>
+  </footer>
+
+</body>
+</html>

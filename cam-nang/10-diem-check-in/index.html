@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>10 Điểm Check-In Quanh Gia Nghĩa | Cẩm Nang Hiền Lê Garden</title>
+  <meta name="description" content="Gợi ý 10 địa điểm tham quan quanh Gia Nghĩa – Đắk Nông: cầu treo Đắk R'Moan, thác Liêng Nung, đồi chè, bon N'Jriêng và nhiều hơn nữa.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-secondary: #122019;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.75; }
+
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .sub-nav-logo { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); text-decoration: none; }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back { font-size: 0.82rem; color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    .page-hero {
+      position: relative; min-height: 46vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3rem; overflow: hidden;
+    }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../../images/gallery-1.jpg'); background-size: cover; background-position: center; }
+    .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.4) 0%, rgba(13,31,20,0.88) 100%); }
+    .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
+    .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
+    .page-hero h1 { font-family: var(--font-serif); font-size: clamp(1.8rem, 4.5vw, 2.8rem); font-weight: 300; line-height: 1.25; }
+    .page-hero .sub { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.75rem; }
+
+    .content-wrap { max-width: 820px; margin: 0 auto; padding: 3rem 2rem 5rem; }
+
+    /* INTRO */
+    .lead { font-family: var(--font-serif); font-size: 1.2rem; color: var(--text-secondary); line-height: 1.85; margin-bottom: 1.5rem; }
+    .prose-p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.85; margin-bottom: 1.25rem; }
+    .note-box { background: rgba(180,144,74,0.08); border: 1px solid rgba(180,144,74,0.2); border-radius: 8px; padding: 1rem 1.25rem; margin: 1.5rem 0 2.5rem; }
+    .note-box p { font-size: 0.82rem; color: var(--text-muted); margin: 0; line-height: 1.75; }
+
+    /* SECTION HEADING */
+    .s-head { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 300; color: var(--text-primary); margin: 3rem 0 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+
+    /* SPOTS GRID */
+    .spots-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+    @media (max-width: 640px) { .spots-grid { grid-template-columns: 1fr; } }
+
+    .spot-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: 12px; padding: 1.5rem;
+      display: flex; flex-direction: column; gap: 0.75rem;
+      transition: border-color 0.2s;
+    }
+    .spot-card:hover { border-color: rgba(180,144,74,0.3); }
+    .spot-num { font-family: var(--font-serif); font-size: 2rem; font-weight: 300; color: rgba(180,144,74,0.35); line-height: 1; }
+    .spot-title { font-family: var(--font-serif); font-size: 1.05rem; color: var(--text-primary); line-height: 1.35; }
+    .spot-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .badge { font-size: 0.72rem; padding: 0.25rem 0.6rem; border-radius: 20px; background: rgba(245,239,228,0.07); color: var(--text-muted); }
+    .badge-gold { background: rgba(180,144,74,0.12); color: var(--accent-gold); }
+    .spot-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .tag { font-size: 0.68rem; padding: 0.2rem 0.55rem; border-radius: 4px; border: 1px solid var(--border-subtle); color: var(--text-muted); }
+    .spot-desc { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.75; }
+    .spot-tip { font-size: 0.78rem; color: var(--text-muted); background: rgba(245,239,228,0.04); border-radius: 6px; padding: 0.6rem 0.75rem; line-height: 1.65; }
+
+    /* TIPS BOX */
+    .tips-box { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 1.75rem; margin-top: 1rem; }
+    .tips-box ul { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+    .tips-box li { font-size: 0.88rem; color: var(--text-secondary); padding-left: 1.25rem; position: relative; line-height: 1.7; }
+    .tips-box li::before { content: '→'; position: absolute; left: 0; color: var(--accent-gold); }
+
+    /* CLOSING */
+    .ending { margin: 3rem 0; padding: 2rem; border-left: 2px solid var(--accent-gold); }
+    .ending p { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-secondary); line-height: 1.8; margin-bottom: 0.75rem; }
+    .ending p:last-child { margin-bottom: 0; font-weight: 400; color: var(--text-primary); }
+
+    /* CTA */
+    .cta-box { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 2rem; text-align: center; margin-top: 2.5rem; }
+    .cta-box p { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.25rem; line-height: 1.7; }
+    .btn-gold { display: inline-block; background: var(--accent-gold); color: #0D1F14; padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: opacity 0.2s; }
+    .btn-gold:hover { opacity: 0.88; }
+    .btn-outline { display: inline-block; border: 1px solid var(--accent-gold); color: var(--accent-gold); padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; margin-left: 0.75rem; transition: background 0.2s; }
+    .btn-outline:hover { background: rgba(180,144,74,0.1); }
+    @media (max-width: 480px) { .btn-outline { margin-left: 0; margin-top: 0.5rem; display: block; } }
+
+    /* BREADCRUMB */
+    .breadcrumb { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 2rem; }
+    .breadcrumb a { color: var(--accent-gold); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+
+    /* FOOTER */
+    .sub-footer { background: #060f09; border-top: 1px solid var(--border-subtle); padding: 2rem; text-align: center; }
+    .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Cẩm Nang Du Lịch</span>
+    </a>
+    <a href="../../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Cẩm Nang · Travel Guide</span>
+      <h1>10 Điểm Tham Quan Quanh Gia Nghĩa</h1>
+      <p class="sub">Gợi ý từ Hiền Lê Garden — khoảng cách tính từ khuôn viên</p>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="breadcrumb">
+      <a href="../../">Trang chủ</a> / <a href="../../#blog">Cẩm nang</a> / 10 Điểm Tham Quan
+    </div>
+
+    <p class="lead">Có những chuyến đi không cần một lịch trình thật dày. Chỉ cần một buổi sáng se lạnh, một con đường cao nguyên còn vương hơi sương, một tách cà phê nóng bên hồ và đủ thời gian để nghe tiếng chim trong vườn.</p>
+
+    <p class="prose-p">Khu vực Gia Nghĩa nổi bật với địa hình đồi thấp, hồ nước, rừng cây, thác và những con đường bazan uốn lượn — cũng là cửa ngõ khám phá tuyến du lịch "Âm vang từ Trái đất" thuộc Công viên địa chất toàn cầu UNESCO Đắk Nông.</p>
+
+    <div class="note-box">
+      <p><strong>Lưu ý:</strong> Khoảng cách dưới đây là quãng đường tham khảo từ Hiền Lê Garden. Khoảng cách thực tế có thể thay đổi tùy tuyến đường, vị trí cổng vào và tình trạng giao thông.</p>
+    </div>
+
+    <div class="spots-grid">
+
+      <div class="spot-card">
+        <div class="spot-num">01</div>
+        <div class="spot-title">Cầu treo Đắk R'Moan – cây cầu giữa lòng hồ xanh</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 5–10 km</span>
+          <span class="badge">⏰ 6:00–8:00 / 16:00–17:30</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Chụp ảnh</span><span class="tag">Ngắm hồ</span><span class="tag">Đi dạo nhẹ</span>
+        </div>
+        <p class="spot-desc">Cầu treo Đắk R'Moan bắc qua lòng hồ thủy điện tại khu vực Tân An. Mặt nước xanh, những triền đồi thấp và cây cầu nhỏ tạo nên khung cảnh vừa mộc mạc vừa đặc trưng của vùng cao nguyên. Khi nắng không quá gắt, mặt hồ phản chiếu bầu trời và những mảng rừng xa, tạo chiều sâu rất đẹp cho ảnh phong cảnh.</p>
+        <p class="spot-tip">⚠️ Dựng xe tại nơi an toàn, không đứng tập trung quá đông trên cầu, hạn chế đi vào những ngày mưa lớn hoặc gió mạnh.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">02</div>
+        <div class="spot-title">Tượng đài N'Trang Lơng – nhìn Gia Nghĩa từ trên cao</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 5–8 km</span>
+          <span class="badge">⏰ Sáng sớm hoặc trước hoàng hôn</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Lịch sử</span><span class="tag">Ngắm toàn cảnh</span><span class="tag">Kiến trúc</span>
+        </div>
+        <p class="spot-desc">Tượng đài anh hùng dân tộc N'Trang Lơng được xây dựng trên đồi Đắk Nur, tưởng nhớ người lãnh đạo đồng bào M'nông đứng lên chống thực dân Pháp giai đoạn 1912–1936. Không gian quảng trường rộng, địa thế cao và tầm nhìn thoáng giúp nơi đây trở thành một trong những điểm ngắm cảnh thành phố đẹp nhất.</p>
+        <p class="spot-tip">⚠️ Nên lựa chọn trang phục lịch sự — đây là công trình lịch sử–văn hóa quan trọng, không chỉ là điểm chụp ảnh.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">03</div>
+        <div class="spot-title">Cụm hồ trung tâm Gia Nghĩa – khoảng lặng giữa phố núi</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 6–10 km</span>
+          <span class="badge">⏰ 16:00–18:00</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Đi bộ</span><span class="tag">Hoàng hôn</span><span class="tag">Đời thường</span>
+        </div>
+        <p class="spot-desc">Gia Nghĩa có hệ thống hồ đan xen trong không gian đô thị — bao gồm hồ trung tâm rộng khoảng 128 ha, hồ Hạ, hồ Thượng, hồ Thiên Nga và hồ thủy điện Đắk R'tíh. Vẻ đẹp của khu vực này nằm ở sự yên tĩnh: vài con đường dốc, mặt nước lặng, sương chiều và những mái nhà thấp thoáng trên đồi.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">04</div>
+        <div class="spot-title">Chùa Pháp Hoa – nét bình yên giữa thành phố</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 6–10 km</span>
+          <span class="badge">⏰ 7:00–10:00 / 15:00–17:00</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Tâm linh</span><span class="tag">Kiến trúc</span><span class="tag">Tĩnh lặng</span>
+        </div>
+        <p class="spot-desc">Chùa Pháp Hoa trên đường Chu Văn An là điểm tham quan tâm linh quen thuộc, nằm trong tuyến từ Gia Nghĩa đi Tà Đùng. Không gian chùa kết hợp kiến trúc Phật giáo với cảnh quan đồi núi Tây Nguyên, mang lại cảm giác yên bình.</p>
+        <p class="spot-tip">⚠️ Mặc trang phục kín đáo, hạn chế nói lớn và không sử dụng flycam khi chưa được cho phép.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">05</div>
+        <div class="spot-title">Đồi chè Gia Nghĩa – những đường cong xanh giữa cao nguyên</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 10–15 km</span>
+          <span class="badge">⏰ 6:00–8:30</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Chụp ảnh</span><span class="tag">Sương sớm</span><span class="tag">Dạo bộ</span>
+        </div>
+        <p class="spot-desc">Những luống chè xanh chạy theo triền đồi tạo thành các lớp đường cong tự nhiên, đẹp nhất khi nhìn từ vị trí cao. Buổi sáng là thời điểm lý tưởng: sương còn đọng trên lá, ánh nắng mềm và người làm vườn bắt đầu ngày mới.</p>
+        <p class="spot-tip">⚠️ Phần lớn là đất canh tác của người dân. Đi theo lối có sẵn, không giẫm lên luống chè, không tự ý hái lá.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">06</div>
+        <div class="spot-title">Thác Ba Tầng – dòng nước giữa rừng và đá bazan</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 12–18 km</span>
+          <span class="badge">⏰ 8:00–11:00</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Dã ngoại</span><span class="tag">Thiên nhiên</span><span class="tag">Chụp ảnh</span>
+        </div>
+        <p class="spot-desc">Thác Ba Tầng nằm hướng Gia Nghĩa–Buôn Ma Thuột, gần khu vực Quảng Thành. Dòng nước chảy qua nhiều bậc đá nối tiếp. Khác với thác Liêng Nung cao và mạnh, Thác Ba Tầng gần gũi hơn, phù hợp với những buổi dã ngoại ngắn.</p>
+        <p class="spot-tip">⚠️ Đường xuống thác có thể trơn sau mưa. Mang giày có độ bám tốt, không đứng sát mép đá.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">07</div>
+        <div class="spot-title">Thác Liêng Nung – biểu tượng thiên nhiên của Gia Nghĩa</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 15–20 km</span>
+          <span class="badge">⏰ 8:00–11:00</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Trekking nhẹ</span><span class="tag">UNESCO Đắk Nông</span><span class="tag">Chụp ảnh</span>
+        </div>
+        <p class="spot-desc">Thác Liêng Nung (còn gọi là thác Diệu Thanh) nằm tại bon N'Jriêng, khu vực Đắk Nia — thuộc Công viên địa chất toàn cầu UNESCO Đắk Nông. Dòng nước đổ từ vách đá khoảng 30m, bên dưới là vòm đá lớn mang đặc trưng kiến tạo núi lửa.</p>
+        <p class="spot-tip">⚠️ Mùa khô thuận lợi hơn. Góc chụp xa với vách đá và cây rừng thường đẹp hơn đứng gần chân thác.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">08</div>
+        <div class="spot-title">Bon N'Jriêng – không gian văn hóa bản địa Đắk Nia</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 15–20 km</span>
+          <span class="badge">⏰ Kết hợp Liêng Nung</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Văn hóa</span><span class="tag">Thổ cẩm</span><span class="tag">Cộng đồng</span>
+        </div>
+        <p class="spot-desc">Bon N'Jriêng lưu giữ nhiều nét văn hóa của đồng bào Mạ và từng được xây dựng mô hình du lịch cộng đồng. Khi có người hướng dẫn, bạn có thể tìm hiểu về dệt thổ cẩm, đan lát và những món ăn truyền thống.</p>
+        <p class="spot-tip">⚠️ Hãy xin phép trước khi chụp chân dung, nhà ở hoặc nghi lễ. Du lịch cộng đồng chỉ có ý nghĩa khi bước vào với sự tôn trọng.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">09</div>
+        <div class="spot-title">Thiền viện Trúc Lâm Đạo Nguyên – bình yên giữa rừng Nâm Nung</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 40–45 km</span>
+          <span class="badge">⏰ Buổi sáng</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Hành hương</span><span class="tag">Tĩnh tâm</span><span class="tag">Rừng núi</span>
+        </div>
+        <p class="spot-desc">Thiền viện nằm trong không gian rừng Nâm Nung, cách trung tâm Gia Nghĩa khoảng 39 km. Con đường đến thiền viện đưa bạn qua rẫy cà phê, vườn cây và những khoảng rừng xanh — không gian trong thiền viện yên tĩnh, thích hợp cho người muốn tạm rời điện thoại và lịch trình vội vã.</p>
+      </div>
+
+      <div class="spot-card">
+        <div class="spot-num">10</div>
+        <div class="spot-title">Hồ Tà Đùng – bức tranh sơn thủy rìa hành trình</div>
+        <div class="spot-badges">
+          <span class="badge badge-gold">📍 45–55 km</span>
+          <span class="badge">⏰ Bình minh / 15:30–17:30</span>
+        </div>
+        <div class="spot-tags">
+          <span class="tag">Ngắm cảnh</span><span class="tag">Toàn cảnh</span><span class="tag">Trải nghiệm hồ</span>
+        </div>
+        <p class="spot-desc">Hồ Tà Đùng theo Quốc lộ 28, với hàng chục đảo và bán đảo nhỏ — thường được ví như "vịnh Hạ Long giữa cao nguyên". Nên dành ít nhất nửa ngày và xuất phát sớm. Những đoạn đèo, thung lũng và bản làng trên đường là phần đẹp nhất của hành trình.</p>
+        <p class="spot-tip">⚠️ Kiểm tra bản đồ trước khi khởi hành — một số điểm ngắm hoặc bến thuyền có thể vượt quá 50 km từ Hiền Lê Garden.</p>
+      </div>
+
+    </div>
+
+    <h2 class="s-head">Kinh Nghiệm Cần Nhớ</h2>
+    <div class="tips-box">
+      <ul>
+        <li>Gia Nghĩa có nhiều đường dốc và thời tiết có thể thay đổi nhanh. Chuẩn bị giày chống trơn, áo khoác nhẹ, nước uống và kem chống nắng.</li>
+        <li>Không cố gắng đi đủ cả 10 điểm trong một ngày — một chuyến đi đẹp không được tính bằng số địa điểm đã ghé.</li>
+        <li>Tại thác nước, không đứng dưới dòng chảy mạnh, không leo ra mép đá và không bơi ở khu vực chưa được xác nhận an toàn.</li>
+        <li>Tại vườn chè, bon làng và khu dân cư bản địa, hãy xin phép trước khi tham quan hoặc chụp ảnh.</li>
+        <li>Hỏi Hiền Lê Garden để biết thêm gợi ý theo mùa và tình trạng đường — chúng tôi cập nhật thường xuyên từ khách lưu trú.</li>
+      </ul>
+    </div>
+
+    <div class="ending">
+      <p>Hiền Lê Garden không phải nơi để chạy theo một lịch trình thật vội.</p>
+      <p>Đó có thể là nơi bạn thức dậy cùng tiếng chim, bước ra khu vườn khi sương còn nằm trên mặt hồ, uống một ly cà phê nóng rồi mới quyết định hôm nay sẽ đi đâu.</p>
+      <p><strong>Hiền Lê Garden — bình yên không ở đâu xa.</strong></p>
+    </div>
+
+    <div class="cta-box">
+      <p>Muốn lưu trú gần nhất với những điểm này? Đặt phòng tại Hiền Lê Garden và nhận gợi ý hành trình theo ngày.</p>
+      <a href="https://zalo.me/0968987311" target="_blank" rel="noopener noreferrer" class="btn-gold">Liên hệ qua Zalo</a>
+      <a href="../../" class="btn-outline">← Xem phòng</a>
+    </div>
+
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../../">← Trang chủ</a></p>
+    <p style="margin-top:0.5rem;">© 2025 Hiền Lê Garden. Farmstay bên hồ gần trung tâm Gia Nghĩa.</p>
+  </footer>
+
+</body>
+</html>

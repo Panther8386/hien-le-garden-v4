@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ăn Gì Khi Du Lịch Gia Nghĩa | Cẩm Nang Hiền Lê Garden</title>
+  <meta name="description" content="Canh thụt, cơm lam, cà đắng, cá suối và cà phê Ban Mê — ẩm thực Gia Nghĩa mang hương vị riêng của vùng cao nguyên đất đỏ Đắk Nông.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.75; }
+
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .sub-nav-logo { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); text-decoration: none; }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back { font-size: 0.82rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    .page-hero {
+      position: relative; min-height: 46vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3rem; overflow: hidden;
+    }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../../images/gallery-4.jpg'); background-size: cover; background-position: center; }
+    .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.35) 0%, rgba(13,31,20,0.88) 100%); }
+    .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
+    .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
+    .page-hero h1 { font-family: var(--font-serif); font-size: clamp(1.8rem, 4.5vw, 2.8rem); font-weight: 300; line-height: 1.25; }
+    .page-hero .sub { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.75rem; }
+
+    .content-wrap { max-width: 760px; margin: 0 auto; padding: 3rem 2rem 5rem; }
+
+    .breadcrumb { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 2rem; }
+    .breadcrumb a { color: var(--accent-gold); text-decoration: none; }
+
+    .lead { font-family: var(--font-serif); font-size: 1.2rem; color: var(--text-secondary); line-height: 1.85; margin-bottom: 1.5rem; }
+    .prose-p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.85; margin-bottom: 1.25rem; }
+
+    .s-head { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 300; color: var(--text-primary); margin: 3rem 0 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+
+    /* FOOD LIST */
+    .food-list { display: flex; flex-direction: column; gap: 0; }
+    .food-item {
+      display: flex; gap: 1.25rem;
+      padding: 1.5rem 0;
+      border-bottom: 1px solid var(--border-subtle);
+      align-items: flex-start;
+    }
+    .food-item:last-child { border-bottom: none; }
+    .food-emoji { font-size: 2rem; flex-shrink: 0; width: 2.5rem; text-align: center; padding-top: 0.1rem; }
+    .food-name { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); margin-bottom: 0.4rem; }
+    .food-desc { font-size: 0.87rem; color: var(--text-secondary); line-height: 1.75; }
+
+    /* TIPS */
+    .tips-box { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 1.75rem; margin-top: 1rem; }
+    .tips-box ul { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+    .tips-box li { font-size: 0.88rem; color: var(--text-secondary); padding-left: 1.25rem; position: relative; line-height: 1.7; }
+    .tips-box li::before { content: '→'; position: absolute; left: 0; color: var(--accent-gold); }
+
+    /* SOUVENIR */
+    .souvenir-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.25rem; }
+    @media (max-width: 500px) { .souvenir-grid { grid-template-columns: 1fr; } }
+    .souvenir-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 1.1rem 1.25rem; }
+    .souvenir-card .emoji { font-size: 1.4rem; margin-bottom: 0.4rem; }
+    .souvenir-card .name { font-size: 0.9rem; color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
+    .souvenir-card .note { font-size: 0.78rem; color: var(--text-muted); line-height: 1.6; }
+
+    .cta-box { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 2rem; text-align: center; margin-top: 2.5rem; }
+    .cta-box p { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.25rem; line-height: 1.7; }
+    .btn-gold { display: inline-block; background: var(--accent-gold); color: #0D1F14; padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: opacity 0.2s; }
+    .btn-gold:hover { opacity: 0.88; }
+    .btn-outline { display: inline-block; border: 1px solid var(--accent-gold); color: var(--accent-gold); padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; margin-left: 0.75rem; transition: background 0.2s; }
+    .btn-outline:hover { background: rgba(180,144,74,0.1); }
+    @media (max-width: 480px) { .btn-outline { margin-left: 0; margin-top: 0.5rem; display: block; } }
+
+    .sub-footer { background: #060f09; border-top: 1px solid var(--border-subtle); padding: 2rem; text-align: center; }
+    .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Cẩm Nang Du Lịch</span>
+    </a>
+    <a href="../../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Cẩm Nang · Ẩm Thực</span>
+      <h1>Ăn Gì Khi Du Lịch Gia Nghĩa</h1>
+      <p class="sub">Hương vị cao nguyên đất đỏ — từ canh thụt đến cà phê Ban Mê</p>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="breadcrumb">
+      <a href="../../">Trang chủ</a> / <a href="../../#blog">Cẩm nang</a> / Ăn gì ở Gia Nghĩa
+    </div>
+
+    <p class="lead">Ẩm thực Đắk Nông mang nhiều dấu ấn của người M'nông, Mạ và các cộng đồng cư dân đã đến sinh sống tại Tây Nguyên. Nguyên liệu thường gần gũi với rừng, rẫy và sông suối — không cầu kỳ nhưng đậm đà theo cách riêng của vùng cao nguyên.</p>
+
+    <h2 class="s-head">Những Món Nên Thử</h2>
+
+    <div class="food-list">
+
+      <div class="food-item">
+        <div class="food-emoji">🍲</div>
+        <div>
+          <div class="food-name">Canh thụt</div>
+          <p class="food-desc">Món ăn tiêu biểu của người M'nông và Mạ, được nấu từ măng non, rau rừng, cà đắng, bột gạo và các nguyên liệu bản địa trong ống lồ ô. Vị canh thường hơi đắng, bùi và có mùi thơm tự nhiên. Nên thử khi muốn hiểu sâu hơn về ẩm thực bản địa Tây Nguyên.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🍚</div>
+        <div>
+          <div class="food-name">Cơm lam và các món nướng</div>
+          <p class="food-desc">Cơm được nấu trong ống tre hoặc ống nứa, giữ lại mùi thơm nhẹ và độ dẻo. Thường ăn cùng gà nướng, thịt nướng hoặc muối mè. Trong tiết trời se lạnh của Gia Nghĩa, một bữa cơm lam nóng bên bếp than mang lại cảm giác gần gũi hơn nhiều so với bữa ăn cầu kỳ.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🌿</div>
+        <div>
+          <div class="food-name">Cà đắng và rau rừng</div>
+          <p class="food-desc">Cà đắng có thể xuất hiện trong món canh, món xào hoặc ăn kèm các loại rau rừng. Vị đắng ban đầu khá rõ, nhưng sau đó để lại hậu vị đặc trưng. Rau rừng luộc chấm kho quẹt, cà đắng và cơm lam đều là những món tiêu biểu của Đắk Nông.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🐟</div>
+        <div>
+          <div class="food-name">Cá suối, cá lăng nấu măng chua</div>
+          <p class="food-desc">Cá có thể được nướng, kho hoặc nấu cùng măng chua. Vị chua nhẹ của măng giúp món ăn dễ dùng và phù hợp với thời tiết cao nguyên. Khi gọi, nên hỏi rõ loại cá và giá tính theo phần hay theo trọng lượng.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🍗</div>
+        <div>
+          <div class="food-name">Gà xào măng chua</div>
+          <p class="food-desc">Món ăn gắn với văn hóa ẩm thực của người Mạ. Vị ngọt của thịt gà kết hợp với vị chua của măng tạo nên món ăn đậm đà, thích hợp dùng cùng cơm nóng trong những buổi chiều tối se lạnh.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🫙</div>
+        <div>
+          <div class="food-name">Rượu cần</div>
+          <p class="food-desc">Rượu cần không chỉ là thức uống mà còn gắn với đời sống cộng đồng và những dịp lễ của đồng bào bản địa. Thường được thưởng thức theo nhóm, uống từ từ qua cần trúc. Chỉ uống với lượng vừa phải — tuyệt đối không điều khiển phương tiện sau khi dùng.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">☕</div>
+        <div>
+          <div class="food-name">Cà phê Ban Mê và cà phê Đắk Nông</div>
+          <p class="food-desc">Gia Nghĩa nằm trong vùng cà phê Robusta nổi tiếng. Một ly cà phê đen đặc, uống nóng vào buổi sáng se lạnh bên hồ là một trong những trải nghiệm đáng nhớ nhất. Nhiều quán nhỏ quanh khu vực phục vụ cà phê rang xay tại chỗ với giá bình dân.</p>
+        </div>
+      </div>
+
+      <div class="food-item">
+        <div class="food-emoji">🥜</div>
+        <div>
+          <div class="food-name">Mắc ca và các nông sản Đắk Nông</div>
+          <p class="food-desc">Mắc ca rang bơ là loại hạt phổ biến từ Đắk Nông, một số sản phẩm đã đạt chứng nhận OCOP. Cùng với cà phê rang và thổ cẩm, đây là những lựa chọn phù hợp để mua về làm quà. Nên chọn sản phẩm có bao bì, nguồn gốc và ngày sản xuất rõ ràng.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <h2 class="s-head">Một Số Lưu Ý Khi Ăn Uống</h2>
+    <div class="tips-box">
+      <ul>
+        <li>Nhiều món ăn bản địa được phục vụ tại các quán nhỏ hoặc tại bon làng — không phải nhà hàng lớn. Hỏi người địa phương để được dẫn đến đúng chỗ.</li>
+        <li>Cà đắng và canh thụt có vị đặc trưng khác xa ẩm thực miền xuôi — hãy thử với tinh thần tò mò, không kỳ vọng theo khẩu vị quen thuộc.</li>
+        <li>Khi ăn ở bon làng, hỏi trước về giá và phần ăn để tránh hiểu lầm. Nhiều nơi bán theo trọng lượng, không phải theo phần cố định.</li>
+        <li>Mang theo tiền mặt — nhiều quán và chợ nhỏ tại Gia Nghĩa chưa chấp nhận thanh toán điện tử.</li>
+        <li>Tại Hiền Lê Garden, chúng tôi có thể gợi ý những địa điểm ăn uống quen thuộc và đang hoạt động để bạn không phải mất công tìm kiếm.</li>
+      </ul>
+    </div>
+
+    <h2 class="s-head">Mua Gì Về Làm Quà</h2>
+    <div class="souvenir-grid">
+      <div class="souvenir-card">
+        <div class="emoji">☕</div>
+        <div class="name">Cà phê rang Đắk Nông</div>
+        <p class="note">Robusta rang xay hoặc rang mộc, đóng gói sẵn. Chọn loại có ghi rõ nguồn gốc và ngày rang.</p>
+      </div>
+      <div class="souvenir-card">
+        <div class="emoji">🥜</div>
+        <div class="name">Hạt mắc ca</div>
+        <p class="note">Rang bơ hoặc rang muối. Một số sản phẩm có chứng nhận OCOP từ hợp tác xã địa phương.</p>
+      </div>
+      <div class="souvenir-card">
+        <div class="emoji">🧵</div>
+        <div class="name">Thổ cẩm và sản phẩm thủ công</div>
+        <p class="note">Túi, khăn, vòng tay dệt bởi đồng bào M'nông hoặc Mạ. Nên mua trực tiếp từ người làm để hỗ trợ nghề thủ công bản địa.</p>
+      </div>
+      <div class="souvenir-card">
+        <div class="emoji">🫙</div>
+        <div class="name">Nông sản theo mùa</div>
+        <p class="note">Bơ, sầu riêng (theo mùa), tiêu rừng và các loại gia vị bản địa có thể tìm thấy tại chợ trung tâm Gia Nghĩa.</p>
+      </div>
+    </div>
+
+    <div class="cta-box">
+      <p>Lưu trú tại Hiền Lê Garden — chúng tôi gợi ý địa điểm ăn uống theo ngày, theo mùa và theo khẩu vị của bạn.</p>
+      <a href="https://zalo.me/0968987311" target="_blank" rel="noopener noreferrer" class="btn-gold">Hỏi ngay qua Zalo</a>
+      <a href="../../" class="btn-outline">← Xem phòng lưu trú</a>
+    </div>
+
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../../">← Trang chủ</a></p>
+    <p style="margin-top:0.5rem;">© 2025 Hiền Lê Garden. Farmstay bên hồ gần trung tâm Gia Nghĩa.</p>
+  </footer>
+
+</body>
+</html>

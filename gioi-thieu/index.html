@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Câu Chuyện Của Chúng Tôi | Hiền Lê Garden Farmstay</title>
+  <meta name="description" content="Hiền Lê Garden — bắt đầu từ một niềm tin giản dị: con người cần một nơi để thật sự được nghỉ ngơi, không phải chỉ một nơi để dừng chân.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-secondary: #122019;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.75;
+    }
+
+    /* NAV */
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .sub-nav-logo {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      display: flex; align-items: center; gap: 0.4rem;
+      transition: color 0.2s;
+    }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    /* HERO */
+    .page-hero {
+      position: relative;
+      min-height: 52vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3.5rem;
+      overflow: hidden;
+    }
+    .page-hero-bg {
+      position: absolute; inset: 0;
+      background-image: url('../images/gallery-6.jpg');
+      background-size: cover; background-position: center;
+    }
+    .page-hero-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(to bottom, rgba(13,31,20,0.45) 0%, rgba(13,31,20,0.85) 100%);
+    }
+    .page-hero-content {
+      position: relative; z-index: 1;
+      max-width: 720px;
+    }
+    .page-label {
+      font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--accent-gold); margin-bottom: 1rem; display: block;
+    }
+    .page-hero h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 300; line-height: 1.25;
+      color: var(--text-primary);
+    }
+    .page-hero h1 em { font-style: italic; color: var(--accent-gold); }
+
+    /* CONTENT */
+    .content-wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 4rem 2rem 6rem;
+    }
+    .prose p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      line-height: 1.9;
+      margin-bottom: 1.5rem;
+    }
+    .prose p.intro {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      line-height: 1.8;
+      color: var(--text-primary);
+    }
+    .prose p.verse {
+      font-style: italic;
+      color: var(--accent-gold);
+      font-size: 0.95rem;
+      padding-left: 1.25rem;
+      border-left: 2px solid var(--accent-gold);
+      margin-bottom: 0.6rem;
+      line-height: 1.7;
+    }
+    .prose p.verse.gap { margin-bottom: 2rem; }
+    .prose p.closing {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    /* DIVIDER */
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border-subtle);
+      margin: 3rem 0;
+    }
+
+    /* VALUES */
+    .values-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin: 2.5rem 0;
+    }
+    @media (max-width: 640px) { .values-grid { grid-template-columns: 1fr; } }
+    .value-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.5rem;
+    }
+    .value-icon { font-size: 1.6rem; margin-bottom: 0.75rem; }
+    .value-title {
+      font-family: var(--font-serif);
+      font-size: 1.05rem;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .value-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
+
+    /* SECTION HEADING */
+    .section-h {
+      font-family: var(--font-serif);
+      font-size: 1.6rem;
+      font-weight: 300;
+      color: var(--text-primary);
+      margin-bottom: 1.25rem;
+    }
+    .section-h em { font-style: italic; color: var(--accent-gold); }
+
+    /* STATS */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    @media (max-width: 480px) { .stats-row { grid-template-columns: 1fr 1fr; } }
+    .stat-item {
+      text-align: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 1.25rem 1rem;
+    }
+    .stat-num {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      font-weight: 300;
+      color: var(--accent-gold);
+      line-height: 1;
+      margin-bottom: 0.4rem;
+    }
+    .stat-lbl { font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.05em; }
+
+    /* GALLERY STRIP */
+    .img-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin: 2rem 0;
+    }
+    @media (max-width: 540px) { .img-strip { grid-template-columns: 1fr 1fr; } }
+    .img-strip img {
+      width: 100%; aspect-ratio: 4/3;
+      object-fit: cover; border-radius: 8px;
+      display: block;
+    }
+
+    /* CTA */
+    .cta-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 2.5rem;
+      text-align: center;
+      margin-top: 3rem;
+    }
+    .cta-box p {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+    .btn-gold {
+      display: inline-block;
+      background: var(--accent-gold);
+      color: #0D1F14;
+      padding: 0.8rem 2rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      transition: opacity 0.2s;
+    }
+    .btn-gold:hover { opacity: 0.88; }
+
+    /* FOOTER */
+    .sub-footer {
+      background: #060f09;
+      border-top: 1px solid var(--border-subtle);
+      padding: 2rem;
+      text-align: center;
+    }
+    .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Farmstay · Nam Gia Nghĩa, Lâm Đồng</span>
+    </a>
+    <a href="../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Về Chúng Tôi · Our Story</span>
+      <h1>Câu chuyện của<br><em>Hiền Lê Garden</em></h1>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="prose">
+      <p class="intro">Hiền Lê Garden được bắt đầu từ một niềm tin rất giản dị.</p>
+
+      <p>Giữa nhịp sống ngày càng vội vã, con người không chỉ cần một nơi để dừng chân. Chúng ta cần một nơi để thật sự được nghỉ ngơi.</p>
+
+      <p class="verse">Không phải nghỉ vì mệt.</p>
+      <p class="verse gap">Mà nghỉ để lắng nghe chính mình.</p>
+
+      <p>Chúng tôi gìn giữ từng khoảng xanh, từng mặt hồ, từng tán cây và những buổi sáng trong trẻo để mỗi người khi đến đây đều có thể sống chậm lại một chút.</p>
+
+      <p class="verse">Một đêm ngủ giữa thiên nhiên.</p>
+      <p class="verse">Một buổi sáng thức dậy cùng tiếng chim.</p>
+      <p class="verse">Một ly cà phê bên hồ khi mặt nước vẫn còn phủ sương.</p>
+      <p class="verse gap">Một bữa sáng ấm nóng trong không khí mát lành.</p>
+
+      <p>Những điều rất nhỏ ấy lại là những điều cuộc sống hiện đại thường khiến chúng ta vô tình bỏ quên.</p>
+
+      <p>Hiền Lê Garden không được tạo nên để trở thành nơi náo nhiệt. Cũng không cố gắng trở thành điểm đến phải ghé một lần để chụp vài tấm ảnh rồi rời đi.</p>
+
+      <p>Chúng tôi mong nơi này trở thành một khoảng lặng giữa những ngày bận rộn — nơi bạn có thể dành thời gian cho gia đình, cho người mình yêu thương, cho một cuốn sách còn đọc dở, hoặc đơn giản là cho chính mình.</p>
+
+      <p>Bởi chúng tôi tin rằng, một chuyến đi ý nghĩa không được đo bằng quãng đường đã đi, mà bằng cảm giác bình yên bạn mang theo khi trở về.</p>
+
+      <p>Đó là lý do Hiền Lê Garden luôn gìn giữ thiên nhiên như vốn có, để mỗi buổi sáng nơi đây vẫn bắt đầu bằng tiếng chim, làn gió nhẹ và ánh nắng len qua những tán cây.</p>
+
+      <p class="closing">Không chỉ là một điểm đến.</p>
+      <p class="closing">Mà là nơi để mang sự bình yên trở về cùng bạn.</p>
+    </div>
+
+    <div class="img-strip" style="margin-top:2.5rem;">
+      <img src="../images/gallery-6.jpg" alt="Khuôn viên Hiền Lê Garden">
+      <img src="../images/gallery-4.jpg" alt="Vườn hoa cỏ may">
+      <img src="../images/gallery-3.jpg" alt="Triangle Houses buổi sáng">
+    </div>
+
+    <hr class="section-divider">
+
+    <h2 class="section-h">Những điều chúng tôi<br><em>tin tưởng và gìn giữ</em></h2>
+
+    <div class="values-grid">
+      <div class="value-card">
+        <div class="value-icon">🌿</div>
+        <div class="value-title">Thiên nhiên như vốn có</div>
+        <p class="value-desc">Không cải tạo, không phá vỡ nhịp tự nhiên. Khuôn viên được giữ xanh mát để mỗi buổi sáng vẫn bắt đầu bằng tiếng chim và làn sương nhẹ.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon">🤍</div>
+        <div class="value-title">Chân thật và giản dị</div>
+        <p class="value-desc">Hiền Lê Garden không hào nhoáng. Chúng tôi không cố làm mình hoành tráng — chỉ cố làm mình thật, ấm áp và đáng tin cậy.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon">🏡</div>
+        <div class="value-title">Không gian để trở về</div>
+        <p class="value-desc">Mỗi căn phòng, mỗi góc vườn, mỗi buổi sáng bên hồ — đều được tạo ra để khách cảm thấy như đang trở về, không phải đang đến thăm.</p>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    <div class="stats-row">
+      <div class="stat-item">
+        <div class="stat-num">6</div>
+        <div class="stat-lbl">Kiểu phòng độc đáo</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">1,3ha</div>
+        <div class="stat-lbl">Khuôn viên thiên nhiên</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">2km</div>
+        <div class="stat-lbl">Từ trung tâm Gia Nghĩa</div>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    <h2 class="section-h">Nơi chúng tôi ở</h2>
+    <div class="prose">
+      <p>Hiền Lê Garden nằm tại khu vực bờ đập, Tổ 7, phường Nam Gia Nghĩa (trước là phường Nghĩa Phú), tỉnh Lâm Đồng — sau khi đơn vị hành chính được sắp xếp lại từ tháng 7/2025.</p>
+      <p>Khu vực này tiếp giáp mặt hồ, cách trung tâm Gia Nghĩa khoảng 2km. Bao quanh là đồi xanh, hồ nước và khu dân cư yên tĩnh — vừa gần phố, vừa đủ yên tĩnh để cảm nhận nhịp sống cao nguyên.</p>
+    </div>
+
+    <div class="cta-box">
+      <p>Hãy đến một lần để cảm nhận — đặt phòng trực tiếp qua Zalo để được tư vấn và nhận chính sách tốt nhất.</p>
+      <a href="https://zalo.me/0968987311" target="_blank" rel="noopener noreferrer" class="btn-gold">Liên hệ Hiền Lê Garden</a>
+    </div>
+
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../">← Trang chủ</a></p>
+    <p style="margin-top:0.5rem;">© 2025 Hiền Lê Garden. Farmstay bên hồ gần trung tâm Gia Nghĩa.</p>
+  </footer>
+
+</body>
+</html>
