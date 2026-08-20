@@ -35,8 +35,19 @@ single Cloudflare Pages deployment.
 ```bash
 npm install
 npm run dev    # wrangler pages dev . --d1=DB — serves the whole site + API from one local server
-npm test        # Vitest — API/logic tests against a local D1
+npm test        # Vitest, auto-retrying — see note below
 ```
+
+**Windows-only test flakiness:** `@cloudflare/vitest-pool-workers` occasionally
+crashes on Windows before finishing a run — a SQLite WAL temp-file race while
+tearing down its isolated D1 storage snapshot, or workerd's Node-compat layer
+misresolving vitest's `vite-node/client` import. Neither is a real test
+failure (never a "N failed" — only a crash). `npm test` runs
+`scripts/test-with-retry.js`, which retries on that class of crash and exits
+immediately on a genuine assertion failure. Use `npm run test:once` to see a
+single raw `vitest run` invocation if you're debugging the flake itself. This
+only affects local Windows runs — GitHub Actions CI runs on Linux, where it
+doesn't occur, and the deploy workflow doesn't run this suite anyway.
 
 Before `npm run dev` can serve real data, apply migrations to the local D1 once:
 

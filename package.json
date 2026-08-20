@@ -4,12 +4,20 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "wrangler pages dev . --d1=DB",
-    "test": "vitest run",
+    "test": "node scripts/test-with-retry.js",
+    "test:once": "vitest run",
     "deploy": "wrangler pages deploy ."
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",
     "vitest": "^2.1.0",
     "wrangler": "^3.78.0"
+  },
+  "allowScripts": {
+    "sharp@0.33.5": true,
+    "esbuild@0.17.19": true,
+    "esbuild@0.21.5": true,
+    "workerd@1.20241230.0": true,
+    "workerd@1.20250718.0": true
   }
 }
