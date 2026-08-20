@@ -1,0 +1,13 @@
+node_modules/
+.wrangler/
+.wrangler-local-state/
+test/
+migrations/
+scripts/
+lib/
+wrangler.toml
+package.json
+package-lock.json
+vitest.config.js
+.assetsignore
+.gitignore

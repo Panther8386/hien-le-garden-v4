@@ -198,15 +198,8 @@
   </footer>
 
   <script>
-    // crm.hienlegarden.vn is a separate Cloudflare Pages project (see
-    // docs/specs/2026-08-19-v4-crm-loyalty-design.md). Locally, the CRM
-    // preview server runs on a different port, so requests are cross-origin
-    // even on the same machine — the API allows this origin via CORS
-    // (see crm/lib/cors.js).
-    const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      ? 'http://localhost:4181'
-      : 'https://crm.hienlegarden.vn';
-
+    // The API lives in this same Cloudflare Pages project (functions/api/),
+    // so this is a same-origin call — no CORS or cross-origin base URL needed.
     const form = document.getElementById('surveyForm');
     const errorEl = document.getElementById('formError');
 
@@ -231,7 +224,7 @@
 
       let response;
       try {
-        response = await fetch(`${API_BASE}/api/feedback`, {
+        response = await fetch('/api/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
