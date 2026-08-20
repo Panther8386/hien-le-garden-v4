@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tri Ân Khách Hàng | Hiền Lê Garden</title>
+  <meta name="description" content="Chia sẻ trải nghiệm của bạn tại Hiền Lê Garden và nhận mã ưu đãi cho lần lưu trú tiếp theo.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-secondary: #122019;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --border-gold: rgba(180,144,74,0.35);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.75; }
+
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .sub-nav-logo { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); text-decoration: none; }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back { font-size: 0.82rem; color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    .page-hero {
+      position: relative; min-height: 30vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3rem; overflow: hidden;
+    }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../images/gallery-4.jpg'); background-size: cover; background-position: center; }
+    .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.4) 0%, rgba(13,31,20,0.9) 100%); }
+    .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
+    .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
+    .page-hero h1 { font-family: var(--font-serif); font-size: clamp(1.8rem, 4.5vw, 2.8rem); font-weight: 300; line-height: 1.25; }
+    .page-hero .sub { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.75rem; }
+
+    .content-wrap { max-width: 620px; margin: 0 auto; padding: 3rem 2rem 5rem; }
+
+    .breadcrumb { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 2rem; }
+    .breadcrumb a { color: var(--accent-gold); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+
+    .survey-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+
+    label { display: block; margin-bottom: 1.25rem; font-size: 0.9rem; color: var(--text-secondary); }
+    label.checkbox { display: flex; align-items: flex-start; gap: 0.6rem; }
+
+    input[type="text"], input[type="tel"], input[type="email"], input[type="date"], textarea {
+      display: block; width: 100%; margin-top: 0.5rem; padding: 0.75rem;
+      font-size: 16px; font-family: inherit;
+      border: 1px solid var(--border-gold); border-radius: 6px;
+      background: rgba(245,239,228,0.05); color: var(--text-primary);
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--accent-gold); outline-offset: 1px; }
+    textarea { min-height: 80px; resize: vertical; }
+
+    input[type="checkbox"], input[type="radio"] {
+      width: 20px; height: 20px; margin: 0; flex-shrink: 0; accent-color: var(--accent-gold);
+    }
+
+    fieldset { border: 1px solid var(--border-gold); border-radius: 6px; margin: 0 0 1.25rem; padding: 0.9rem 1rem 1.1rem; }
+    legend { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-gold); padding: 0 0.4rem; }
+
+    .rating { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .rating label { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.5rem 0.9rem; border: 1px solid var(--border-gold); border-radius: 8px; cursor: pointer; color: var(--text-primary); }
+
+    .activities label.checkbox { margin-bottom: 0.6rem; color: var(--text-primary); font-size: 0.88rem; }
+    .activities label.checkbox:last-child { margin-bottom: 0; }
+
+    button[type="submit"] {
+      width: 100%; background: var(--accent-gold); color: var(--bg-primary);
+      border: none; border-radius: 6px; padding: 0.9rem 1.5rem;
+      font-size: 0.95rem; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    button[type="submit"]:active { opacity: 0.88; }
+
+    .error { color: #ff8a8a; font-size: 0.85rem; min-height: 1.2em; margin-top: 0.75rem; }
+
+    #confirmation strong { color: var(--accent-gold); font-family: var(--font-serif); font-size: 1.5rem; }
+    /* :not([hidden]) — an explicit display here would otherwise outrank the
+       browser's [hidden] { display: none } rule. */
+    #telegramLink:not([hidden]) {
+      display: inline-block; margin-top: 1rem; background: #0068FF; color: #fff;
+      padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.9rem;
+    }
+
+    .sub-footer { background: #060f09; border-top: 1px solid var(--border-subtle); padding: 2rem; text-align: center; }
+    .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+
+    @media (max-width: 480px) {
+      .sub-nav { padding: 0 1.25rem; }
+      .content-wrap { padding: 2rem 1.25rem 3rem; }
+      .survey-card { padding: 1.5rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Tri Ân Khách Hàng</span>
+    </a>
+    <a href="../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Tri Ân · Customer Appreciation</span>
+      <h1>Cảm Ơn Bạn Đã Ghé Thăm</h1>
+      <p class="sub">Chia sẻ trải nghiệm của bạn để nhận mã ưu đãi cho lần lưu trú tiếp theo tại Hiền Lê Garden</p>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="breadcrumb">
+      <a href="../">Trang chủ</a> / Tri ân khách hàng
+    </div>
+
+    <div class="survey-card">
+      <form id="surveyForm">
+        <label>Họ tên <input type="text" name="guestName" required /></label>
+        <label>Số điện thoại <input type="tel" name="phone" required /></label>
+        <label>Email (không bắt buộc) <input type="email" name="email" /></label>
+        <label class="checkbox"><input type="checkbox" name="wantsTelegram" /> Nhận mã qua Telegram</label>
+        <label>Ngày lưu trú (không bắt buộc) <input type="date" name="stayDate" /></label>
+
+        <fieldset>
+          <legend>Đánh giá trải nghiệm</legend>
+          <div class="rating" role="radiogroup" aria-label="Đánh giá 1 đến 5 sao">
+            <label><input type="radio" name="rating" value="1" required /> 1</label>
+            <label><input type="radio" name="rating" value="2" /> 2</label>
+            <label><input type="radio" name="rating" value="3" /> 3</label>
+            <label><input type="radio" name="rating" value="4" /> 4</label>
+            <label><input type="radio" name="rating" value="5" /> 5</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="activities">
+          <legend>Hoạt động yêu thích (không bắt buộc)</legend>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="bbq" /> BBQ & lửa trại</label>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="ca-phe-vuon" /> Cà phê vườn</label>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="nong-nghiep" /> Trải nghiệm nông nghiệp (hái cà phê, cho cá ăn)</label>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="cau-ca-cheo-thuyen" /> Câu cá / chèo thuyền</label>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="chup-anh" /> Chụp ảnh giữa thiên nhiên</label>
+          <label class="checkbox"><input type="checkbox" name="favoriteActivities" value="rang-ca-phe" /> Workshop rang cà phê</label>
+        </fieldset>
+
+        <label>Ghi chú trải nghiệm (không bắt buộc) <textarea name="comment"></textarea></label>
+        <label>Mong muốn lần sau (không bắt buộc) <textarea name="wishesNextTime"></textarea></label>
+        <label class="checkbox">
+          <input type="checkbox" name="consentGiven" required />
+          <span>Tôi đồng ý để Hiền Lê Garden sử dụng thông tin này để liên hệ ưu đãi.</span>
+        </label>
+
+        <button type="submit">Gửi đánh giá</button>
+        <p id="formError" class="error" role="alert"></p>
+      </form>
+
+      <div id="confirmation" hidden>
+        <h2 style="font-family:var(--font-serif); color:var(--accent-gold); font-weight:400; margin-bottom:0.75rem;">Cảm ơn bạn!</h2>
+        <p>Mã ưu đãi của bạn: <strong id="promoCode"></strong></p>
+        <p id="promoDetails" style="margin-top:0.5rem; color:var(--text-secondary);"></p>
+        <p id="giftLine" hidden style="margin-top:0.75rem; color:var(--text-secondary);">Mang mã này đến quầy lễ tân — nếu quà lưu niệm vẫn còn, bạn sẽ được nhận thêm nhé!</p>
+        <a id="telegramLink" href="#" hidden>Nhận mã qua Telegram</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../">← Trang chủ</a></p>
+    <p style="margin-top:0.5rem;">© 2026 Hiền Lê Garden. Farmstay bên hồ gần trung tâm Gia Nghĩa.</p>
+  </footer>
+
+  <script>
+    // crm.hienlegarden.vn is a separate Cloudflare Pages project (see
+    // docs/specs/2026-08-19-v4-crm-loyalty-design.md). Locally, the CRM
+    // preview server runs on a different port, so requests are cross-origin
+    // even on the same machine — the API allows this origin via CORS
+    // (see crm/lib/cors.js).
+    const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:4181'
+      : 'https://crm.hienlegarden.vn';
+
+    const form = document.getElementById('surveyForm');
+    const errorEl = document.getElementById('formError');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorEl.textContent = '';
+
+      const data = new FormData(form);
+      const favoriteActivities = data.getAll('favoriteActivities');
+      const payload = {
+        guestName: data.get('guestName'),
+        phone: data.get('phone'),
+        email: data.get('email') || undefined,
+        wantsTelegram: data.get('wantsTelegram') === 'on',
+        rating: Number(data.get('rating')),
+        comment: data.get('comment') || undefined,
+        consentGiven: data.get('consentGiven') === 'on',
+        stayDate: data.get('stayDate') || undefined,
+        wishesNextTime: data.get('wishesNextTime') || undefined,
+        favoriteActivities: favoriteActivities.length ? favoriteActivities : undefined,
+      };
+
+      let response;
+      try {
+        response = await fetch(`${API_BASE}/api/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        errorEl.textContent = 'Không thể kết nối đến hệ thống. Vui lòng thử lại sau.';
+        return;
+      }
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        errorEl.textContent = body.error || 'Có lỗi xảy ra, vui lòng thử lại.';
+        return;
+      }
+
+      const result = await response.json();
+      form.hidden = true;
+
+      const confirmation = document.getElementById('confirmation');
+      confirmation.hidden = false;
+      document.getElementById('promoCode').textContent = result.promoCode;
+      document.getElementById('promoDetails').textContent =
+        `Giảm ${result.discountPercent}% cho lần sau, có hiệu lực đến ${new Date(result.expiresAt).toLocaleDateString('vi-VN')}.`;
+
+      if (result.giftOffered) {
+        document.getElementById('giftLine').hidden = false;
+      }
+      if (payload.wantsTelegram) {
+        const link = document.getElementById('telegramLink');
+        link.href = `https://t.me/HienLeGardenBot?start=${result.feedbackId}`;
+        link.hidden = false;
+      }
+    });
+  </script>
+
+</body>
+</html>
