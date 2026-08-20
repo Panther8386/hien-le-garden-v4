@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generatePromoCode, addMonthsClamped, computeExpiry } from '../lib/promoCode.js';
+import { generatePromoCode, addMonthsClamped, computeExpiry, computePromoStatus } from '../lib/promoCode.js';
 
 describe('generatePromoCode', () => {
   it('matches the HLG-XXXXXX format with unambiguous characters', () => {
@@ -30,5 +30,19 @@ describe('computeExpiry', () => {
   it('is exactly addMonthsClamped(submittedAt, 6)', () => {
     const submitted = new Date('2026-03-10T09:00:00Z');
     expect(computeExpiry(submitted).toISOString()).toBe(addMonthsClamped(submitted, 6).toISOString());
+  });
+});
+
+describe('computePromoStatus', () => {
+  it('returns "expired" for an unused code past its expiry date', () => {
+    expect(computePromoStatus('unused', '2020-01-01T00:00:00Z')).toBe('expired');
+  });
+
+  it('returns "unused" for an unused code still within its expiry date', () => {
+    expect(computePromoStatus('unused', '2099-01-01T00:00:00Z')).toBe('unused');
+  });
+
+  it('returns "used" for a used code regardless of expiry date', () => {
+    expect(computePromoStatus('used', '2020-01-01T00:00:00Z')).toBe('used');
   });
 });

@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env, params }) {
   const auth = await requireAuth(request, env, ['reception', 'manager']);
@@ -16,7 +17,7 @@ export async function onRequestGet({ request, env, params }) {
     });
   }
 
-  const status = row.promo_status === 'unused' && new Date(row.promo_expires_at) < new Date() ? 'expired' : row.promo_status;
+  const status = computePromoStatus(row.promo_status, row.promo_expires_at);
 
   return new Response(
     JSON.stringify({
