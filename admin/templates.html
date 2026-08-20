@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Kho template — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Kho template</h1>
+    <nav>
+      <a href="manager.html">Cấu hình &rarr;</a>
+      <a href="customers.html">Danh sách khách hàng &rarr;</a>
+      <a href="users.html">Quản lý user &rarr;</a>
+    </nav>
+
+    <h2>Tạo template mới</h2>
+    <form id="templateForm">
+      <label>Tên template <input type="text" name="name" required /></label>
+      <label>Kênh
+        <select name="channel" id="channelSelect">
+          <option value="email">Email</option>
+          <option value="telegram">Telegram</option>
+        </select>
+      </label>
+      <label id="subjectLabel">Tiêu đề (email) <input type="text" name="subject" /></label>
+      <label>Nội dung (dùng {guestName}, {promoCode}, {discountPercent}, {expiresAt}, {giftLine})
+        <textarea name="body" rows="6" required></textarea>
+      </label>
+      <button type="submit">Lưu template</button>
+      <button type="button" id="cancelEditBtn" hidden>Huỷ sửa</button>
+      <p id="formError" class="error"></p>
+    </form>
+
+    <h2>Các template hiện có</h2>
+    <p id="listError" class="error"></p>
+    <div id="templateList"></div>
+  </div>
+
+  <script src="templates.js"></script>
+</body>
+</html>
