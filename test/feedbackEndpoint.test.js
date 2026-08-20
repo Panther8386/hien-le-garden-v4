@@ -65,6 +65,9 @@ describe('POST /api/feedback', () => {
     const row = await env.DB.prepare(`SELECT * FROM feedback_responses WHERE id = ?`).bind(body.feedbackId).first();
     expect(row.promo_status).toBe('unused');
     expect(fetch).toHaveBeenCalledTimes(1); // Brevo call
+
+    const logRow = await env.DB.prepare(`SELECT channel, status FROM message_log WHERE feedback_id = ?`).bind(body.feedbackId).first();
+    expect(logRow).toEqual({ channel: 'email', status: 'success' });
   });
 
   it('does not offer a gift when stock is zero', async () => {

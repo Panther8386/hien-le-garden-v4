@@ -32,6 +32,9 @@ describe('POST /api/telegram/webhook', () => {
     const row = await env.DB.prepare(`SELECT telegram_chat_id FROM feedback_responses WHERE id = 'fb-1'`).first();
     expect(row.telegram_chat_id).toBe('987654');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const logRow = await env.DB.prepare(`SELECT channel, status FROM message_log WHERE feedback_id = 'fb-1'`).first();
+    expect(logRow).toEqual({ channel: 'telegram', status: 'success' });
   });
 
   it('ignores updates with an unknown feedback id without throwing', async () => {

@@ -2,6 +2,7 @@ import { generatePromoCode, computeExpiry } from '../../lib/promoCode.js';
 import { resolveActivePolicy } from '../../lib/policy.js';
 import { sendPromoEmail } from '../../lib/email.js';
 import { corsHeaders, handleCorsPreflight } from '../../lib/cors.js';
+import { renderTemplate } from '../../lib/templates.js';
 
 function jsonError(message, status, extraHeaders = {}) {
   return new Response(JSON.stringify({ error: message }), {
@@ -112,14 +113,25 @@ export async function onRequestPost({ request, env }) {
     .run();
 
   if (email) {
-    await sendPromoEmail(env, {
-      to: email,
-      guestName,
-      promoCode,
-      discountPercent: policy.discountPercent,
-      expiresAt,
-      giftOffered,
-    });
+    const template = await env.DB.prepare(
+      `SELECT id, channel, subject, body FROM message_templates WHERE channel = 'email' AND is_active = 1 LIMIT 1`
+    ).first();
+
+    if (template) {
+      const rendered = renderTemplate(template, {
+        guestName,
+        promoCode,
+        discountPercent: policy.discountPercent,
+        expiresAt,
+        giftOffered,
+      });
+      const sent = await sendPromoEmail(env, { to: email, toName: guestName, subject: rendered.subject, html: rendered.body });
+      await env.DB.prepare(
+        `INSERT INTO message_log (feedback_id, template_id, channel, sent_by, status, sent_at) VALUES (?, ?, 'email', 'system', ?, ?)`
+      )
+        .bind(feedbackId, template.id, sent ? 'success' : 'failed', new Date().toISOString())
+        .run();
+    }
   }
 
   return new Response(

@@ -2,58 +2,39 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sendPromoEmail } from '../lib/email.js';
 
 describe('sendPromoEmail', () => {
-  const baseArgs = {
-    to: 'khach@example.com',
-    guestName: 'Nguyễn Văn A',
-    promoCode: 'HLG-4F7K9P',
-    discountPercent: 15,
-    expiresAt: new Date('2027-02-19T00:00:00Z'),
-    giftOffered: true,
-  };
-
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('calls the Brevo API with the correct recipient and API key', async () => {
+  it('calls the Brevo API with the given recipient, subject, and HTML body', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await sendPromoEmail({ BREVO_API_KEY: 'test-key' }, baseArgs);
+    const result = await sendPromoEmail(
+      { BREVO_API_KEY: 'test-key' },
+      { to: 'khach@example.com', toName: 'Nguyễn Văn A', subject: 'Mã ưu đãi', html: '<p>xin chào</p>' }
+    );
 
+    expect(result).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.brevo.com/v3/smtp/email');
     expect(options.headers['api-key']).toBe('test-key');
     const body = JSON.parse(options.body);
     expect(body.to).toEqual([{ email: 'khach@example.com', name: 'Nguyễn Văn A' }]);
-    expect(body.htmlContent).toContain('HLG-4F7K9P');
-    expect(body.htmlContent).toContain('15%');
+    expect(body.subject).toBe('Mã ưu đãi');
+    expect(body.htmlContent).toBe('<p>xin chào</p>');
   });
 
-  it('does not throw when the Brevo API call fails', async () => {
+  it('returns false and does not throw when the Brevo API call fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })));
-    await expect(sendPromoEmail({ BREVO_API_KEY: 'test-key' }, baseArgs)).resolves.toBeUndefined();
+    const result = await sendPromoEmail({ BREVO_API_KEY: 'test-key' }, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
+    expect(result).toBe(false);
   });
 
-  it('escapes HTML in guestName and promoCode to prevent injection', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await sendPromoEmail(
-      { BREVO_API_KEY: 'test-key' },
-      {
-        ...baseArgs,
-        guestName: '<script>alert(1)</script>',
-        promoCode: '"><img src=x onerror=alert(2)>',
-      }
-    );
-
-    const [, options] = fetchMock.mock.calls[0];
-    const body = JSON.parse(options.body);
-    expect(body.htmlContent).not.toContain('<script>alert(1)</script>');
-    expect(body.htmlContent).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(body.htmlContent).not.toContain('<img src=x onerror=alert(2)>');
-    expect(body.htmlContent).toContain('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;');
+  it('returns false and does not throw when fetch itself rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    const result = await sendPromoEmail({ BREVO_API_KEY: 'test-key' }, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
+    expect(result).toBe(false);
   });
 });
