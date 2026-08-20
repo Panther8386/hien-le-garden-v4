@@ -26,7 +26,9 @@ single Cloudflare Pages deployment.
 5. Create the Telegram bot via @BotFather, set its webhook to `https://<your-domain>/api/telegram/webhook`:
    - `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-domain>/api/telegram/webhook"`
 6. Verify the sending domain in Brevo so `sender.email` in `lib/email.js` is authorized.
-7. Deploy: connect this repo to a Cloudflare Pages project (Cloudflare dashboard → Pages → Create → Connect to Git). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages → Custom domains).
+7. Create the Pages project itself with `wrangler pages project create hien-le-garden-v4 --production-branch=main`, then do a first deploy with `wrangler pages deploy .` (see Deploy below for what runs this automatically on every push). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages project → Custom domains).
+
+   **Pitfall:** Cloudflare's dashboard "Workers & Pages → Create" flow can create a **Workers** project instead of a **Pages** project even when connecting the same repo — Workers can't run this project (it needs Pages' `functions/`-directory routing and `.assetsignore`-based static asset handling). If the dashboard flow is used and the resulting project's build settings show `Deploy command: npx wrangler deploy` (no "pages"), that's a Workers project — delete it (`wrangler delete --name <name>`, run from a directory with no `wrangler.toml`) and create the Pages project via CLI as above instead.
 
 ## Local development
 
@@ -46,8 +48,14 @@ The root Playwright suite (`npm test` from the `hien-le-garden` repo root) cover
 
 ## Deploy
 
+Automatic: `.github/workflows/deploy.yml` runs `wrangler pages deploy .` on every push to `main`, via `cloudflare/wrangler-action`. Needs two repo secrets (Settings → Secrets and variables → Actions):
+- `CLOUDFLARE_API_TOKEN` — create at Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template.
+- `CLOUDFLARE_ACCOUNT_ID` — shown in `wrangler whoami`, or the dashboard URL (`dash.cloudflare.com/<account-id>/...`).
+
+Manual (e.g. for a one-off deploy without waiting on CI):
+
 ```bash
 npm run deploy   # wrangler pages deploy .
 ```
 
-In production, Cloudflare Pages deploys automatically on every push to this repo's default branch once the project is connected — the same domain serves both the static site and `/api/*`.
+Either way, the same domain serves both the static site and `/api/*` — no CORS, no separate backend deployment.
