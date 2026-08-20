@@ -6,5 +6,5 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "hien_le_garden_crm"
-database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+database_id = "bf3ed73c-96de-494c-a3f9-e905f2bf8c48"
 migrations_dir = "migrations"
