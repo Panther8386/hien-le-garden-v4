@@ -96,5 +96,12 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
   await loadGiftInventory();
 });
 
-loadPolicies();
-loadGiftInventory();
+(async () => {
+  const res = await fetch('/api/auth/me');
+  if (!res.ok) {
+    window.location.href = 'login.html';
+    return;
+  }
+  loadPolicies();
+  loadGiftInventory();
+})();

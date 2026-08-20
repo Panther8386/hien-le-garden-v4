@@ -1,4 +1,11 @@
 // crm/public/admin/reception.js
+(async () => {
+  const res = await fetch('/api/auth/me');
+  if (!res.ok) {
+    window.location.href = 'login.html';
+  }
+})();
+
 let currentCode = null;
 
 document.getElementById('lookupForm').addEventListener('submit', async (event) => {
