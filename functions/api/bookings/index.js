@@ -6,6 +6,7 @@ function jsonError(message, status) {
 }
 
 const VALID_ROOM_TYPES = Object.keys(ROOM_TYPES);
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function onRequestPost({ request, env }) {
   let body;
@@ -21,8 +22,23 @@ export async function onRequestPost({ request, env }) {
   if (typeof guestName !== 'string' || guestName.trim().length === 0) {
     return jsonError('Vui lòng nhập họ tên', 400);
   }
+  if (guestName.length > 200) {
+    return jsonError('Tên khách quá dài', 400);
+  }
   if (typeof phone !== 'string' || phone.trim().length === 0) {
     return jsonError('Vui lòng nhập số điện thoại', 400);
+  }
+  if (phone.length > 200) {
+    return jsonError('Số điện thoại quá dài', 400);
+  }
+  if (email !== undefined && email !== null && (typeof email !== 'string' || !EMAIL_FORMAT.test(email))) {
+    return jsonError('Email không hợp lệ', 400);
+  }
+  if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 2000)) {
+    return jsonError('Ghi chú không hợp lệ', 400);
+  }
+  if (guestsCount !== undefined && guestsCount !== null && (!Number.isInteger(guestsCount) || guestsCount < 1)) {
+    return jsonError('Số khách không hợp lệ', 400);
   }
   if (!VALID_ROOM_TYPES.includes(roomType)) {
     return jsonError('Loại phòng không hợp lệ', 400);
