@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Quản lý user — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Quản lý user</h1>
+    <nav>
+      <a href="manager.html">Cấu hình &rarr;</a>
+      <a href="customers.html">Danh sách khách hàng &rarr;</a>
+      <a href="templates.html">Kho template &rarr;</a>
+    </nav>
+
+    <h2>Tạo tài khoản mới</h2>
+    <form id="userForm">
+      <label>Tên đăng nhập <input type="text" name="username" required /></label>
+      <label>Mật khẩu ban đầu <input type="password" name="password" minlength="8" required /></label>
+      <label>Vai trò
+        <select name="role">
+          <option value="reception">Lễ tân</option>
+          <option value="manager">Quản lý</option>
+        </select>
+      </label>
+      <button type="submit">Tạo tài khoản</button>
+      <p id="formError" class="error"></p>
+    </form>
+
+    <h2>Danh sách tài khoản</h2>
+    <p id="listError" class="error"></p>
+    <div class="table-scroll">
+      <table id="userTable">
+        <thead><tr><th>Tên đăng nhập</th><th>Vai trò</th><th>Ngày tạo</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="users.js"></script>
+</body>
+</html>
