@@ -1,5 +1,5 @@
 /* Hiền Lê Garden V3 — Service Worker */
-const CACHE  = 'hlg-v3-1';
+const CACHE  = 'hlg-v3-2';
 const ASSETS = [
   '/',
   '/index.html',
