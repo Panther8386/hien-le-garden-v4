@@ -95,7 +95,7 @@ button {
 button:active { opacity: 0.85; }
 
 .error { color: #ff8a8a; min-height: 1.2em; font-size: 0.9rem; }
-.hidden { display: none; }
+.hidden { display: none !important; }
 
 #result p, #policyForm p, #giftForm p { margin: 8px 0; }
 
