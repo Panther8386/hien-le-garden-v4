@@ -3867,7 +3867,12 @@
       if (new Date(checkOut) <= new Date(checkIn)) return;
 
       const params = new URLSearchParams({ roomType: room, checkIn, checkOut });
-      const response = await fetch(`/api/availability?${params.toString()}`);
+      let response;
+      try {
+        response = await fetch(`/api/availability?${params.toString()}`);
+      } catch (err) {
+        return;
+      }
       if (!response.ok) return;
       const data = await response.json();
 
@@ -3904,11 +3909,17 @@
 
       const guestsCount = guests === '6+' ? 6 : Number(guests);
 
-      const response = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guestName, phone, roomType: room, checkIn, checkOut, guestsCount, notes: notes || undefined }),
-      });
+      let response;
+      try {
+        response = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestName, phone, roomType: room, checkIn, checkOut, guestsCount, notes: notes || undefined }),
+        });
+      } catch (err) {
+        errorEl.textContent = 'Không thể kết nối — vui lòng thử lại.';
+        return;
+      }
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));

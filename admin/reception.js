@@ -46,7 +46,13 @@ async function refreshAll() {
 }
 
 async function fetchBookings(query) {
-  const response = await fetch(`/api/bookings?${query}`);
+  let response;
+  try {
+    response = await fetch(`/api/bookings?${query}`);
+  } catch (err) {
+    showOpsError('Có lỗi khi tải danh sách đặt phòng');
+    return [];
+  }
   if (!response.ok) {
     showOpsError('Có lỗi khi tải danh sách đặt phòng');
     return [];
@@ -148,7 +154,13 @@ async function loadInhouse() {
 }
 
 async function doBookingAction(id, action) {
-  const response = await fetch(`/api/bookings/${id}/${action}`, { method: 'POST' });
+  let response;
+  try {
+    response = await fetch(`/api/bookings/${id}/${action}`, { method: 'POST' });
+  } catch (err) {
+    showOpsError('Có lỗi xảy ra');
+    return;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     showOpsError(body.error || 'Có lỗi xảy ra');
@@ -159,7 +171,13 @@ async function doBookingAction(id, action) {
 }
 
 async function rejectBooking(id) {
-  const response = await fetch(`/api/bookings/${id}/reject`, { method: 'POST' });
+  let response;
+  try {
+    response = await fetch(`/api/bookings/${id}/reject`, { method: 'POST' });
+  } catch (err) {
+    showOpsError('Có lỗi xảy ra');
+    return;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     showOpsError(body.error || 'Có lỗi xảy ra');
@@ -185,7 +203,13 @@ async function loadConfirmRoomOptions(booking) {
   const select = document.getElementById('confirmRoomSelect');
   select.innerHTML = '';
   const params = new URLSearchParams({ roomType: booking.roomType, checkIn: booking.checkIn, checkOut: booking.checkOut });
-  const response = await fetch(`/api/availability?${params.toString()}`);
+  let response;
+  try {
+    response = await fetch(`/api/availability?${params.toString()}`);
+  } catch (err) {
+    document.getElementById('confirmError').textContent = 'Có lỗi khi tải danh sách phòng trống';
+    return;
+  }
   if (!response.ok) {
     document.getElementById('confirmError').textContent = 'Có lỗi khi tải danh sách phòng trống';
     return;
@@ -212,11 +236,17 @@ document.getElementById('confirmSubmitBtn').addEventListener('click', async () =
     errorEl.textContent = 'Vui lòng chọn phòng';
     return;
   }
-  const response = await fetch(`/api/bookings/${confirmingBooking.id}/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ roomId }),
-  });
+  let response;
+  try {
+    response = await fetch(`/api/bookings/${confirmingBooking.id}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId }),
+    });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi xảy ra';
+    return;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi xảy ra';
@@ -228,7 +258,13 @@ document.getElementById('confirmSubmitBtn').addEventListener('click', async () =
 });
 
 async function loadRooms() {
-  const response = await fetch('/api/rooms');
+  let response;
+  try {
+    response = await fetch('/api/rooms');
+  } catch (err) {
+    showOpsError('Có lỗi khi tải trạng thái phòng');
+    return;
+  }
   const container = document.getElementById('roomsGrid');
   if (!response.ok) {
     showOpsError('Có lỗi khi tải trạng thái phòng');
@@ -253,7 +289,13 @@ async function loadRooms() {
       const btn = document.createElement('button');
       btn.textContent = 'Đã dọn xong';
       btn.addEventListener('click', async () => {
-        const cleanResponse = await fetch(`/api/rooms/${r.id}/clean`, { method: 'POST' });
+        let cleanResponse;
+        try {
+          cleanResponse = await fetch(`/api/rooms/${r.id}/clean`, { method: 'POST' });
+        } catch (err) {
+          showOpsError('Có lỗi khi cập nhật trạng thái dọn phòng');
+          return;
+        }
         if (!cleanResponse.ok) {
           showOpsError('Có lỗi khi cập nhật trạng thái dọn phòng');
           return;
@@ -285,7 +327,12 @@ async function refreshNewBookingRoomOptions() {
   }
 
   const params = new URLSearchParams({ roomType, checkIn, checkOut });
-  const response = await fetch(`/api/availability?${params.toString()}`);
+  let response;
+  try {
+    response = await fetch(`/api/availability?${params.toString()}`);
+  } catch (err) {
+    return;
+  }
   if (!response.ok) return;
   const data = await response.json();
 
@@ -321,21 +368,27 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
     return;
   }
 
-  const response = await fetch('/api/bookings/staff', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      guestName: data.get('guestName'),
-      phone: data.get('phone'),
-      roomType: data.get('roomType'),
-      roomId,
-      checkIn: data.get('checkIn'),
-      checkOut: data.get('checkOut'),
-      guestsCount: data.get('guestsCount') ? Number(data.get('guestsCount')) : null,
-      notes: data.get('notes') || null,
-      source: data.get('source'),
-    }),
-  });
+  let response;
+  try {
+    response = await fetch('/api/bookings/staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guestName: data.get('guestName'),
+        phone: data.get('phone'),
+        roomType: data.get('roomType'),
+        roomId,
+        checkIn: data.get('checkIn'),
+        checkOut: data.get('checkOut'),
+        guestsCount: data.get('guestsCount') ? Number(data.get('guestsCount')) : null,
+        notes: data.get('notes') || null,
+        source: data.get('source'),
+      }),
+    });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tạo đặt phòng';
+    return;
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -344,6 +397,7 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
   }
 
   form.reset();
+  refreshNewBookingRoomOptions();
   await refreshAll();
 });
 
