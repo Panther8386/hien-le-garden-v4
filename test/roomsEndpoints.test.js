@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listRooms } from '../functions/api/rooms/index.js';
+import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken;
@@ -56,5 +57,28 @@ describe('GET /api/rooms', () => {
     const response = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
     const body = await response.json();
     expect(body.find((r) => r.id === room.id).status).toBe('needs_cleaning');
+  });
+});
+
+describe('POST /api/rooms/:id/clean', () => {
+  it('clears the needs_cleaning flag', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'bungalow' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1 WHERE id = ?`).bind(room.id).run();
+
+    const response = await cleanRoom({ request: authedRequest(`https://x/api/rooms/${room.id}/clean`, 'POST'), env, params: { id: String(room.id) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT needs_cleaning FROM rooms WHERE id = ?`).bind(room.id).first();
+    expect(row.needs_cleaning).toBe(0);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await cleanRoom({ request: new Request('https://x/api/rooms/1/clean', { method: 'POST' }), env, params: { id: '1' } });
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 404 for a nonexistent room', async () => {
+    const response = await cleanRoom({ request: authedRequest('https://x/api/rooms/999999/clean', 'POST'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
   });
 });
