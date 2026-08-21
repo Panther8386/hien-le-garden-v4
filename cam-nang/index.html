@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cẩm Nang Du Lịch Gia Nghĩa | Hiền Lê Garden</title>
+  <meta name="description" content="Cẩm nang du lịch Gia Nghĩa từ Hiền Lê Garden: điểm tham quan, ẩm thực địa phương và mùa đẹp nhất để đến Tây Nguyên.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-primary: #0D1F14;
+      --bg-secondary: #122019;
+      --bg-card: #162A1C;
+      --text-primary: #F5EFE4;
+      --text-secondary: rgba(245,239,228,0.7);
+      --text-muted: rgba(245,239,228,0.45);
+      --accent-gold: #B4904A;
+      --border-subtle: rgba(245,239,228,0.08);
+      --font-serif: 'Cormorant Garamond', serif;
+      --font-sans: 'Inter', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; line-height: 1.75; }
+
+    .sub-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,31,20,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .sub-nav-logo { font-family: var(--font-serif); font-size: 1.1rem; color: var(--text-primary); text-decoration: none; }
+    .sub-nav-logo span { font-size: 0.65rem; color: var(--accent-gold); letter-spacing: 0.12em; text-transform: uppercase; display: block; }
+    .sub-nav-back { font-size: 0.82rem; color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+    .sub-nav-back:hover { color: var(--accent-gold); }
+
+    .page-hero {
+      position: relative; min-height: 38vh;
+      display: flex; align-items: flex-end;
+      padding: 4rem 2rem 3rem; overflow: hidden;
+    }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../images/gallery-1.jpg'); background-size: cover; background-position: center; }
+    .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.45) 0%, rgba(13,31,20,0.9) 100%); }
+    .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
+    .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
+    .page-hero h1 { font-family: var(--font-serif); font-size: clamp(1.8rem, 4.5vw, 2.8rem); font-weight: 300; line-height: 1.25; }
+    .page-hero .sub { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.75rem; max-width: 52ch; }
+
+    .content-wrap { max-width: 1000px; margin: 0 auto; padding: 3rem 2rem 5rem; }
+
+    .breadcrumb { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 2.5rem; }
+    .breadcrumb a { color: var(--text-muted); text-decoration: none; }
+    .breadcrumb a:hover { color: var(--accent-gold); }
+
+    .lead { font-family: var(--font-serif); font-size: 1.2rem; color: var(--text-secondary); line-height: 1.85; margin-bottom: 3rem; max-width: 62ch; }
+
+    .guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+    @media (max-width: 900px) { .guide-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 620px) { .guide-grid { grid-template-columns: 1fr; } }
+
+    .guide-card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: 12px; overflow: hidden;
+      display: flex; flex-direction: column;
+      text-decoration: none; color: inherit;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .guide-card:hover { border-color: rgba(180,144,74,0.35); transform: translateY(-2px); }
+    .guide-img-wrap { aspect-ratio: 4 / 3; overflow: hidden; }
+    .guide-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .guide-body { padding: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; flex: 1; }
+    .guide-tag { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-gold); }
+    .guide-title { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 400; line-height: 1.35; }
+    .guide-desc { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.7; flex: 1; }
+    .guide-cta { font-size: 0.82rem; color: var(--accent-gold); margin-top: 0.4rem; }
+
+    .sub-footer { border-top: 1px solid var(--border-subtle); padding: 2.5rem 2rem; text-align: center; }
+    .sub-footer p { font-size: 0.82rem; color: var(--text-muted); }
+    .sub-footer a { color: var(--accent-gold); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="sub-nav">
+    <a href="../" class="sub-nav-logo">
+      Hiền Lê Garden
+      <span>Cẩm Nang Du Lịch</span>
+    </a>
+    <a href="../" class="sub-nav-back">← Trang chủ</a>
+  </nav>
+
+  <section class="page-hero">
+    <div class="page-hero-bg"></div>
+    <div class="page-hero-overlay"></div>
+    <div class="page-hero-content">
+      <span class="page-label">Cẩm Nang · Travel Guide</span>
+      <h1>Cẩm Nang Du Lịch Gia Nghĩa</h1>
+      <p class="sub">Những gợi ý từ Hiền Lê Garden để chuyến đi của bạn quanh Gia Nghĩa thêm trọn vẹn — điểm đến, món ăn và thời điểm đẹp nhất để lên đường.</p>
+    </div>
+  </section>
+
+  <div class="content-wrap">
+
+    <div class="breadcrumb">
+      <a href="../">Trang chủ</a> / Cẩm nang
+    </div>
+
+    <p class="lead">Gia Nghĩa nằm giữa cao nguyên đất đỏ Tây Nguyên — nơi có hồ nước, thác, đồi chè và ẩm thực mang hương vị riêng. Dưới đây là những cẩm nang Hiền Lê Garden đã chuẩn bị sẵn cho bạn.</p>
+
+    <div class="guide-grid">
+
+      <a href="10-diem-check-in/" class="guide-card">
+        <div class="guide-img-wrap">
+          <img src="../images/gallery-1.jpg" alt="10 điểm check-in quanh Gia Nghĩa" loading="lazy">
+        </div>
+        <div class="guide-body">
+          <span class="guide-tag">Điểm tham quan</span>
+          <h2 class="guide-title">10 Điểm Check-In Quanh Gia Nghĩa</h2>
+          <p class="guide-desc">Cầu treo Đắk R'Moan, đồi chè sương sớm, thiền viện rừng núi — những điểm dừng chân đáng nhớ quanh Hiền Lê Garden.</p>
+          <span class="guide-cta">Đọc cẩm nang →</span>
+        </div>
+      </a>
+
+      <a href="am-thuc-gia-nghia/" class="guide-card">
+        <div class="guide-img-wrap">
+          <img src="../images/gallery-4.jpg" alt="Ăn gì khi du lịch Gia Nghĩa" loading="lazy">
+        </div>
+        <div class="guide-body">
+          <span class="guide-tag">Ẩm thực</span>
+          <h2 class="guide-title">Ăn Gì Khi Du Lịch Gia Nghĩa</h2>
+          <p class="guide-desc">Canh thụt, cà phê Ban Mê, bánh căn núi lửa — ẩm thực Gia Nghĩa mang hương vị riêng của vùng cao nguyên đất đỏ.</p>
+          <span class="guide-cta">Đọc cẩm nang →</span>
+        </div>
+      </a>
+
+      <a href="du-lich-gia-nghia/" class="guide-card">
+        <div class="guide-img-wrap">
+          <img src="../images/gallery-3.jpg" alt="Mùa đẹp nhất để đến Tây Nguyên" loading="lazy">
+        </div>
+        <div class="guide-body">
+          <span class="guide-tag">Mùa du lịch</span>
+          <h2 class="guide-title">Mùa Đẹp Nhất Để Đến Tây Nguyên</h2>
+          <p class="guide-desc">Sương sớm tháng Mười Một, hoa cà phê tháng Ba hay tiết trời se lạnh cuối năm — mỗi mùa có một lý do riêng để đến.</p>
+          <span class="guide-cta">Đọc cẩm nang →</span>
+        </div>
+      </a>
+
+    </div>
+  </div>
+
+  <footer class="sub-footer">
+    <p>📍 Tổ 7 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng &nbsp;|&nbsp; 📞 <a href="tel:0968987311">0968 987 311</a> &nbsp;|&nbsp; <a href="../">← Trang chủ</a></p>
+  </footer>
+
+</body>
+</html>
