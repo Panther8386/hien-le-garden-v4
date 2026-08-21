@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { getTodaySnapshot } from '../lib/dashboardMetrics.js';
+import { getTodaySnapshot, getMonthSummary } from '../lib/dashboardMetrics.js';
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM bookings');
@@ -63,5 +63,69 @@ describe('getTodaySnapshot', () => {
 
     const snapshot = await getTodaySnapshot(env);
     expect(snapshot.departuresToday).toBe(1);
+  });
+});
+
+describe('getMonthSummary', () => {
+  it('returns zeros for a month with no bookings', async () => {
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.occupancyRate).toBe(0);
+    expect(summary.estimatedRevenueVnd).toBe(0);
+    expect(summary.statusFunnel).toEqual({ pending: 0, confirmed: 0, checked_in: 0, checked_out: 0, cancelled: 0 });
+    expect(summary.sourceBreakdown).toEqual({ website: 0, phone: 0, zalo: 0, walk_in: 0 });
+  });
+
+  it('splits a cross-month booking\'s nights correctly between the two months it overlaps', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-07-30', '2026-08-02', 'confirmed', 'website', '2026-07-01T00:00:00Z')`
+    ).run();
+
+    const july = await getMonthSummary(env, '2026-07');
+    const august = await getMonthSummary(env, '2026-08');
+
+    // circle = 600000 VND/night; stay is Jul30,Jul31,Aug1 = 3 nights total, split 2/1
+    expect(july.estimatedRevenueVnd).toBe(2 * 600000);
+    expect(august.estimatedRevenueVnd).toBe(1 * 600000);
+    expect(july.statusFunnel.confirmed).toBe(1);
+    expect(august.statusFunnel.confirmed).toBe(1);
+  });
+
+  it('excludes pending and cancelled bookings from occupancy and revenue but counts them in the status funnel', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-05', '2026-08-07', 'pending', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('B', '091', 'vip', '2026-08-05', '2026-08-07', 'cancelled', 'phone', '2026-08-01T00:00:00Z')`
+    ).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.occupancyRate).toBe(0);
+    expect(summary.estimatedRevenueVnd).toBe(0);
+    expect(summary.statusFunnel.pending).toBe(1);
+    expect(summary.statusFunnel.cancelled).toBe(1);
+  });
+
+  it('excludes cancelled bookings from source breakdown', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-05', '2026-08-07', 'cancelled', 'zalo', '2026-08-01T00:00:00Z')`
+    ).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.sourceBreakdown.zalo).toBe(0);
+  });
+
+  it('computes occupancy rate as booked room-nights over active-room-nights for the month', async () => {
+    // August 2026 has 31 days, 16 active rooms => 496 room-nights capacity; this booking is 10 nights
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-01', '2026-08-11', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.occupancyRate).toBeCloseTo(10 / (16 * 31), 5);
   });
 });
