@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Danh sách khách hàng — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Danh sách khách hàng</h1>
+    <nav>
+      <a href="manager.html">Cấu hình &rarr;</a>
+      <a href="templates.html">Kho template &rarr;</a>
+      <a href="users.html">Quản lý user &rarr;</a>
+    </nav>
+
+    <div class="filters">
+      <input type="search" id="searchInput" placeholder="Tìm tên / SĐT / mã..." />
+      <select id="statusFilter">
+        <option value="">Tất cả trạng thái</option>
+        <option value="unused">Còn hạn</option>
+        <option value="used">Đã dùng</option>
+        <option value="expired">Hết hạn</option>
+      </select>
+    </div>
+
+    <p id="listError" class="error"></p>
+    <div class="table-scroll">
+      <table id="customerTable">
+        <thead><tr><th>Tên</th><th>SĐT</th><th>Sao</th><th>Mã KM</th><th>Giảm %</th><th>Trạng thái</th><th>Ngày gửi</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button id="prevPage">&larr; Trước</button>
+      <span id="pageInfo"></span>
+      <button id="nextPage">Sau &rarr;</button>
+    </div>
+
+    <div id="detailPanel" class="hidden">
+      <h2>Chi tiết khách hàng</h2>
+      <div id="detailContent"></div>
+      <h2>Gửi tin nhắn</h2>
+      <form id="sendForm">
+        <label>Kênh
+          <select id="sendChannel">
+            <option value="email">Email</option>
+            <option value="telegram">Telegram</option>
+          </select>
+        </label>
+        <label>Template
+          <select id="sendTemplate"></select>
+        </label>
+        <button type="submit">Gửi ngay</button>
+        <p id="sendError" class="error"></p>
+        <p id="sendSuccess" class="error" style="color:#7FD99A;"></p>
+      </form>
+      <h3>Lịch sử gửi tin</h3>
+      <div id="messageHistory"></div>
+    </div>
+  </div>
+
+  <script src="customers.js"></script>
+</body>
+</html>

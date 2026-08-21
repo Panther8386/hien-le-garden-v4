@@ -153,3 +153,34 @@ th { color: var(--gold); font-weight: 600; }
   opacity: 0.8;
   white-space: pre-wrap;
 }
+
+.page-wide {
+  max-width: 900px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.status-unused { background: rgba(120, 200, 140, 0.2); color: #7FD99A; }
+.status-used { background: rgba(200, 200, 200, 0.15); color: #C9C9C9; }
+.status-expired { background: rgba(220, 100, 100, 0.2); color: #ff8a8a; }
+
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filters input, .filters select { width: auto; margin-top: 0; }
+
+.pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+.pagination button { width: auto; padding: 8px 14px; }
