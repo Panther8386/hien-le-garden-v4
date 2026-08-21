@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Tổng quan số liệu — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Tổng quan số liệu</h1>
+    <nav>
+      <a href="reception.html">Vận hành hôm nay &rarr;</a>
+      <a href="manager.html">Cấu hình &rarr;</a>
+      <a href="customers.html">Danh sách khách hàng &rarr;</a>
+      <a href="templates.html">Kho template &rarr;</a>
+      <a href="users.html">Quản lý user &rarr;</a>
+    </nav>
+    <p id="dashboardError" class="error"></p>
+
+    <h2>Hôm nay</h2>
+    <div class="stat-grid" id="todayStats"></div>
+
+    <h2>Theo tháng</h2>
+    <label>Chọn tháng <input type="month" id="monthInput" /></label>
+
+    <div class="stat-grid" id="monthStats"></div>
+
+    <h3>Phễu trạng thái booking</h3>
+    <div class="table-scroll">
+      <table id="funnelTable">
+        <thead><tr><th>Trạng thái</th><th>Số lượng</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h3>Nguồn đặt phòng</h3>
+    <div class="table-scroll">
+      <table id="sourceTable">
+        <thead><tr><th>Nguồn</th><th>Số lượng</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+  <script src="change-password.js"></script>
+</body>
+</html>
