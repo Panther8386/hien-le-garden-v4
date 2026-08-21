@@ -7,6 +7,7 @@
   }
   const { username: currentUsername } = await res.json();
   window.__currentUsername = currentUsername;
+  loadUsers();
 })();
 
 async function loadUsers() {
@@ -106,5 +107,3 @@ document.getElementById('userForm').addEventListener('submit', async (event) => 
   event.target.reset();
   await loadUsers();
 });
-
-loadUsers();

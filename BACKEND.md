@@ -70,3 +70,13 @@ npm run deploy   # wrangler pages deploy .
 ```
 
 Either way, the same domain serves both the static site and `/api/*` — no CORS, no separate backend deployment.
+
+### Applying a new migration to production
+
+Migrations under `migrations/` are **not** applied automatically — `wrangler d1 migrations apply` only runs against `--local` (via the Vitest setup) or when invoked manually against `--remote`. Before merging a branch that adds a migration, apply it to the real database first:
+
+```bash
+wrangler d1 migrations apply hien_le_garden_crm --remote
+```
+
+Do this *before* the merge lands on `main` and triggers the auto-deploy — the live code queries the new tables directly (e.g. `functions/api/feedback.js`'s promo-email send reads `message_templates`), so deploying ahead of the migration breaks guest-facing flows, not just new admin endpoints.
