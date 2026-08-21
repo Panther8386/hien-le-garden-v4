@@ -11,7 +11,7 @@ const ROOM_TYPE_LABELS = {
 };
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 
 function formatDate(d) {
