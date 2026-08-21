@@ -59,7 +59,17 @@ function renderCountTable(tbodySelector, counts, labels) {
   });
 }
 
+function clearSummary() {
+  document.getElementById('todayStats').innerHTML = '';
+  document.getElementById('monthStats').innerHTML = '';
+  document.querySelector('#funnelTable tbody').innerHTML = '';
+  document.querySelector('#sourceTable tbody').innerHTML = '';
+}
+
 function renderSummary(data) {
+  const [year, monthNum] = data.month.split('-');
+  document.getElementById('monthHeading').textContent = `Tháng ${Number(monthNum)}/${year}`;
+
   renderStatCards('todayStats', [
     { label: 'Đang có khách', value: data.today.roomsOccupied },
     { label: 'Cần dọn', value: data.today.roomsNeedCleaning },
@@ -78,10 +88,11 @@ function renderSummary(data) {
 }
 
 async function loadSummary(month) {
+  clearSummary();
   showDashboardError('');
   let response;
   try {
-    response = await fetch(`/api/dashboard/summary?month=${month}`);
+    response = await fetch(`/api/dashboard/summary?month=${encodeURIComponent(month)}`);
   } catch (err) {
     showDashboardError('Không thể kết nối — vui lòng thử lại.');
     return;
@@ -95,8 +106,12 @@ async function loadSummary(month) {
     showDashboardError(body.error || 'Có lỗi khi tải số liệu');
     return;
   }
-  const data = await response.json();
-  renderSummary(data);
+  try {
+    const data = await response.json();
+    renderSummary(data);
+  } catch (err) {
+    showDashboardError('Có lỗi khi tải số liệu');
+  }
 }
 
 (async () => {
