@@ -22,7 +22,7 @@ body {
   margin: 0 auto;
 }
 
-h1, h2 {
+h1, h2, h3 {
   font-family: var(--font-serif);
   color: var(--gold);
   line-height: 1.25;
@@ -52,7 +52,7 @@ label.checkbox {
   gap: 10px;
 }
 
-input, textarea {
+input, textarea, select {
   display: block;
   width: 100%;
   margin-top: 6px;

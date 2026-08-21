@@ -2662,12 +2662,12 @@
         <label>Loại phòng</label>
         <select id="roomType">
           <option value="">-- Chọn loại phòng --</option>
-          <option>Triangle House — 300.000đ/đêm</option>
-          <option>Circle House — 600.000đ/đêm</option>
-          <option>Ê Đê Cozy House — 700.000đ/đêm</option>
-          <option>VIP House — 900.000đ/đêm</option>
-          <option>Bungalow Gia Đình — 700.000đ/đêm</option>
-          <option>Phòng Tập Thể — 1.200.000đ/đêm</option>
+          <option value="triangle">Triangle House — 300.000đ/đêm</option>
+          <option value="circle">Circle House — 600.000đ/đêm</option>
+          <option value="ede_cozy">Ê Đê Cozy House — 700.000đ/đêm</option>
+          <option value="vip">VIP House — 900.000đ/đêm</option>
+          <option value="bungalow">Bungalow Gia Đình — 700.000đ/đêm</option>
+          <option value="dormitory">Phòng Tập Thể — 1.200.000đ/đêm</option>
         </select>
       </div>
       <button class="booking-submit" onclick="handleBooking()">Gửi Yêu Cầu Kiểm Tra Phòng →</button>
@@ -3791,9 +3791,11 @@
     function handleBooking() {
       const checkIn = document.getElementById('checkIn').value;
       const checkOut = document.getElementById('checkOut').value;
+      const roomType = document.getElementById('roomType').value;
       openBookingModal();
       if (checkIn) document.getElementById('bmCheckIn').value = checkIn;
       if (checkOut) document.getElementById('bmCheckOut').value = checkOut;
+      if (roomType) document.getElementById('bmRoom').value = roomType;
     }
 
     // ============================================================
