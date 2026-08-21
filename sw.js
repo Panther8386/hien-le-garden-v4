@@ -29,6 +29,7 @@ self.addEventListener('fetch', e => {
   if (request.url.includes('open-meteo.com')) return;
   if (request.url.includes('maps.google.com')) return;
   if (request.url.includes('googleapis.com/maps')) return;
+  if (request.url.includes('/api/')) return;
 
   e.respondWith(
     caches.match(request).then(cached => {
