@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestPost as confirmBooking } from '../functions/api/bookings/[id]/confirm.js';
 import { onRequestPost as rejectBooking } from '../functions/api/bookings/[id]/reject.js';
 import { onRequestPost as checkInBooking } from '../functions/api/bookings/[id]/check-in.js';
+import { onRequestPost as checkOutBooking } from '../functions/api/bookings/[id]/check-out.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, circleRoomId, otherCircleRoomId, pendingBookingId;
@@ -203,5 +204,43 @@ describe('POST /api/bookings/:id/check-in', () => {
       params: { id: String(pendingBookingId) },
     });
     expect(response.status).toBe(401);
+  });
+});
+
+describe('POST /api/bookings/:id/check-out', () => {
+  it('checks out a checked-in booking and flags its room for cleaning', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
+
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const bookingRow = await env.DB.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    expect(bookingRow.status).toBe('checked_out');
+
+    const roomRow = await env.DB.prepare(`SELECT needs_cleaning FROM rooms WHERE id = ?`).bind(circleRoomId).first();
+    expect(roomRow.needs_cleaning).toBe(1);
+  });
+
+  it('rejects checking out a booking that is not checked in', async () => {
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent booking', async () => {
+    const response = await checkOutBooking({
+      request: authedPost('https://x/api/bookings/999999/check-out', managerToken),
+      env,
+      params: { id: '999999' },
+    });
+    expect(response.status).toBe(404);
   });
 });
