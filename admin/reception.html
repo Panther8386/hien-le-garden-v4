@@ -4,15 +4,76 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Tra cứu mã — Hiền Lê Garden CRM</title>
+  <title>Bảng hôm nay — Hiền Lê Garden CRM</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="admin.css" />
 </head>
 <body>
-  <div class="page">
-    <h1>Tra cứu & đổi mã ưu đãi</h1>
+  <div class="page page-wide">
+    <h1>Bảng hôm nay</h1>
     <nav><a href="manager.html">Cấu hình &rarr;</a> <a href="customers.html">Danh sách khách hàng &rarr;</a></nav>
+    <p id="opsError" class="error"></p>
+
+    <h2>+ Tạo đặt phòng mới</h2>
+    <form id="newBookingForm">
+      <div class="form-row">
+        <label>Họ tên <input type="text" name="guestName" required /></label>
+        <label>Số điện thoại <input type="text" name="phone" required /></label>
+      </div>
+      <div class="form-row">
+        <label>Ngày nhận <input type="date" name="checkIn" required /></label>
+        <label>Ngày trả <input type="date" name="checkOut" required /></label>
+      </div>
+      <div class="form-row">
+        <label>Loại phòng
+          <select name="roomType" required>
+            <option value="">-- Chọn loại phòng --</option>
+            <option value="triangle">Triangle House</option>
+            <option value="circle">Circle House</option>
+            <option value="ede_cozy">Ê Đê Cozy House</option>
+            <option value="vip">VIP House</option>
+            <option value="bungalow">Bungalow Gia Đình</option>
+            <option value="dormitory">Phòng Tập Thể</option>
+          </select>
+        </label>
+        <label>Phòng cụ thể
+          <select name="roomId" id="newBookingRoomId" required>
+            <option value="">-- Chọn ngày và loại phòng trước --</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Số khách <input type="number" name="guestsCount" min="1" /></label>
+        <label>Nguồn
+          <select name="source" required>
+            <option value="phone">Điện thoại</option>
+            <option value="zalo">Zalo</option>
+            <option value="walk_in">Khách vãng lai</option>
+          </select>
+        </label>
+      </div>
+      <label>Ghi chú <textarea name="notes" rows="2"></textarea></label>
+      <button type="submit">Tạo đặt phòng</button>
+      <p id="newBookingError" class="error"></p>
+    </form>
+
+    <h2>Cần xử lý</h2>
+    <div id="pendingList" class="booking-list"></div>
+
+    <h2>Hôm nay</h2>
+    <h3>Khách đến hôm nay</h3>
+    <div id="arrivalsList" class="booking-list"></div>
+    <h3>Khách đi hôm nay</h3>
+    <div id="departuresList" class="booking-list"></div>
+
+    <h2>Đang ở</h2>
+    <div id="inhouseList" class="booking-list"></div>
+
+    <h2>Trạng thái phòng</h2>
+    <div id="roomsGrid" class="rooms-grid"></div>
+
+    <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
     <form id="lookupForm">
       <label>Mã ưu đãi <input type="text" name="code" required autocapitalize="characters" /></label>
       <button type="submit">Tra cứu</button>
@@ -28,6 +89,18 @@
       <button id="claimGiftBtn">Đã phát quà</button>
       <p id="actionError" class="error"></p>
     </section>
+  </div>
+
+  <div id="confirmOverlay" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <h3>Xác nhận đặt phòng</h3>
+      <label>Chọn phòng
+        <select id="confirmRoomSelect"></select>
+      </label>
+      <button id="confirmSubmitBtn">Xác nhận</button>
+      <button id="confirmCancelBtn" class="btn-secondary">Huỷ</button>
+      <p id="confirmError" class="error"></p>
+    </div>
   </div>
 
   <script src="reception.js"></script>

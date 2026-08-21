@@ -184,3 +184,57 @@ th { color: var(--gold); font-weight: 600; }
   align-items: center;
 }
 .pagination button { width: auto; padding: 8px 14px; }
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .form-row { grid-template-columns: 1fr; }
+}
+
+.booking-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.booking-card {
+  background: rgba(245, 240, 230, 0.06);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+}
+.booking-card p { margin: 2px 0; }
+.booking-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.booking-actions button { width: auto; padding: 8px 14px; }
+.booking-empty { opacity: 0.6; font-size: 0.9rem; }
+
+.status-pending { background: rgba(217,166,92,0.2); color: #D9A65C; }
+.status-confirmed { background: rgba(120,200,140,0.2); color: #7FD99A; }
+.status-checked_in { background: rgba(120,160,220,0.2); color: #8FB8E8; }
+.status-checked_out { background: rgba(200,200,200,0.15); color: #C9C9C9; }
+.status-cancelled { background: rgba(220,100,100,0.2); color: #ff8a8a; }
+
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.room-card {
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  border: 1px solid rgba(245, 240, 230, 0.15);
+}
+.room-card .room-name { font-weight: 600; margin-bottom: 4px; }
+.room-empty { background: rgba(120,200,140,0.08); }
+.room-occupied { background: rgba(120,160,220,0.08); }
+.room-needs_cleaning { background: rgba(217,166,92,0.12); }
+.room-card button { margin-top: 8px; width: auto; padding: 6px 10px; font-size: 0.8rem; }
+
+.confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px;
+}
+.confirm-box {
+  background: var(--dark-green); border: 1px solid rgba(245,240,230,0.15);
+  border-radius: 8px; padding: 20px; max-width: 400px; width: 100%;
+}
+.btn-secondary { background: transparent; border: 1px solid rgba(245,240,230,0.3); color: var(--cream); }
