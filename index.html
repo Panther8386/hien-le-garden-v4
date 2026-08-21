@@ -3879,9 +3879,11 @@
       }
     }
 
-    document.getElementById('bmCheckIn').addEventListener('change', updateAvailabilityHint);
-    document.getElementById('bmCheckOut').addEventListener('change', updateAvailabilityHint);
-    document.getElementById('bmRoom').addEventListener('change', updateAvailabilityHint);
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('bmCheckIn').addEventListener('change', updateAvailabilityHint);
+      document.getElementById('bmCheckOut').addEventListener('change', updateAvailabilityHint);
+      document.getElementById('bmRoom').addEventListener('change', updateAvailabilityHint);
+    });
 
     async function submitBooking() {
       const guestName = document.getElementById('bmGuestName').value.trim();
