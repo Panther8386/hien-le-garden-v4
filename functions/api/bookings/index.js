@@ -69,7 +69,7 @@ export async function onRequestGet({ request, env }) {
     conditions.push('check_in = ?');
     params.push(date);
   } else if (date && view === 'departures') {
-    conditions.push('check_out = ?');
+    conditions.push('check_out <= ?');
     params.push(date);
   } else if (date && view === 'inhouse') {
     conditions.push('check_out > ?');

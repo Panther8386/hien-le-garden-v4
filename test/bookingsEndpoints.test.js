@@ -127,6 +127,17 @@ describe('GET /api/bookings', () => {
     expect(body.map((b) => b.guestName)).toEqual(['Leaving Today']);
   });
 
+  it('includes overdue checked-in bookings (check_out before the queried date) in departures', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Overdue Departure', '090', 'circle', ?, ?, 'checked_in', 'website', '2026-08-01T00:00:00Z')`
+    ).bind(yesterday, yesterday).run();
+
+    const response = await listBookings({ request: authedRequest(`https://x/api/bookings?status=checked_in&date=${today}&view=departures`, managerToken), env });
+    const body = await response.json();
+    expect(body.map((b) => b.guestName)).toContain('Overdue Departure');
+  });
+
   it('orders results by check_in ascending', async () => {
     const response = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
     const body = await response.json();
