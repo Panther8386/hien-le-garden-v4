@@ -1,16 +1,9 @@
 // admin/templates.js
-(async () => {
-  const res = await fetch('/api/auth/me');
-  if (!res.ok) {
-    window.location.href = 'login.html';
-  }
-})();
-
 const channelSelect = document.getElementById('channelSelect');
 const subjectLabel = document.getElementById('subjectLabel');
 
 function updateSubjectVisibility() {
-  subjectLabel.hidden = channelSelect.value !== 'email';
+  subjectLabel.classList.toggle('hidden', channelSelect.value !== 'email');
 }
 channelSelect.addEventListener('change', updateSubjectVisibility);
 updateSubjectVisibility();
@@ -29,7 +22,7 @@ function enterEditMode(template) {
   templateForm.body.value = template.body;
   updateSubjectVisibility();
   submitButton.textContent = 'Cập nhật template';
-  document.getElementById('cancelEditBtn').hidden = false;
+  document.getElementById('cancelEditBtn').classList.remove('hidden');
 }
 
 function exitEditMode() {
@@ -37,7 +30,7 @@ function exitEditMode() {
   templateForm.reset();
   updateSubjectVisibility();
   submitButton.textContent = 'Lưu template';
-  document.getElementById('cancelEditBtn').hidden = true;
+  document.getElementById('cancelEditBtn').classList.add('hidden');
 }
 
 document.getElementById('cancelEditBtn').addEventListener('click', exitEditMode);
@@ -59,16 +52,50 @@ async function loadTemplates() {
 
   templatesCache.forEach((t) => {
     const card = document.createElement('div');
-    card.className = 'table-scroll';
-    card.style.marginBottom = '16px';
-    card.innerHTML = `
-      <p><strong>${t.name}</strong> — ${t.channel} — ${t.isActive ? '🟢 Active' : '⚪ Không active'}</p>
-      <p style="font-size:0.85rem; opacity:0.8; white-space:pre-wrap;"></p>
-      <button data-action="edit" data-id="${t.id}">Sửa</button>
-      <button data-action="toggle" data-id="${t.id}" data-active="${t.isActive}">${t.isActive ? 'Tắt active' : 'Đặt làm active'}</button>
-      <button data-action="delete" data-id="${t.id}" ${t.isActive ? 'disabled title="Không thể xoá template đang active"' : ''}>Xoá</button>
-    `;
-    card.querySelector('p:nth-of-type(2)').textContent = t.body;
+    card.className = 'table-scroll template-card';
+
+    const headerPara = document.createElement('p');
+    const nameStrong = document.createElement('strong');
+    nameStrong.textContent = t.name;
+    headerPara.appendChild(nameStrong);
+    headerPara.appendChild(document.createTextNode(' — '));
+    const channelSpan = document.createElement('span');
+    channelSpan.textContent = t.channel;
+    headerPara.appendChild(channelSpan);
+    headerPara.appendChild(document.createTextNode(' — '));
+    const statusSpan = document.createElement('span');
+    statusSpan.textContent = t.isActive ? '🟢 Active' : '⚪ Không active';
+    headerPara.appendChild(statusSpan);
+    card.appendChild(headerPara);
+
+    const bodyPara = document.createElement('p');
+    bodyPara.className = 'template-body';
+    bodyPara.textContent = t.body;
+    card.appendChild(bodyPara);
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Sửa';
+    editBtn.dataset.action = 'edit';
+    editBtn.dataset.id = t.id;
+    card.appendChild(editBtn);
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.textContent = t.isActive ? 'Tắt active' : 'Đặt làm active';
+    toggleBtn.dataset.action = 'toggle';
+    toggleBtn.dataset.id = t.id;
+    toggleBtn.dataset.active = t.isActive;
+    card.appendChild(toggleBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = 'Xoá';
+    deleteBtn.dataset.action = 'delete';
+    deleteBtn.dataset.id = t.id;
+    if (t.isActive) {
+      deleteBtn.disabled = true;
+      deleteBtn.title = 'Không thể xoá template đang active';
+    }
+    card.appendChild(deleteBtn);
+
     container.appendChild(card);
   });
 }
@@ -104,6 +131,7 @@ document.getElementById('templateList').addEventListener('click', async (event) 
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const { action, id, active } = button.dataset;
+  const listError = document.getElementById('listError');
 
   if (action === 'edit') {
     const template = templatesCache.find((t) => String(t.id) === id);
@@ -112,14 +140,31 @@ document.getElementById('templateList').addEventListener('click', async (event) 
 
   if (action === 'toggle') {
     const endpoint = active === 'true' ? `/api/templates/${id}/deactivate` : `/api/templates/${id}/activate`;
-    await fetch(endpoint, { method: 'POST' });
+    const response = await fetch(endpoint, { method: 'POST' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      listError.textContent = body.error || 'Có lỗi khi cập nhật template';
+      return;
+    }
     await loadTemplates();
   }
 
   if (action === 'delete') {
-    await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    const response = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      listError.textContent = body.error || 'Có lỗi khi xoá template';
+      return;
+    }
     await loadTemplates();
   }
 });
 
-loadTemplates();
+(async () => {
+  const res = await fetch('/api/auth/me');
+  if (!res.ok) {
+    window.location.href = 'login.html';
+    return;
+  }
+  loadTemplates();
+})();

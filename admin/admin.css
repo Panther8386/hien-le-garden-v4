@@ -145,3 +145,11 @@ th { color: var(--gold); font-weight: 600; }
   .page { max-width: 640px; }
   h1 { font-size: 1.9rem; }
 }
+
+.template-card { margin-bottom: 16px; }
+
+.template-body {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  white-space: pre-wrap;
+}
