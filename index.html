@@ -1790,6 +1790,21 @@
       color: var(--text-dim);
     }
     .bm-note a { color: var(--accent-gold); font-weight: 500; }
+    .bm-availability {
+      text-align: center;
+      margin-top: 0.75rem;
+      font-size: 0.82rem;
+      color: var(--accent-gold);
+      min-height: 1.2em;
+    }
+    .bm-availability.sold-out { color: #ff8a8a; }
+    .bm-error {
+      text-align: center;
+      margin-top: 0.5rem;
+      font-size: 0.82rem;
+      color: #ff8a8a;
+      min-height: 1.2em;
+    }
     /* Confirm state */
     .bm-confirm { display: none; }
     .bm-confirm.show { display: block; }
@@ -3776,10 +3791,9 @@
     function handleBooking() {
       const checkIn = document.getElementById('checkIn').value;
       const checkOut = document.getElementById('checkOut').value;
-      const room = document.getElementById('roomType').value;
-      if (!room) { alert('Vui lòng chọn loại phòng!'); return; }
-      const msg = `Xin chào! Tôi muốn đặt phòng:\n- Phòng: ${room}\n- Nhận: ${checkIn}\n- Trả: ${checkOut}\nVui lòng xác nhận giúp tôi. Cảm ơn!`;
-      window.open(`https://www.facebook.com/p/Hi%E1%BB%81n-L%C3%AA-Garden-61556329706262/`, '_blank');
+      openBookingModal();
+      if (checkIn) document.getElementById('bmCheckIn').value = checkIn;
+      if (checkOut) document.getElementById('bmCheckOut').value = checkOut;
     }
 
     // ============================================================
@@ -3832,14 +3846,73 @@
       document.getElementById('bmConfirmState').classList.remove('show');
     }
 
-    function submitBooking() {
+    const BM_ROOM_TYPE_NAMES = {
+      triangle: 'Triangle House',
+      circle: 'Circle House',
+      ede_cozy: 'Ê Đê Cozy House',
+      vip: 'VIP House',
+      bungalow: 'Bungalow Gia Đình',
+      dormitory: 'Phòng Tập Thể',
+    };
+
+    async function updateAvailabilityHint() {
+      const checkIn = document.getElementById('bmCheckIn').value;
+      const checkOut = document.getElementById('bmCheckOut').value;
+      const room = document.getElementById('bmRoom').value;
+      const hint = document.getElementById('bmAvailability');
+      hint.textContent = '';
+      hint.classList.remove('sold-out');
+
+      if (!checkIn || !checkOut || !room) return;
+      if (new Date(checkOut) <= new Date(checkIn)) return;
+
+      const params = new URLSearchParams({ roomType: room, checkIn, checkOut });
+      const response = await fetch(`/api/availability?${params.toString()}`);
+      if (!response.ok) return;
+      const data = await response.json();
+
+      if (data.available === 0) {
+        hint.textContent = `Đã hết ${BM_ROOM_TYPE_NAMES[room] || room} trong khoảng ngày này — vui lòng chọn ngày hoặc loại phòng khác.`;
+        hint.classList.add('sold-out');
+      } else {
+        hint.textContent = `Còn ${data.available}/${data.totalRooms} phòng ${BM_ROOM_TYPE_NAMES[room] || room} trống trong khoảng ngày này.`;
+      }
+    }
+
+    document.getElementById('bmCheckIn').addEventListener('change', updateAvailabilityHint);
+    document.getElementById('bmCheckOut').addEventListener('change', updateAvailabilityHint);
+    document.getElementById('bmRoom').addEventListener('change', updateAvailabilityHint);
+
+    async function submitBooking() {
+      const guestName = document.getElementById('bmGuestName').value.trim();
+      const phone = document.getElementById('bmPhone').value.trim();
       const checkIn = document.getElementById('bmCheckIn').value;
       const checkOut = document.getElementById('bmCheckOut').value;
       const guests = document.getElementById('bmGuests').value;
       const room = document.getElementById('bmRoom').value;
+      const notes = document.getElementById('bmNotes').value.trim();
+      const errorEl = document.getElementById('bmSubmitError');
+      errorEl.textContent = '';
 
-      if (!checkIn || !checkOut) { alert('Vui lòng chọn ngày đến và ngày đi.'); return; }
-      if (new Date(checkOut) <= new Date(checkIn)) { alert('Ngày đi phải sau ngày đến.'); return; }
+      if (!guestName) { errorEl.textContent = 'Vui lòng nhập họ tên.'; return; }
+      if (!phone) { errorEl.textContent = 'Vui lòng nhập số điện thoại.'; return; }
+      if (!checkIn || !checkOut) { errorEl.textContent = 'Vui lòng chọn ngày đến và ngày đi.'; return; }
+      if (new Date(checkOut) <= new Date(checkIn)) { errorEl.textContent = 'Ngày đi phải sau ngày đến.'; return; }
+      if (!room) { errorEl.textContent = 'Vui lòng chọn loại phòng.'; return; }
+
+      const guestsCount = guests === '6+' ? 6 : Number(guests);
+
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestName, phone, roomType: room, checkIn, checkOut, guestsCount, notes: notes || undefined }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        errorEl.textContent = body.error || 'Có lỗi khi gửi yêu cầu, vui lòng thử lại.';
+        return;
+      }
 
       const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);
       const fmt = s => new Date(s).toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit', year:'numeric'});
@@ -3848,8 +3921,8 @@
         ['Ngày đến', fmt(checkIn)],
         ['Ngày đi', fmt(checkOut)],
         ['Số đêm', nights + ' đêm'],
-        ['Số người', guests + (guests === '6+' ? ' người' : ' người')],
-        ['Loại phòng', room || 'Chưa chọn'],
+        ['Số người', guests + ' người'],
+        ['Loại phòng', BM_ROOM_TYPE_NAMES[room] || room],
       ];
 
       document.getElementById('bmSummary').innerHTML = rows.map(([k,v]) =>
@@ -4253,6 +4326,14 @@
       <!-- FORM STATE -->
       <div class="bm-body bm-form-state" id="bmFormState">
         <div class="bm-grid">
+          <div class="bm-field full">
+            <label for="bmGuestName">Họ tên</label>
+            <input type="text" id="bmGuestName" name="guestName" required>
+          </div>
+          <div class="bm-field full">
+            <label for="bmPhone">Số điện thoại</label>
+            <input type="tel" id="bmPhone" name="phone" required>
+          </div>
           <div class="bm-field">
             <label for="bmCheckIn">Ngày đến</label>
             <input type="date" id="bmCheckIn" name="checkin">
@@ -4276,23 +4357,30 @@
             <label for="bmRoom">Loại phòng</label>
             <select id="bmRoom" name="room">
               <option value="">-- Chọn loại phòng --</option>
-              <option value="Triangle House">🔺 Triangle House</option>
-              <option value="Circle House">⭕ Circle House</option>
-              <option value="Ede Cozy Room">🌿 Ede Cozy Room</option>
-              <option value="VIP House">⭐ VIP House</option>
-              <option value="Bungalow">🏡 Bungalow</option>
-              <option value="Dormitory">🛏 Dormitory</option>
+              <option value="triangle">🔺 Triangle House</option>
+              <option value="circle">⭕ Circle House</option>
+              <option value="ede_cozy">🌿 Ê Đê Cozy House</option>
+              <option value="vip">⭐ VIP House</option>
+              <option value="bungalow">🏡 Bungalow Gia Đình</option>
+              <option value="dormitory">🛏 Phòng Tập Thể</option>
             </select>
           </div>
+          <div class="bm-field full">
+            <label for="bmNotes">Ghi chú (không bắt buộc)</label>
+            <input type="text" id="bmNotes" name="notes">
+          </div>
         </div>
+        <p class="bm-availability" id="bmAvailability"></p>
         <button class="bm-submit" onclick="submitBooking()">Gửi Yêu Cầu Kiểm Tra Phòng →</button>
+        <p class="bm-error" id="bmSubmitError"></p>
         <p class="bm-note">Hỗ trợ đặt phòng qua <a href="tel:0968987311">Điện thoại</a> hoặc <a href="https://zalo.me/0968987311" target="_blank" rel="noopener">Zalo</a></p>
       </div>
 
       <!-- CONFIRM STATE -->
       <div class="bm-body bm-confirm" id="bmConfirmState">
         <div class="bm-summary" id="bmSummary"></div>
-        <p class="bm-contact-title">Liên hệ để xác nhận đặt phòng</p>
+        <p class="bm-contact-title">Yêu cầu đã được gửi — Hiền Lê Garden sẽ liên hệ xác nhận trong 24h qua số điện thoại bạn cung cấp.</p>
+        <p class="bm-note">Hoặc liên hệ ngay nếu cần gấp:</p>
         <div class="bm-contact-btns">
           <a href="tel:0968987311" class="bm-contact-btn bm-btn-call">📞 Gọi ngay</a>
           <a href="https://zalo.me/0968987311" class="bm-contact-btn bm-btn-zalo" target="_blank" rel="noopener">💬 Nhắn Zalo</a>
