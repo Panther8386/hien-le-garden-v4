@@ -10,8 +10,25 @@ export async function onRequestPost({ request, env }) {
       return new Response('ok', { status: 200 });
     }
 
-    const feedbackId = message.text.replace('/start ', '').trim();
+    const payload = message.text.replace('/start ', '').trim();
     const chatId = String(message.chat.id);
+
+    if (payload === 'staff_booking_notify') {
+      const existing = await env.DB.prepare(`SELECT id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
+      if (existing) {
+        await env.DB.prepare(`UPDATE notification_settings SET booking_notify_chat_id = ?, updated_at = ? WHERE id = ?`)
+          .bind(chatId, new Date().toISOString(), existing.id)
+          .run();
+      } else {
+        await env.DB.prepare(`INSERT INTO notification_settings (booking_notify_chat_id, updated_at) VALUES (?, ?)`)
+          .bind(chatId, new Date().toISOString())
+          .run();
+      }
+      await sendTelegramMessage(env, { chatId, text: '✅ Đã kết nối nhận thông báo yêu cầu đặt phòng mới từ Hiền Lê Garden.' });
+      return new Response('ok', { status: 200 });
+    }
+
+    const feedbackId = payload;
 
     const row = await env.DB.prepare(
       `SELECT guest_name, promo_code, discount_percent, promo_expires_at, gift_offered

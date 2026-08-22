@@ -4,6 +4,7 @@ import { onRequestPost as webhook } from '../functions/api/telegram/webhook.js';
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM feedback_responses');
+  await env.DB.exec('DELETE FROM notification_settings');
   await env.DB.prepare(
     `INSERT INTO feedback_responses
      (id, submitted_at, guest_name, phone, wants_telegram, rating, consent_given,
@@ -60,4 +61,38 @@ describe('POST /api/telegram/webhook', () => {
     expect(row?.telegram_chat_id).toBeNull();
   });
 
+  it('registers the staff booking-notification chat id on /start staff_booking_notify, without touching feedback_responses', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const update = { message: { chat: { id: 555 }, text: '/start staff_booking_notify' } };
+    const request = new Request('https://crm.hienlegarden.vn/api/telegram/webhook', {
+      method: 'POST',
+      body: JSON.stringify(update),
+    });
+    const response = await webhook({ request, env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
+    expect(row.booking_notify_chat_id).toBe('555');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // does not fall through to the guest feedback lookup/update
+    const feedbackRow = await env.DB.prepare(`SELECT telegram_chat_id FROM feedback_responses WHERE id = 'fb-1'`).first();
+    expect(feedbackRow.telegram_chat_id).toBeNull();
+  });
+
+  it('re-registering staff_booking_notify updates the existing chat id rather than adding a second row', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+
+    const first = { message: { chat: { id: 555 }, text: '/start staff_booking_notify' } };
+    await webhook({ request: new Request('https://crm.hienlegarden.vn/api/telegram/webhook', { method: 'POST', body: JSON.stringify(first) }), env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+
+    const second = { message: { chat: { id: 666 }, text: '/start staff_booking_notify' } };
+    await webhook({ request: new Request('https://crm.hienlegarden.vn/api/telegram/webhook', { method: 'POST', body: JSON.stringify(second) }), env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+
+    const { results } = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings`).all();
+    expect(results).toHaveLength(1);
+    expect(results[0].booking_notify_chat_id).toBe('666');
+  });
 });

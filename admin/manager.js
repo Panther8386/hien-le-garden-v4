@@ -79,6 +79,23 @@ async function loadGiftInventory() {
   }
 }
 
+async function loadNotifySettings() {
+  const statusEl = document.getElementById('notifyStatus');
+  let response;
+  try {
+    response = await fetch('/api/notification-settings');
+  } catch (err) {
+    statusEl.textContent = 'Có lỗi khi tải trạng thái kết nối';
+    return;
+  }
+  if (!response.ok) {
+    statusEl.textContent = 'Có lỗi khi tải trạng thái kết nối';
+    return;
+  }
+  const data = await response.json();
+  statusEl.textContent = data.connected ? '✅ Đã kết nối' : 'Chưa kết nối';
+}
+
 document.getElementById('policyForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
@@ -141,6 +158,8 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
     document.getElementById('policyForm').classList.remove('hidden');
     document.getElementById('policyDeleteHeader').classList.remove('hidden');
     document.getElementById('giftInventorySection').classList.remove('hidden');
+    document.getElementById('notifySettingsSection').classList.remove('hidden');
+    loadNotifySettings();
   }
 
   loadPolicies();

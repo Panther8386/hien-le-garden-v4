@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
+import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -62,6 +63,22 @@ export async function onRequestPost({ request, env }) {
   )
     .bind(guestName.trim(), phone.trim(), email || null, roomType, checkIn, checkOut, guestsCount || null, notes || null, now)
     .run();
+
+  const notifySetting = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
+  if (notifySetting) {
+    const lines = [
+      '🆕 *Yêu cầu đặt phòng mới*',
+      '',
+      `Khách: ${escapeMarkdown(guestName.trim())}`,
+      `SĐT: ${escapeMarkdown(phone.trim())}`,
+      `Loại phòng: ${escapeMarkdown(ROOM_TYPES[roomType].label)}`,
+      `Nhận phòng: ${checkIn}`,
+      `Trả phòng: ${checkOut}`,
+      `Số khách: ${guestsCount || 'Chưa rõ'}`,
+      `Ghi chú: ${notes ? escapeMarkdown(notes) : 'Không có'}`,
+    ];
+    await sendTelegramMessage(env, { chatId: notifySetting.booking_notify_chat_id, text: lines.join('\n') });
+  }
 
   return new Response(JSON.stringify({ id: result.meta.last_row_id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

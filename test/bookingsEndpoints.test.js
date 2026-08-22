@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as createBooking, onRequestGet as listBookings } from '../functions/api/bookings/index.js';
 import { createSession } from '../lib/auth.js';
@@ -9,6 +9,7 @@ beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
   await env.DB.exec('DELETE FROM bookings');
+  await env.DB.exec('DELETE FROM notification_settings');
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
@@ -33,6 +34,45 @@ describe('POST /api/bookings', () => {
 
     const row = await env.DB.prepare(`SELECT status, source, room_id FROM bookings WHERE id = ?`).bind(body.id).first();
     expect(row).toEqual({ status: 'pending', source: 'website', room_id: null });
+  });
+
+  it('does not attempt a Telegram send when no notification chat id is configured', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await createBooking({ request: postReq('https://x/api/bookings', validBody), env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+    expect(response.status).toBe(201);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a Telegram notification with the booking details when a chat id is configured', async () => {
+    await env.DB.prepare(`INSERT INTO notification_settings (booking_notify_chat_id, updated_at) VALUES ('555', '2026-08-01T00:00:00Z')`).run();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await createBooking({ request: postReq('https://x/api/bookings', validBody), env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+    expect(response.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.telegram.org/bottest-token/sendMessage');
+    const sentBody = JSON.parse(options.body);
+    expect(sentBody.chat_id).toBe('555');
+    expect(sentBody.text).toContain('Nguyễn Văn A');
+    expect(sentBody.text).toContain('0900000001');
+    expect(sentBody.text).toContain('Circle House');
+    expect(sentBody.text).toContain('2099-01-01');
+    expect(sentBody.text).toContain('2099-01-03');
+  });
+
+  it('still creates the booking (201) even if the Telegram send fails', async () => {
+    await env.DB.prepare(`INSERT INTO notification_settings (booking_notify_chat_id, updated_at) VALUES ('555', '2026-08-01T00:00:00Z')`).run();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    const response = await createBooking({ request: postReq('https://x/api/bookings', validBody), env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.id).toBeTypeOf('number');
   });
 
   it('rejects a missing guest name', async () => {
