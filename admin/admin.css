@@ -277,7 +277,7 @@ body.has-nav-drawer { padding-top: 68px; }
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  z-index: 90;
+  z-index: 200;
 }
 .nav-brand {
   font-family: var(--font-serif);
@@ -299,7 +299,7 @@ body.has-nav-drawer { padding-top: 68px; }
 .nav-drawer-overlay {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 95;
+  z-index: 205;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -313,7 +313,7 @@ body.has-nav-drawer { padding-top: 68px; }
   max-width: 85vw;
   background: var(--dark-green);
   border-left: 1px solid rgba(245, 240, 230, 0.15);
-  z-index: 96;
+  z-index: 206;
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
