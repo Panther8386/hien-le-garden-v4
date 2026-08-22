@@ -92,9 +92,9 @@ function buildDrawer(role, username) {
   const footerLinks = document.createElement('div');
   footerLinks.className = 'nav-drawer-footer-links';
   const changePasswordLink = document.createElement('a');
-  changePasswordLink.href = '#changePasswordForm';
+  changePasswordLink.href = 'change-password.html';
   changePasswordLink.textContent = 'Đổi mật khẩu';
-  changePasswordLink.addEventListener('click', closeDrawer);
+  if (page === 'change-password.html') changePasswordLink.className = 'active';
   const logoutLink = document.createElement('a');
   logoutLink.href = '#';
   logoutLink.textContent = 'Đăng xuất';

@@ -2,7 +2,6 @@
 function mountChangePasswordWidget() {
   const container = document.createElement('div');
   container.innerHTML = `
-    <h2>Đổi mật khẩu</h2>
     <form id="changePasswordForm">
       <label>Mật khẩu hiện tại <input type="password" name="currentPassword" required /></label>
       <label>Mật khẩu mới <input type="password" name="newPassword" minlength="8" required /></label>
@@ -45,4 +44,16 @@ function mountChangePasswordWidget() {
   });
 }
 
-mountChangePasswordWidget();
+(async () => {
+  let res;
+  try {
+    res = await fetch('/api/auth/me');
+  } catch (err) {
+    return;
+  }
+  if (!res.ok) {
+    window.location.href = 'login.html';
+    return;
+  }
+  mountChangePasswordWidget();
+})();

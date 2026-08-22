@@ -386,3 +386,4 @@ body.has-nav-drawer { padding-top: 68px; }
   opacity: 0.85;
 }
 .nav-drawer-footer-links a:hover { opacity: 1; color: var(--gold); }
+.nav-drawer-footer-links a.active { opacity: 1; color: var(--gold); font-weight: 600; }
