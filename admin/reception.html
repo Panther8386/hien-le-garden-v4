@@ -96,9 +96,17 @@
   <div id="confirmOverlay" class="confirm-overlay hidden">
     <div class="confirm-box">
       <h3>Xác nhận đặt phòng</h3>
+      <p>Khách cần nhiều phòng? Chọn từng phòng rồi bấm "+ Thêm phòng".</p>
+      <label>Loại phòng
+        <select id="confirmRoomType"></select>
+      </label>
       <label>Chọn phòng
         <select id="confirmRoomSelect"></select>
       </label>
+      <button type="button" id="confirmAddRoomBtn" class="btn-secondary">+ Thêm phòng</button>
+
+      <div id="confirmSelectedRooms" class="booking-list"></div>
+
       <button id="confirmSubmitBtn">Xác nhận</button>
       <button id="confirmCancelBtn" class="btn-secondary">Huỷ</button>
       <p id="confirmError" class="error"></p>

@@ -7,7 +7,7 @@ import { onRequestPost as checkOutBooking } from '../functions/api/bookings/[id]
 import { onRequestPost as cancelBooking } from '../functions/api/bookings/[id]/cancel.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken, circleRoomId, otherCircleRoomId, pendingBookingId;
+let managerToken, receptionToken, circleRoomId, otherCircleRoomId, vipRoomId, pendingBookingId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -23,6 +23,8 @@ beforeEach(async () => {
   const rooms = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'circle' ORDER BY id LIMIT 2`).all();
   circleRoomId = rooms.results[0].id;
   otherCircleRoomId = rooms.results[1].id;
+  const vipRoom = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'vip' ORDER BY id LIMIT 1`).first();
+  vipRoomId = vipRoom.id;
 
   const inserted = await env.DB.prepare(
     `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
@@ -42,7 +44,7 @@ function authedPost(url, token, body) {
 describe('POST /api/bookings/:id/confirm', () => {
   it('confirms a pending booking and assigns the chosen room', async () => {
     const response = await confirmBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -54,7 +56,7 @@ describe('POST /api/bookings/:id/confirm', () => {
 
   it('lets a reception account confirm too', async () => {
     const response = await confirmBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, receptionToken, { roomId: circleRoomId }),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, receptionToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -63,7 +65,7 @@ describe('POST /api/bookings/:id/confirm', () => {
 
   it('rejects unauthenticated requests', async () => {
     const response = await confirmBooking({
-      request: new Request(`https://x/api/bookings/${pendingBookingId}/confirm`, { method: 'POST', body: JSON.stringify({ roomId: circleRoomId }) }),
+      request: new Request(`https://x/api/bookings/${pendingBookingId}/confirm`, { method: 'POST', body: JSON.stringify({ rooms: [{ roomType: 'circle', roomId: circleRoomId }] }) }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -72,7 +74,7 @@ describe('POST /api/bookings/:id/confirm', () => {
 
   it('returns 404 for a nonexistent booking', async () => {
     const response = await confirmBooking({
-      request: authedPost('https://x/api/bookings/999999/confirm', managerToken, { roomId: circleRoomId }),
+      request: authedPost('https://x/api/bookings/999999/confirm', managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }),
       env,
       params: { id: '999999' },
     });
@@ -80,9 +82,9 @@ describe('POST /api/bookings/:id/confirm', () => {
   });
 
   it('rejects confirming a booking that is not pending', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
     const response = await confirmBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: otherCircleRoomId }),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: otherCircleRoomId }] }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -96,20 +98,96 @@ describe('POST /api/bookings/:id/confirm', () => {
     ).bind(circleRoomId).run();
 
     const response = await confirmBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }),
       env,
       params: { id: String(pendingBookingId) },
     });
     expect(response.status).toBe(409);
   });
 
-  it('rejects a missing roomId with 400 instead of crashing', async () => {
+  it('rejects a missing rooms array with 400 instead of crashing', async () => {
     const response = await confirmBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, {}),
       env,
       params: { id: String(pendingBookingId) },
     });
     expect(response.status).toBe(400);
+  });
+
+  it('rejects an empty rooms array', async () => {
+    const response = await confirmBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [] }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a room entry with an invalid roomType', async () => {
+    const response = await confirmBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'deluxe', roomId: circleRoomId }] }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects duplicate room ids in the same request', async () => {
+    const response = await confirmBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }, { roomType: 'circle', roomId: circleRoomId }] }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('confirms a request into multiple rooms across different types (a group booking), creating one booking per extra room', async () => {
+    const response = await confirmBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, {
+        rooms: [
+          { roomType: 'circle', roomId: circleRoomId },
+          { roomType: 'circle', roomId: otherCircleRoomId },
+          { roomType: 'vip', roomId: vipRoomId },
+        ],
+      }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const original = await env.DB.prepare(`SELECT status, room_type, room_id, confirmed_by FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    expect(original).toEqual({ status: 'confirmed', room_type: 'circle', room_id: circleRoomId, confirmed_by: 'quan_ly_a' });
+
+    const { results: all } = await env.DB.prepare(`SELECT room_id, room_type, status, guest_name, phone, check_in, check_out FROM bookings ORDER BY id`).all();
+    expect(all).toHaveLength(3);
+    expect(all.every((b) => b.status === 'confirmed')).toBe(true);
+    expect(all.every((b) => b.guest_name === 'Nguyễn Văn A' && b.phone === '0900000001')).toBe(true);
+    expect(all.every((b) => b.check_in === '2099-01-01' && b.check_out === '2099-01-03')).toBe(true);
+    expect(new Set(all.map((b) => b.room_id))).toEqual(new Set([circleRoomId, otherCircleRoomId, vipRoomId]));
+  });
+
+  it('rejects the whole multi-room confirm if any one room has a conflict, leaving the original still pending', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('Khác', '090', 'vip', ?, '2099-01-01', '2099-01-03', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).bind(vipRoomId).run();
+
+    const response = await confirmBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, {
+        rooms: [
+          { roomType: 'circle', roomId: circleRoomId },
+          { roomType: 'vip', roomId: vipRoomId },
+        ],
+      }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(409);
+
+    const original = await env.DB.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    expect(original.status).toBe('pending');
+    const { results: all } = await env.DB.prepare(`SELECT id FROM bookings`).all();
+    expect(all).toHaveLength(2); // the original pending + the pre-existing "Khác" booking -- no partial rows created
   });
 });
 
@@ -147,7 +225,7 @@ describe('POST /api/bookings/:id/reject', () => {
   });
 
   it('rejects rejecting a booking that is not pending', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
     const response = await rejectBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/reject`, managerToken),
       env,
@@ -168,7 +246,7 @@ describe('POST /api/bookings/:id/reject', () => {
 
 describe('POST /api/bookings/:id/check-in', () => {
   it('checks in a confirmed booking', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
 
     const response = await checkInBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken),
@@ -210,7 +288,7 @@ describe('POST /api/bookings/:id/check-in', () => {
 
 describe('POST /api/bookings/:id/cancel', () => {
   it('cancels a confirmed booking', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
 
     const response = await cancelBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken),
@@ -224,7 +302,7 @@ describe('POST /api/bookings/:id/cancel', () => {
   });
 
   it('accepts an optional reason', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
 
     const response = await cancelBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken, { reason: 'Khách đổi lịch' }),
@@ -237,7 +315,7 @@ describe('POST /api/bookings/:id/cancel', () => {
   });
 
   it('lets a reception account cancel too', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
 
     const response = await cancelBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, receptionToken),
@@ -257,7 +335,7 @@ describe('POST /api/bookings/:id/cancel', () => {
   });
 
   it('rejects cancelling a booking that is already checked in', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
     await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
 
     const response = await cancelBooking({
@@ -289,7 +367,7 @@ describe('POST /api/bookings/:id/cancel', () => {
 
 describe('POST /api/bookings/:id/check-out', () => {
   it('checks out a checked-in booking and flags its room for cleaning', async () => {
-    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
     await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
 
     const response = await checkOutBooking({

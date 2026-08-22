@@ -226,22 +226,38 @@ async function cancelBooking(id) {
   await refreshAll();
 }
 
+let selectedConfirmRooms = [];
+
 function openConfirmDialog(booking) {
   confirmingBooking = booking;
+  selectedConfirmRooms = [];
   document.getElementById('confirmError').textContent = '';
   document.getElementById('confirmOverlay').classList.remove('hidden');
-  loadConfirmRoomOptions(booking);
+  renderSelectedConfirmRooms();
+
+  const typeSelect = document.getElementById('confirmRoomType');
+  typeSelect.innerHTML = '';
+  Object.entries(ROOM_TYPE_LABELS).forEach(([value, label]) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    typeSelect.appendChild(opt);
+  });
+  typeSelect.value = booking.roomType;
+
+  loadConfirmRoomOptions(booking, typeSelect.value);
 }
 
 function closeConfirmDialog() {
   confirmingBooking = null;
+  selectedConfirmRooms = [];
   document.getElementById('confirmOverlay').classList.add('hidden');
 }
 
-async function loadConfirmRoomOptions(booking) {
+async function loadConfirmRoomOptions(booking, roomType) {
   const select = document.getElementById('confirmRoomSelect');
   select.innerHTML = '';
-  const params = new URLSearchParams({ roomType: booking.roomType, checkIn: booking.checkIn, checkOut: booking.checkOut });
+  const params = new URLSearchParams({ roomType, checkIn: booking.checkIn, checkOut: booking.checkOut });
   let response;
   try {
     response = await fetch(`/api/availability?${params.toString()}`);
@@ -254,11 +270,13 @@ async function loadConfirmRoomOptions(booking) {
     return;
   }
   const data = await response.json();
-  if (data.availableRooms.length === 0) {
+  const alreadySelectedIds = new Set(selectedConfirmRooms.map((r) => r.roomId));
+  const remaining = data.availableRooms.filter((r) => !alreadySelectedIds.has(r.id));
+  if (remaining.length === 0) {
     document.getElementById('confirmError').textContent = 'Không còn phòng trống loại này trong khoảng ngày yêu cầu.';
     return;
   }
-  data.availableRooms.forEach((r) => {
+  remaining.forEach((r) => {
     const opt = document.createElement('option');
     opt.value = r.id;
     opt.textContent = r.name;
@@ -266,21 +284,74 @@ async function loadConfirmRoomOptions(booking) {
   });
 }
 
+function renderSelectedConfirmRooms() {
+  const container = document.getElementById('confirmSelectedRooms');
+  container.innerHTML = '';
+  selectedConfirmRooms.forEach((r, index) => {
+    const row = document.createElement('div');
+    row.className = 'booking-card';
+    const label = document.createElement('span');
+    label.textContent = `${ROOM_TYPE_LABELS[r.roomType] || r.roomType} — ${r.roomName}`;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = 'Bỏ';
+    removeBtn.className = 'btn-secondary';
+    removeBtn.addEventListener('click', () => {
+      selectedConfirmRooms.splice(index, 1);
+      renderSelectedConfirmRooms();
+      loadConfirmRoomOptions(confirmingBooking, document.getElementById('confirmRoomType').value);
+    });
+    row.appendChild(label);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+  });
+}
+
+document.getElementById('confirmRoomType').addEventListener('change', (event) => {
+  if (confirmingBooking) loadConfirmRoomOptions(confirmingBooking, event.target.value);
+});
+
+document.getElementById('confirmAddRoomBtn').addEventListener('click', () => {
+  const typeSelect = document.getElementById('confirmRoomType');
+  const roomSelect = document.getElementById('confirmRoomSelect');
+  const roomId = Number(roomSelect.value);
+  const errorEl = document.getElementById('confirmError');
+  if (!roomId) {
+    errorEl.textContent = 'Vui lòng chọn phòng trước khi thêm';
+    return;
+  }
+  errorEl.textContent = '';
+  const roomName = roomSelect.options[roomSelect.selectedIndex].textContent;
+  selectedConfirmRooms.push({ roomType: typeSelect.value, roomId, roomName });
+  renderSelectedConfirmRooms();
+  loadConfirmRoomOptions(confirmingBooking, typeSelect.value);
+});
+
 document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirmDialog);
 
 document.getElementById('confirmSubmitBtn').addEventListener('click', async () => {
-  const roomId = Number(document.getElementById('confirmRoomSelect').value);
   const errorEl = document.getElementById('confirmError');
-  if (!roomId) {
-    errorEl.textContent = 'Vui lòng chọn phòng';
-    return;
+  errorEl.textContent = '';
+
+  let rooms = selectedConfirmRooms.map((r) => ({ roomType: r.roomType, roomId: r.roomId }));
+
+  // Fast path: nothing added via "+ Thêm phòng" yet -- use whatever's currently picked in the dropdowns.
+  if (rooms.length === 0) {
+    const roomSelect = document.getElementById('confirmRoomSelect');
+    const roomId = Number(roomSelect.value);
+    if (!roomId) {
+      errorEl.textContent = 'Vui lòng chọn ít nhất một phòng';
+      return;
+    }
+    rooms = [{ roomType: document.getElementById('confirmRoomType').value, roomId }];
   }
+
   let response;
   try {
     response = await fetch(`/api/bookings/${confirmingBooking.id}/confirm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomId }),
+      body: JSON.stringify({ rooms }),
     });
   } catch (err) {
     errorEl.textContent = 'Có lỗi xảy ra';
