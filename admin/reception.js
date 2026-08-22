@@ -42,7 +42,7 @@ function showOpsError(message) {
 })();
 
 async function refreshAll() {
-  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadInhouse(), loadRooms()]);
+  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadRooms()]);
 }
 
 async function fetchBookings(query) {
@@ -135,6 +135,25 @@ async function loadArrivals() {
     btn.textContent = 'Check-in';
     btn.addEventListener('click', () => doBookingAction(b.id, 'check-in'));
     actions.appendChild(btn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Hủy đặt phòng';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.addEventListener('click', () => cancelBooking(b.id));
+    actions.appendChild(cancelBtn);
+  });
+}
+
+async function loadUpcomingConfirmed() {
+  const bookings = await fetchBookings('status=confirmed');
+  const today = todayISO();
+  const upcoming = bookings.filter((b) => b.checkIn !== today);
+  renderList('upcomingConfirmedList', upcoming, 'Không có đặt phòng đã xác nhận sắp tới.', (actions, b) => {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Hủy đặt phòng';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.addEventListener('click', () => cancelBooking(b.id));
+    actions.appendChild(cancelBtn);
   });
 }
 
@@ -185,6 +204,23 @@ async function rejectBooking(id) {
   }
   showOpsError('');
   await loadPending();
+}
+
+async function cancelBooking(id) {
+  let response;
+  try {
+    response = await fetch(`/api/bookings/${id}/cancel`, { method: 'POST' });
+  } catch (err) {
+    showOpsError('Có lỗi xảy ra');
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    showOpsError(body.error || 'Có lỗi xảy ra');
+    return;
+  }
+  showOpsError('');
+  await refreshAll();
 }
 
 function openConfirmDialog(booking) {

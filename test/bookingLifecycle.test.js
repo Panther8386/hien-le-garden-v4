@@ -4,6 +4,7 @@ import { onRequestPost as confirmBooking } from '../functions/api/bookings/[id]/
 import { onRequestPost as rejectBooking } from '../functions/api/bookings/[id]/reject.js';
 import { onRequestPost as checkInBooking } from '../functions/api/bookings/[id]/check-in.js';
 import { onRequestPost as checkOutBooking } from '../functions/api/bookings/[id]/check-out.js';
+import { onRequestPost as cancelBooking } from '../functions/api/bookings/[id]/cancel.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, circleRoomId, otherCircleRoomId, pendingBookingId;
@@ -204,6 +205,85 @@ describe('POST /api/bookings/:id/check-in', () => {
       params: { id: String(pendingBookingId) },
     });
     expect(response.status).toBe(401);
+  });
+});
+
+describe('POST /api/bookings/:id/cancel', () => {
+  it('cancels a confirmed booking', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    expect(row.status).toBe('cancelled');
+  });
+
+  it('accepts an optional reason', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken, { reason: 'Khách đổi lịch' }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT cancel_reason FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    expect(row.cancel_reason).toBe('Khách đổi lịch');
+  });
+
+  it('lets a reception account cancel too', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, receptionToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects cancelling a booking that is still pending', async () => {
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects cancelling a booking that is already checked in', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { roomId: circleRoomId }), env, params: { id: String(pendingBookingId) } });
+    await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await cancelBooking({
+      request: new Request(`https://x/api/bookings/${pendingBookingId}/cancel`, { method: 'POST' }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 404 for a nonexistent booking', async () => {
+    const response = await cancelBooking({
+      request: authedPost('https://x/api/bookings/999999/cancel', managerToken),
+      env,
+      params: { id: '999999' },
+    });
+    expect(response.status).toBe(404);
   });
 });
 
