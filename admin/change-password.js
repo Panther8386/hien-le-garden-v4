@@ -6,6 +6,7 @@ function mountChangePasswordWidget() {
     <form id="changePasswordForm">
       <label>Mật khẩu hiện tại <input type="password" name="currentPassword" required /></label>
       <label>Mật khẩu mới <input type="password" name="newPassword" minlength="8" required /></label>
+      <label>Gõ lại mật khẩu mới <input type="password" name="confirmNewPassword" minlength="8" required /></label>
       <button type="submit">Đổi mật khẩu</button>
       <p id="changePasswordError" class="error"></p>
       <p id="changePasswordSuccess" class="error" style="color:#7FD99A;"></p>
@@ -21,10 +22,16 @@ function mountChangePasswordWidget() {
     errorEl.textContent = '';
     successEl.textContent = '';
 
+    const newPassword = data.get('newPassword');
+    if (newPassword !== data.get('confirmNewPassword')) {
+      errorEl.textContent = 'Mật khẩu mới nhập lại không khớp';
+      return;
+    }
+
     const response = await fetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentPassword: data.get('currentPassword'), newPassword: data.get('newPassword') }),
+      body: JSON.stringify({ currentPassword: data.get('currentPassword'), newPassword }),
     });
 
     if (!response.ok) {
