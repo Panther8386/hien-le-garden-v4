@@ -1,5 +1,5 @@
 /* Hiền Lê Garden V3 — Service Worker */
-const CACHE  = 'hlg-v3-2';
+const CACHE  = 'hlg-v3-3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -30,6 +30,7 @@ self.addEventListener('fetch', e => {
   if (request.url.includes('maps.google.com')) return;
   if (request.url.includes('googleapis.com/maps')) return;
   if (request.url.includes('/api/')) return;
+  if (new URL(request.url).pathname.startsWith('/admin/')) return;
 
   e.respondWith(
     caches.match(request).then(cached => {
