@@ -57,6 +57,11 @@ describe('POST /api/bookings/staff', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a checkIn with a time component instead of a plain YYYY-MM-DD date', async () => {
+    const response = await staffCreateBooking({ request: authedPost('https://x/api/bookings/staff', managerToken, { ...validBody(), checkIn: '2099-01-01T12:00:00Z' }), env });
+    expect(response.status).toBe(400);
+  });
+
   it('returns 409 when the room is already booked for overlapping dates', async () => {
     await staffCreateBooking({ request: authedPost('https://x/api/bookings/staff', managerToken, validBody()), env });
     const response = await staffCreateBooking({ request: authedPost('https://x/api/bookings/staff', managerToken, { ...validBody(), guestName: 'Someone Else' }), env });

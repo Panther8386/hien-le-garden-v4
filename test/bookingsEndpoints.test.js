@@ -60,6 +60,11 @@ describe('POST /api/bookings', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a checkIn with a time component instead of a plain YYYY-MM-DD date', async () => {
+    const response = await createBooking({ request: postReq('https://x/api/bookings', { ...validBody, checkIn: '2099-01-01T12:00:00Z' }), env });
+    expect(response.status).toBe(400);
+  });
+
   it('rejects a malformed JSON body with 400 instead of crashing', async () => {
     const request = new Request('https://x/api/bookings', { method: 'POST', body: 'not json' });
     const response = await createBooking({ request, env });

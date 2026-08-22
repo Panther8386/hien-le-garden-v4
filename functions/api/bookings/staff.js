@@ -9,6 +9,7 @@ function jsonError(message, status) {
 const VALID_ROOM_TYPES = Object.keys(ROOM_TYPES);
 const VALID_SOURCES = ['phone', 'zalo', 'walk_in'];
 const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function onRequestPost({ request, env }) {
   const auth = await requireAuth(request, env, ['reception', 'manager']);
@@ -54,7 +55,7 @@ export async function onRequestPost({ request, env }) {
   if (!Number.isInteger(roomId)) {
     return jsonError('Vui lòng chọn phòng cụ thể', 400);
   }
-  if (typeof checkIn !== 'string' || typeof checkOut !== 'string' || isNaN(Date.parse(checkIn)) || isNaN(Date.parse(checkOut))) {
+  if (typeof checkIn !== 'string' || typeof checkOut !== 'string' || !DATE_FORMAT.test(checkIn) || !DATE_FORMAT.test(checkOut) || isNaN(Date.parse(checkIn)) || isNaN(Date.parse(checkOut))) {
     return jsonError('Ngày không hợp lệ', 400);
   }
   if (checkOut <= checkIn) {
