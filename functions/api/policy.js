@@ -60,3 +60,21 @@ export async function onRequestGet({ request, env }) {
 
   return new Response(JSON.stringify(coercedResults), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
+
+export async function onRequestDelete({ request, env, params }) {
+  const auth = await requireAuth(request, env, ['manager']);
+  if (auth instanceof Response) return auth;
+
+  const existing = await env.DB.prepare(`SELECT is_active, valid_from, valid_to FROM promo_policy WHERE id = ?`).bind(params.id).first();
+  if (!existing) {
+    return jsonError('Không tìm thấy chương trình khuyến mãi', 404);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (existing.is_active && existing.valid_from <= today && existing.valid_to >= today) {
+    return jsonError('Không thể xoá chương trình đang áp dụng cho hôm nay', 400);
+  }
+
+  await env.DB.prepare(`DELETE FROM promo_policy WHERE id = ?`).bind(params.id).run();
+  return new Response(null, { status: 204 });
+}

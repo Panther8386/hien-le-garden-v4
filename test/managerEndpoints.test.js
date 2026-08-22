@@ -1,7 +1,7 @@
 // crm/test/managerEndpoints.test.js
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { onRequestPost as createPolicy, onRequestGet as listPolicy } from '../functions/api/policy.js';
+import { onRequestPost as createPolicy, onRequestGet as listPolicy, onRequestDelete as deletePolicy } from '../functions/api/policy.js';
 import { onRequestPost as setGiftStock, onRequestGet as getGiftStock } from '../functions/api/gift-inventory.js';
 import { createSession } from '../lib/auth.js';
 
@@ -104,6 +104,43 @@ describe('GET /api/policy', () => {
     expect(body[0].giftEnabled).toBe(true);
     expect(typeof body[0].isActive).toBe('boolean');
     expect(typeof body[0].giftEnabled).toBe('boolean');
+  });
+});
+
+describe('DELETE /api/policy/:id', () => {
+  it('lets a manager delete a past policy', async () => {
+    const createResponse = await createPolicy({ request: authedRequest('https://x/api/policy', managerToken, 'POST', { discountPercent: 20, validFrom: '2020-01-01', validTo: '2020-01-31', giftEnabled: false }), env });
+    await createResponse.json();
+    const { results } = await env.DB.prepare(`SELECT id FROM promo_policy ORDER BY id DESC LIMIT 1`).all();
+    const id = results[0].id;
+
+    const response = await deletePolicy({ request: authedRequest(`https://x/api/policy/${id}`, managerToken, 'DELETE'), env, params: { id: String(id) } });
+    expect(response.status).toBe(204);
+
+    const row = await env.DB.prepare(`SELECT id FROM promo_policy WHERE id = ?`).bind(id).first();
+    expect(row).toBeNull();
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const response = await deletePolicy({ request: authedRequest('https://x/api/policy/1', receptionToken, 'DELETE'), env, params: { id: '1' } });
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 404 for a nonexistent policy', async () => {
+    const response = await deletePolicy({ request: authedRequest('https://x/api/policy/999999', managerToken, 'DELETE'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects deleting a policy currently governing today (400)', async () => {
+    await createPolicy({ request: authedRequest('https://x/api/policy', managerToken, 'POST', { discountPercent: 20, validFrom: '2026-01-01', validTo: '2099-12-31', giftEnabled: false }), env });
+    const { results } = await env.DB.prepare(`SELECT id FROM promo_policy ORDER BY id DESC LIMIT 1`).all();
+    const id = results[0].id;
+
+    const response = await deletePolicy({ request: authedRequest(`https://x/api/policy/${id}`, managerToken, 'DELETE'), env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+
+    const row = await env.DB.prepare(`SELECT id FROM promo_policy WHERE id = ?`).bind(id).first();
+    expect(row).not.toBeNull();
   });
 });
 

@@ -1,4 +1,6 @@
 // crm/public/admin/manager.js
+let currentRole = null;
+
 async function loadPolicies() {
   const response = await fetch('/api/policy');
   const errorEl = document.getElementById('policyLoadError');
@@ -32,8 +34,38 @@ async function loadPolicies() {
     tr.appendChild(tdFrom);
     tr.appendChild(tdTo);
     tr.appendChild(tdGift);
+
+    if (currentRole === 'manager') {
+      const tdDelete = document.createElement('td');
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Xoá';
+      deleteBtn.className = 'btn-secondary';
+      deleteBtn.addEventListener('click', () => deletePolicy(p.id));
+      tdDelete.appendChild(deleteBtn);
+      tr.appendChild(tdDelete);
+    }
+
     tbody.appendChild(tr);
   });
+}
+
+async function deletePolicy(id) {
+  const errorEl = document.getElementById('policyLoadError');
+  errorEl.textContent = '';
+
+  let response;
+  try {
+    response = await fetch(`/api/policy/${id}`, { method: 'DELETE' });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi xoá chương trình';
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi xoá chương trình';
+    return;
+  }
+  await loadPolicies();
 }
 
 async function loadGiftInventory() {
@@ -102,6 +134,15 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
     window.location.href = 'login.html';
     return;
   }
+  const { role } = await res.json();
+  currentRole = role;
+
+  if (currentRole === 'manager') {
+    document.getElementById('policyForm').classList.remove('hidden');
+    document.getElementById('policyDeleteHeader').classList.remove('hidden');
+    document.getElementById('giftInventorySection').classList.remove('hidden');
+  }
+
   loadPolicies();
   loadGiftInventory();
 })();
