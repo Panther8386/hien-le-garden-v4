@@ -131,6 +131,17 @@ function buildDrawer(role, username) {
   });
 }
 
+// Admin pages must never run against a stale cached build. Browsers only
+// auto-check for a new service worker script at most once every 24h, which
+// is too slow while this admin section is under active development -- force
+// an immediate check on every load so a fix like the /admin/ cache
+// exclusion itself propagates on the very next visit, not up to a day later.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistration().then((reg) => {
+    if (reg) reg.update();
+  }).catch(() => {});
+}
+
 (async () => {
   let res;
   try {
