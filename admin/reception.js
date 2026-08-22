@@ -1,5 +1,6 @@
 // admin/reception.js
 let confirmingBooking = null;
+let currentRole = null;
 
 const ROOM_TYPE_LABELS = {
   triangle: 'Triangle House',
@@ -38,6 +39,8 @@ function showOpsError(message) {
     window.location.href = 'login.html';
     return;
   }
+  const { role } = await res.json();
+  currentRole = role;
   await refreshAll();
 })();
 
@@ -311,6 +314,11 @@ async function loadRooms() {
   rooms.forEach((r) => {
     const card = document.createElement('div');
     card.className = `room-card room-${r.status}`;
+    card.dataset.roomId = r.id;
+    if (currentRole === 'manager') {
+      card.classList.add('room-draggable');
+      card.style.touchAction = 'none';
+    }
 
     const nameEl = document.createElement('div');
     nameEl.className = 'room-name';
@@ -344,6 +352,80 @@ async function loadRooms() {
 
     container.appendChild(card);
   });
+
+  if (currentRole === 'manager') {
+    enableRoomDragAndDrop(container);
+  }
+}
+
+let draggedRoomCard = null;
+
+function enableRoomDragAndDrop(container) {
+  container.onpointerdown = (event) => {
+    const card = event.target.closest('.room-card');
+    if (!card || event.target.closest('button')) return;
+
+    draggedRoomCard = card;
+    card.classList.add('room-dragging');
+    card.setPointerCapture(event.pointerId);
+
+    container.onpointermove = (moveEvent) => {
+      if (!draggedRoomCard) return;
+      const cards = [...container.querySelectorAll('.room-card')];
+      const draggedIndex = cards.indexOf(draggedRoomCard);
+      let closest = null;
+      let closestDistance = Infinity;
+      cards.forEach((c) => {
+        if (c === draggedRoomCard) return;
+        const box = c.getBoundingClientRect();
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        const distance = Math.hypot(moveEvent.clientX - cx, moveEvent.clientY - cy);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = c;
+        }
+      });
+      if (!closest) return;
+      const closestIndex = cards.indexOf(closest);
+      if (closestIndex < draggedIndex) {
+        container.insertBefore(draggedRoomCard, closest);
+      } else {
+        container.insertBefore(draggedRoomCard, closest.nextSibling);
+      }
+    };
+
+    container.onpointerup = async () => {
+      container.onpointermove = null;
+      container.onpointerup = null;
+      if (draggedRoomCard) {
+        draggedRoomCard.classList.remove('room-dragging');
+        draggedRoomCard = null;
+      }
+      const orderedIds = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
+      await saveRoomOrder(orderedIds);
+    };
+  };
+}
+
+async function saveRoomOrder(orderedIds) {
+  let response;
+  try {
+    response = await fetch('/api/rooms/reorder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: orderedIds }),
+    });
+  } catch (err) {
+    showOpsError('Có lỗi khi lưu thứ tự phòng');
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    showOpsError(body.error || 'Có lỗi khi lưu thứ tự phòng');
+    return;
+  }
+  showOpsError('');
 }
 
 async function refreshNewBookingRoomOptions() {

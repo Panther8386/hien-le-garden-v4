@@ -227,6 +227,8 @@ th { color: var(--gold); font-weight: 600; }
 .room-empty { background: rgba(120,200,140,0.08); }
 .room-occupied { background: rgba(120,160,220,0.08); }
 .room-needs_cleaning { background: rgba(217,166,92,0.12); }
+.room-draggable { cursor: grab; user-select: none; }
+.room-dragging { cursor: grabbing; opacity: 0.6; border-color: var(--gold); }
 .room-card button { margin-top: 8px; width: auto; padding: 6px 10px; font-size: 0.8rem; }
 
 .confirm-overlay {

@@ -5,7 +5,7 @@ export async function onRequestGet({ request, env }) {
   if (auth instanceof Response) return auth;
 
   const { results: rooms } = await env.DB.prepare(
-    `SELECT id, name, room_type AS roomType, needs_cleaning AS needsCleaning FROM rooms WHERE is_active = 1 ORDER BY room_type, name`
+    `SELECT id, name, room_type AS roomType, needs_cleaning AS needsCleaning FROM rooms WHERE is_active = 1 ORDER BY display_order, id`
   ).all();
 
   const { results: occupiedRows } = await env.DB.prepare(
