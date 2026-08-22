@@ -128,4 +128,31 @@ describe('getMonthSummary', () => {
     const summary = await getMonthSummary(env, '2026-08');
     expect(summary.occupancyRate).toBeCloseTo(10 / (16 * 31), 5);
   });
+
+  it('counts the full month of nights for a booking that starts before and ends after the queried month', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'triangle', '2026-07-15', '2026-09-15', 'confirmed', 'website', '2026-07-01T00:00:00Z')`
+    ).run();
+
+    // triangle = 300000 VND/night; August 2026 has 31 days, all of which fall inside the stay
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.estimatedRevenueVnd).toBe(31 * 300000);
+    expect(summary.occupancyRate).toBeCloseTo(31 / (16 * 31), 5);
+  });
+
+  it('correctly rolls over the month boundary from December to January', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-12-20', '2027-01-05', 'confirmed', 'website', '2026-12-01T00:00:00Z')`
+    ).run();
+
+    // circle = 600000 VND/night; December's share is Dec20..Dec31 = 12 nights
+    const december = await getMonthSummary(env, '2026-12');
+    expect(december.estimatedRevenueVnd).toBe(12 * 600000);
+
+    // January's share is Jan1..Jan5 = 4 nights
+    const january = await getMonthSummary(env, '2027-01');
+    expect(january.estimatedRevenueVnd).toBe(4 * 600000);
+  });
 });
