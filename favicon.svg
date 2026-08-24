@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Hiền Lê Garden favicon</title>
+  <desc id="desc">A forest green HL garden monogram with a sprouting leaf on a warm cream background.</desc>
+  <rect width="512" height="512" rx="86" fill="#F7F3E8"/>
+
+  <!-- Monogram base -->
+  <path fill="#1F5E3B" d="M111 148h83v30h-18v185h18v30h-83v-30h18V178h-18z"/>
+  <path fill="#1F5E3B" d="M164 253h130v48H164z"/>
+  <path fill="#1F5E3B" d="M262 198h83v30h-18v135h90v30H262v-30h18V228h-18z"/>
+
+  <!-- Garden stem -->
+  <path d="M137 368C177 297 225 237 293 190C319 172 345 159 376 150" fill="none" stroke="#1F5E3B" stroke-width="26" stroke-linecap="round"/>
+  <path d="M151 353C188 288 236 229 304 181" fill="none" stroke="#F7F3E8" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Leaf -->
+  <path fill="#1F5E3B" d="M337 123C379 102 412 95 425 99C425 144 402 187 366 207C331 226 294 219 274 201C287 167 305 139 337 123z"/>
+  <path d="M306 191C337 165 365 145 408 107" fill="none" stroke="#F7F3E8" stroke-width="10" stroke-linecap="round"/>
+</svg>
