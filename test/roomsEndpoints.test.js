@@ -5,7 +5,7 @@ import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken, adminToken, observerToken;
+let managerToken, receptionToken, adminToken, observerToken, layoutToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -17,10 +17,12 @@ beforeEach(async () => {
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, can_manage_room_layout, created_at) VALUES (5, 'le_tan_b', 'x', 'reception', 1, '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
   adminToken = await createSession(env.DB, 3);
   observerToken = await createSession(env.DB, 4);
+  layoutToken = await createSession(env.DB, 5);
 });
 
 function authedRequest(url, method = 'GET') {
@@ -159,7 +161,7 @@ describe('PATCH /api/rooms/reorder', () => {
     const ids = rooms.map((r) => r.id);
     const reversed = [...ids].reverse();
 
-    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: reversed }), env });
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: reversed }), env });
     expect(response.status).toBe(200);
 
     const listResponse = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
@@ -167,15 +169,28 @@ describe('PATCH /api/rooms/reorder', () => {
     expect(body.map((r) => r.id)).toEqual(reversed);
   });
 
-  it('lets an admin reorder rooms', async () => {
-    const results = await listRooms({ request: authedRequest('https://x/api/rooms'), env }).then((r) => r.json());
-    const ids = results.map((r) => r.id).reverse();
-    const request = authedBody('https://x/api/rooms/reorder', adminToken, 'PATCH', { order: ids });
-    const response = await reorderRooms({ request, env, params: {} });
+  it('rejects a manager without the layout flag (403)', async () => {
+    const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: rooms.map((r) => r.id) }), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets a reception account with the layout flag reorder', async () => {
+    const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
+    const reversed = rooms.map((r) => r.id).reverse();
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: reversed }), env });
     expect(response.status).toBe(200);
   });
 
-  it('rejects a reception account (403)', async () => {
+  it('logs a room_layout_log row on a successful reorder', async () => {
+    const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
+    const reversed = rooms.map((r) => r.id).reverse();
+    await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: reversed }), env });
+    const row = await env.DB.prepare(`SELECT changed_by FROM room_layout_log ORDER BY id DESC LIMIT 1`).first();
+    expect(row.changed_by).toBe('le_tan_b');
+  });
+
+  it('rejects a reception account without the layout flag (403)', async () => {
     const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
     const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', receptionToken, 'PATCH', { order: rooms.map((r) => r.id) }), env });
     expect(response.status).toBe(403);
@@ -189,7 +204,7 @@ describe('PATCH /api/rooms/reorder', () => {
   it('rejects an order missing a room (400)', async () => {
     const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
     const incomplete = rooms.slice(1).map((r) => r.id);
-    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: incomplete }), env });
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: incomplete }), env });
     expect(response.status).toBe(400);
   });
 
@@ -197,7 +212,7 @@ describe('PATCH /api/rooms/reorder', () => {
     const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
     const ids = rooms.map((r) => r.id);
     const withDuplicate = [...ids.slice(1), ids[0], ids[0]];
-    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: withDuplicate }), env });
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: withDuplicate }), env });
     expect(response.status).toBe(400);
   });
 
@@ -205,19 +220,19 @@ describe('PATCH /api/rooms/reorder', () => {
     const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
     const ids = rooms.map((r) => r.id);
     const withUnknown = [...ids.slice(1), 999999];
-    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: withUnknown }), env });
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: withUnknown }), env });
     expect(response.status).toBe(400);
   });
 
   it('rejects a non-array order (400)', async () => {
-    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', managerToken, 'PATCH', { order: 'not-an-array' }), env });
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', layoutToken, 'PATCH', { order: 'not-an-array' }), env });
     expect(response.status).toBe(400);
   });
 
   it('rejects a malformed JSON body with 400 instead of crashing', async () => {
     const request = new Request('https://x/api/rooms/reorder', {
       method: 'PATCH',
-      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: `session=${layoutToken}`, 'Content-Type': 'application/json' },
       body: 'not json',
     });
     const response = await reorderRooms({ request, env });
