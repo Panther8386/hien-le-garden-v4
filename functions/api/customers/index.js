@@ -2,7 +2,7 @@ import { requireAuth } from '../../../lib/requireAuth.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -54,6 +54,13 @@ export async function onRequestGet({ request, env }) {
   const total = mapped.length;
   const start = (page - 1) * pageSize;
   const pageResults = mapped.slice(start, start + pageSize);
+
+  if (auth.role === 'observer') {
+    pageResults.forEach((r) => {
+      r.phone = null;
+      r.email = null;
+    });
+  }
 
   return new Response(JSON.stringify({ results: pageResults, total, page, pageSize }), {
     status: 200,

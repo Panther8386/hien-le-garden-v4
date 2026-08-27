@@ -4,6 +4,7 @@ import { onRequestPost as createBooking, onRequestGet as listBookings } from '..
 import { createSession } from '../lib/auth.js';
 
 let managerToken;
+let observerToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -13,6 +14,9 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  observerToken = await createSession(env.DB, 2);
 });
 
 function postReq(url, body) {
@@ -187,5 +191,11 @@ describe('GET /api/bookings', () => {
     const response = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
     const body = await response.json();
     expect(body.map((b) => b.guestName)).toEqual(['Leaving Today', 'Arriving Today', 'Pending Guest']);
+  });
+
+  it('lets an observer list bookings', async () => {
+    const request = authedRequest('https://x/api/bookings', observerToken);
+    const response = await listBookings({ request, env });
+    expect(response.status).toBe(200);
   });
 });

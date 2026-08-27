@@ -5,7 +5,7 @@ import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken, adminToken;
+let managerToken, receptionToken, adminToken, observerToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -16,9 +16,11 @@ beforeEach(async () => {
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
   adminToken = await createSession(env.DB, 3);
+  observerToken = await createSession(env.DB, 4);
 });
 
 function authedRequest(url, method = 'GET') {
@@ -70,6 +72,12 @@ describe('GET /api/rooms', () => {
     const response = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
     const body = await response.json();
     expect(body.find((r) => r.id === room.id).status).toBe('needs_cleaning');
+  });
+
+  it('lets an observer view rooms', async () => {
+    const request = new Request('https://x/api/rooms', { headers: { Cookie: `session=${observerToken}` } });
+    const response = await listRooms({ request, env });
+    expect(response.status).toBe(200);
   });
 });
 

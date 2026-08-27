@@ -5,6 +5,7 @@ import { createSession } from '../lib/auth.js';
 
 let managerToken;
 let receptionToken;
+let observerToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -17,6 +18,9 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   receptionToken = await createSession(env.DB, 2);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  observerToken = await createSession(env.DB, 3);
 });
 
 function authedRequest(url, token) {
@@ -62,5 +66,10 @@ describe('GET /api/dashboard/summary', () => {
   it('rejects a malformed month param with 400', async () => {
     const response = await getSummary({ request: authedRequest('https://x/api/dashboard/summary?month=August', managerToken), env });
     expect(response.status).toBe(400);
+  });
+
+  it('lets an observer view the summary', async () => {
+    const response = await getSummary({ request: authedRequest('https://x/api/dashboard/summary', observerToken), env });
+    expect(response.status).toBe(200);
   });
 });

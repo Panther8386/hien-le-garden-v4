@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
   if (auth instanceof Response) return auth;
 
   const { results: rooms } = await env.DB.prepare(

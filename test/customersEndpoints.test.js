@@ -4,6 +4,7 @@ import { onRequestGet as listCustomers } from '../functions/api/customers/index.
 import { createSession } from '../lib/auth.js';
 
 let managerToken;
+let observerToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -12,6 +13,9 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  observerToken = await createSession(env.DB, 2);
 
   await env.DB.prepare(
     `INSERT INTO feedback_responses (id, submitted_at, guest_name, phone, email, wants_telegram, telegram_chat_id, rating, consent_given, promo_code, discount_percent, promo_expires_at, promo_status, gift_offered, gift_claimed)
@@ -29,6 +33,10 @@ beforeEach(async () => {
 
 function authedRequest(url, method = 'GET') {
   return new Request(url, { method, headers: { Cookie: `session=${managerToken}` } });
+}
+
+function authedRequestAs(url, token, method = 'GET') {
+  return new Request(url, { method, headers: { Cookie: `session=${token}` } });
 }
 
 describe('GET /api/customers', () => {
@@ -79,5 +87,19 @@ describe('GET /api/customers', () => {
     expect(body.total).toBe(3);
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(2);
+  });
+});
+
+describe('GET /api/customers as observer', () => {
+  it('redacts phone and email but keeps every other field', async () => {
+    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers', observerToken), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.results.length).toBeGreaterThan(0);
+    body.results.forEach((r) => {
+      expect(r.phone).toBeNull();
+      expect(r.email).toBeNull();
+      expect(r.guestName).not.toBeNull();
+    });
   });
 });
