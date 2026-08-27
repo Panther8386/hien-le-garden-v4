@@ -33,19 +33,26 @@ function showOpsError(message) {
   document.getElementById('opsError').textContent = message || '';
 }
 
+let canManageRoomLayout = false;
+
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
+  const { role, canManageRoomLayout: layoutFlag } = await res.json();
   currentRole = role;
+  canManageRoomLayout = !!layoutFlag;
   if (currentRole === 'observer') {
     document.getElementById('newBookingSection').classList.add('hidden');
     document.getElementById('promoLookupSection').classList.add('hidden');
   }
+  document.getElementById('roomDateFilter').value = todayISO();
+  document.getElementById('roomDateFilter').addEventListener('change', loadRooms);
+  document.getElementById('roomStatusFilter').addEventListener('change', applyRoomStatusFilter);
   await refreshAll();
+  await loadLayoutHistory();
 })();
 
 async function refreshAll() {
@@ -94,6 +101,49 @@ function renderBookingCard(b) {
   badge.textContent = statusLabel(b.status);
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
+
+  if ((b.status === 'pending' || b.status === 'confirmed') && currentRole !== 'observer') {
+    const depositLine = document.createElement('p');
+    const depositInput = document.createElement('input');
+    depositInput.type = 'number';
+    depositInput.min = '0';
+    depositInput.step = '1000';
+    depositInput.value = b.depositAmount || 0;
+    depositInput.style.width = '120px';
+    const depositBtn = document.createElement('button');
+    depositBtn.type = 'button';
+    depositBtn.textContent = 'Lưu cọc';
+    depositBtn.className = 'btn-secondary';
+    depositBtn.addEventListener('click', async () => {
+      const amount = Number(depositInput.value);
+      if (!Number.isInteger(amount) || amount < 0) {
+        showOpsError('Số tiền cọc phải là số nguyên không âm');
+        return;
+      }
+      let response;
+      try {
+        response = await fetch(`/api/bookings/${b.id}/deposit`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ depositAmount: amount }),
+        });
+      } catch (err) {
+        showOpsError('Có lỗi khi lưu tiền cọc');
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        showOpsError(body.error || 'Có lỗi khi lưu tiền cọc');
+        return;
+      }
+      showOpsError('');
+    });
+    depositLine.appendChild(document.createTextNode('Cọc: '));
+    depositLine.appendChild(depositInput);
+    depositLine.appendChild(document.createTextNode(' đ '));
+    depositLine.appendChild(depositBtn);
+    card.appendChild(depositLine);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'booking-actions';
@@ -375,26 +425,50 @@ document.getElementById('confirmSubmitBtn').addEventListener('click', async () =
   await refreshAll();
 });
 
+let currentRoomsData = [];
+
 async function loadRooms() {
+  const date = document.getElementById('roomDateFilter').value || todayISO();
   let response;
   try {
-    response = await fetch('/api/rooms');
+    response = await fetch(`/api/rooms?date=${date}`);
   } catch (err) {
     showOpsError('Có lỗi khi tải trạng thái phòng');
     return;
   }
-  const container = document.getElementById('roomsGrid');
   if (!response.ok) {
     showOpsError('Có lỗi khi tải trạng thái phòng');
     return;
   }
-  const rooms = await response.json();
+  currentRoomsData = await response.json();
+  renderRoomsGrid();
+}
+
+const ROOM_STATUS_LABELS = {
+  empty: 'Trống',
+  booked: 'Đã có khách đặt',
+  booked_deposited: 'Đã đặt & có cọc',
+  occupied: 'Đang có khách',
+  used: 'Đã sử dụng',
+  needs_cleaning: 'Cần dọn',
+};
+
+let roomOrderDirty = false;
+
+function renderRoomsGrid() {
+  const container = document.getElementById('roomsGrid');
+  const statusFilter = document.getElementById('roomStatusFilter').value;
+  const dateFilter = document.getElementById('roomDateFilter').value || todayISO();
+  const isToday = dateFilter === todayISO();
   container.innerHTML = '';
-  rooms.forEach((r) => {
+
+  const visible = statusFilter ? currentRoomsData.filter((r) => r.status === statusFilter) : currentRoomsData;
+
+  visible.forEach((r) => {
     const card = document.createElement('div');
     card.className = `room-card room-${r.status}`;
     card.dataset.roomId = r.id;
-    if (currentRole === 'manager') {
+    if (canManageRoomLayout && isToday) {
       card.classList.add('room-draggable');
       card.style.touchAction = 'none';
     }
@@ -405,10 +479,17 @@ async function loadRooms() {
     card.appendChild(nameEl);
 
     const statusEl = document.createElement('div');
-    statusEl.textContent = { empty: 'Trống', occupied: 'Đang có khách', needs_cleaning: 'Cần dọn' }[r.status] || r.status;
+    statusEl.textContent = ROOM_STATUS_LABELS[r.status] || r.status;
+    if (isToday && r.needsCleaning) {
+      const badge = document.createElement('span');
+      badge.className = 'room-needs-cleaning-badge';
+      badge.title = 'Cần dọn';
+      badge.textContent = '🧹';
+      statusEl.appendChild(badge);
+    }
     card.appendChild(statusEl);
 
-    if (r.status === 'needs_cleaning' && currentRole !== 'observer') {
+    if (isToday && r.needsCleaning && currentRole !== 'observer') {
       const btn = document.createElement('button');
       btn.textContent = 'Đã dọn xong';
       btn.addEventListener('click', async () => {
@@ -432,15 +513,45 @@ async function loadRooms() {
     container.appendChild(card);
   });
 
-  if (currentRole === 'manager') {
+  roomOrderDirty = false;
+  document.getElementById('saveRoomOrderBtn').classList.add('hidden');
+
+  if (canManageRoomLayout && isToday) {
     enableRoomDragAndDrop(container);
   }
+}
+
+function applyRoomStatusFilter() {
+  renderRoomsGrid();
+}
+
+async function loadLayoutHistory() {
+  let response;
+  try {
+    response = await fetch('/api/rooms/layout-log?limit=5');
+  } catch (err) {
+    return;
+  }
+  if (!response.ok) return;
+  const entries = await response.json();
+  const container = document.getElementById('roomLayoutHistory');
+  container.innerHTML = '';
+  if (entries.length === 0) return;
+  const title = document.createElement('p');
+  title.innerHTML = '<strong>Lịch sử sắp xếp gần đây</strong>';
+  container.appendChild(title);
+  entries.forEach((e) => {
+    const p = document.createElement('p');
+    p.textContent = `${e.changedBy} đã cập nhật bố cục — ${new Date(e.changedAt).toLocaleString('vi-VN')}`;
+    container.appendChild(p);
+  });
 }
 
 let draggedRoomCard = null;
 
 function enableRoomDragAndDrop(container) {
   container.onpointerdown = (event) => {
+    if (document.getElementById('roomStatusFilter').value) return;
     const card = event.target.closest('.room-card');
     if (!card || event.target.closest('button')) return;
 
@@ -474,20 +585,22 @@ function enableRoomDragAndDrop(container) {
       }
     };
 
-    container.onpointerup = async () => {
+    container.onpointerup = () => {
       container.onpointermove = null;
       container.onpointerup = null;
       if (draggedRoomCard) {
         draggedRoomCard.classList.remove('room-dragging');
         draggedRoomCard = null;
       }
-      const orderedIds = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
-      await saveRoomOrder(orderedIds);
+      roomOrderDirty = true;
+      document.getElementById('saveRoomOrderBtn').classList.remove('hidden');
     };
   };
 }
 
-async function saveRoomOrder(orderedIds) {
+document.getElementById('saveRoomOrderBtn').addEventListener('click', async () => {
+  const container = document.getElementById('roomsGrid');
+  const orderedIds = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
   let response;
   try {
     response = await fetch('/api/rooms/reorder', {
@@ -505,7 +618,10 @@ async function saveRoomOrder(orderedIds) {
     return;
   }
   showOpsError('');
-}
+  roomOrderDirty = false;
+  document.getElementById('saveRoomOrderBtn').classList.add('hidden');
+  await loadLayoutHistory();
+});
 
 async function refreshNewBookingRoomOptions() {
   const form = document.getElementById('newBookingForm');
