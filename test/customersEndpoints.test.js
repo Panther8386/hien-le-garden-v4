@@ -102,4 +102,29 @@ describe('GET /api/customers as observer', () => {
       expect(r.guestName).not.toBeNull();
     });
   });
+
+  it('does not let an observer digit-probe by searching on phone', async () => {
+    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=0900000003', observerToken), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.results).toEqual([]);
+  });
+
+  it('still lets an observer search by guest name and promo code', async () => {
+    const nameResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=Tr%E1%BA%A7n', observerToken), env });
+    const nameBody = await nameResponse.json();
+    expect(nameBody.results.map((r) => r.feedbackId)).toEqual(['fb-2']);
+
+    const promoResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=HLG-AAAA', observerToken), env });
+    const promoBody = await promoResponse.json();
+    expect(promoBody.results.map((r) => r.feedbackId)).toEqual(['fb-1']);
+  });
+});
+
+describe('GET /api/customers search by phone as manager (regression check)', () => {
+  it('still matches on phone for non-observer roles', async () => {
+    const response = await listCustomers({ request: authedRequest('https://x/api/customers?search=0900000003'), env });
+    const body = await response.json();
+    expect(body.results.map((r) => r.feedbackId)).toEqual(['fb-3']);
+  });
 });

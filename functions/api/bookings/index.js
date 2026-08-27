@@ -120,5 +120,12 @@ export async function onRequestGet({ request, env }) {
      FROM bookings ${where} ORDER BY check_in ASC`
   ).bind(...params).all();
 
+  if (auth.role === 'observer') {
+    results.forEach((r) => {
+      r.phone = null;
+      r.email = null;
+    });
+  }
+
   return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

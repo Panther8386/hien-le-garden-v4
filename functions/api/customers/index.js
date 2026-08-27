@@ -14,9 +14,14 @@ export async function onRequestGet({ request, env }) {
   const conditions = [];
   const params = [];
   if (search) {
-    conditions.push(`(guest_name LIKE ? OR phone LIKE ? OR promo_code LIKE ?)`);
     const term = `%${search}%`;
-    params.push(term, term, term);
+    if (auth.role === 'observer') {
+      conditions.push(`(guest_name LIKE ? OR promo_code LIKE ?)`);
+      params.push(term, term);
+    } else {
+      conditions.push(`(guest_name LIKE ? OR phone LIKE ? OR promo_code LIKE ?)`);
+      params.push(term, term, term);
+    }
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

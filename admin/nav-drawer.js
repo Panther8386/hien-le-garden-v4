@@ -84,7 +84,7 @@ function buildDrawer(role, username) {
     visibleItems.forEach((item) => {
       const a = document.createElement('a');
       a.href = urlFor(item.page);
-      a.className = 'nav-drawer-item' + (item.page === page ? ' active' : '');
+      a.className = 'nav-drawer-item' + (item.page.replace(/\.html$/, '') === page.replace(/\.html$/, '') ? ' active' : '');
       a.textContent = `${item.icon} ${item.label}`;
       groupEl.appendChild(a);
     });

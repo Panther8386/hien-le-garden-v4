@@ -144,8 +144,8 @@ describe('GET /api/bookings', () => {
        VALUES ('Pending Guest', '090', 'circle', '2099-03-01', '2099-03-03', 'pending', 'website', '2026-08-01T00:00:00Z')`
     ).run();
     await env.DB.prepare(
-      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
-       VALUES ('Arriving Today', '090', 'circle', ?, ?, 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+      `INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Arriving Today', '090', 'arriving@example.com', 'circle', ?, ?, 'confirmed', 'website', '2026-08-01T00:00:00Z')`
     ).bind(today, tomorrow).run();
     await env.DB.prepare(
       `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
@@ -197,5 +197,25 @@ describe('GET /api/bookings', () => {
     const request = authedRequest('https://x/api/bookings', observerToken);
     const response = await listBookings({ request, env });
     expect(response.status).toBe(200);
+  });
+
+  it('redacts phone and email for an observer but keeps them for a manager', async () => {
+    const managerResponse = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
+    const managerBody = await managerResponse.json();
+    expect(managerBody.length).toBeGreaterThan(0);
+    managerBody.forEach((b) => expect(b.phone).toBe('090'));
+    const managerArriving = managerBody.find((b) => b.guestName === 'Arriving Today');
+    expect(managerArriving.email).toBe('arriving@example.com');
+
+    const observerResponse = await listBookings({ request: authedRequest('https://x/api/bookings', observerToken), env });
+    const observerBody = await observerResponse.json();
+    expect(observerBody.length).toBeGreaterThan(0);
+    observerBody.forEach((b) => {
+      expect(b.phone).toBeNull();
+      expect(b.email).toBeNull();
+      expect(b.guestName).not.toBeNull();
+    });
+    const observerArriving = observerBody.find((b) => b.guestName === 'Arriving Today');
+    expect(observerArriving.email).toBeNull();
   });
 });

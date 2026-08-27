@@ -75,7 +75,7 @@ function renderBookingCard(b) {
   const strong = document.createElement('strong');
   strong.textContent = b.guestName;
   nameLine.appendChild(strong);
-  nameLine.appendChild(document.createTextNode(` — ${b.phone}`));
+  nameLine.appendChild(document.createTextNode(` — ${b.phone || '—'}`));
   card.appendChild(nameLine);
 
   const detailLine = document.createElement('p');
