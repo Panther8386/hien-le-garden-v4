@@ -70,7 +70,7 @@
     }
     .page-hero-bg {
       position: absolute; inset: 0;
-      background-image: url('../images/gallery-6.jpg');
+      background-image: url('../images/gallery-6.webp');
       background-size: cover; background-position: center;
     }
     .page-hero-overlay {
@@ -300,9 +300,18 @@
     </div>
 
     <div class="img-strip" style="margin-top:2.5rem;">
-      <img src="../images/gallery-6.jpg" alt="Khuôn viên Hiền Lê Garden">
-      <img src="../images/gallery-4.jpg" alt="Vườn hoa cỏ may">
-      <img src="../images/gallery-3.jpg" alt="Triangle Houses buổi sáng">
+      <picture>
+        <source srcset="../images/gallery-6.webp" type="image/webp">
+        <img src="../images/gallery-6.jpg" alt="Khuôn viên Hiền Lê Garden">
+      </picture>
+      <picture>
+        <source srcset="../images/gallery-4.webp" type="image/webp">
+        <img src="../images/gallery-4.jpg" alt="Vườn hoa cỏ may">
+      </picture>
+      <picture>
+        <source srcset="../images/gallery-3.webp" type="image/webp">
+        <img src="../images/gallery-3.jpg" alt="Triangle Houses buổi sáng">
+      </picture>
     </div>
 
     <hr class="section-divider">

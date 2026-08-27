@@ -457,7 +457,7 @@
       position: absolute;
       inset: 0;
       z-index: 0;
-      background-image: url('./images/gallery-1.jpg');
+      background-image: url('./images/gallery-1.webp');
       background-size: cover;
       background-position: center;
     }
@@ -2706,8 +2706,14 @@
     <div class="container">
       <div class="about-grid">
         <div class="about-media fade-in">
-          <img src="./images/gallery-6.jpg" alt="Khuôn viên Hiền Lê Garden" class="about-img-main">
-          <img src="./images/gallery-4.jpg" alt="Vườn hoa cỏ may" class="about-img-accent">
+          <picture>
+            <source srcset="./images/gallery-6.webp" type="image/webp">
+            <img src="./images/gallery-6.jpg" alt="Khuôn viên Hiền Lê Garden" class="about-img-main">
+          </picture>
+          <picture>
+            <source srcset="./images/gallery-4.webp" type="image/webp">
+            <img src="./images/gallery-4.jpg" alt="Vườn hoa cỏ may" class="about-img-accent">
+          </picture>
           <div class="about-badge">
             <strong>1,3ha</strong>
             <span>Khuôn viên</span>
@@ -2762,7 +2768,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-triangle-house.jpg" alt="Triangle House">
+            <picture>
+              <source srcset="./images/room-triangle-house.webp" type="image/webp">
+              <img src="./images/room-triangle-house.jpg" alt="Triangle House">
+            </picture>
             <span class="room-badge">Triangle House</span>
             <span class="room-price-tag">300k/đêm</span>
           </div>
@@ -2779,7 +2788,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-circle-house.jpg" alt="Circle House">
+            <picture>
+              <source srcset="./images/room-circle-house.webp" type="image/webp">
+              <img src="./images/room-circle-house.jpg" alt="Circle House">
+            </picture>
             <span class="room-badge">Circle House</span>
             <span class="room-price-tag">600k/đêm</span>
           </div>
@@ -2796,7 +2808,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-ede-cozy.jpg" alt="Ê Đê Cozy House">
+            <picture>
+              <source srcset="./images/room-ede-cozy.webp" type="image/webp">
+              <img src="./images/room-ede-cozy.jpg" alt="Ê Đê Cozy House">
+            </picture>
             <span class="room-badge">Ê Đê Cozy</span>
             <span class="room-price-tag">700k/đêm</span>
           </div>
@@ -2813,7 +2828,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-vip-house.jpg" alt="VIP House">
+            <picture>
+              <source srcset="./images/room-vip-house.webp" type="image/webp">
+              <img src="./images/room-vip-house.jpg" alt="VIP House">
+            </picture>
             <span class="room-badge">VIP House</span>
             <span class="room-price-tag">900k/đêm</span>
           </div>
@@ -2830,7 +2848,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-bungalow.jpg" alt="Bungalow Gia Đình">
+            <picture>
+              <source srcset="./images/room-bungalow.webp" type="image/webp">
+              <img src="./images/room-bungalow.jpg" alt="Bungalow Gia Đình">
+            </picture>
             <span class="room-badge">Bungalow</span>
             <span class="room-price-tag">700k/đêm</span>
           </div>
@@ -2847,7 +2868,10 @@
 
         <div class="room-card fade-in">
           <div class="room-image">
-            <img src="./images/room-dormitory.jpg" alt="Phòng Tập Thể">
+            <picture>
+              <source srcset="./images/room-dormitory.webp" type="image/webp">
+              <img src="./images/room-dormitory.jpg" alt="Phòng Tập Thể">
+            </picture>
             <span class="room-badge">Tập Thể</span>
             <span class="room-price-tag">1.2M/đêm</span>
           </div>
@@ -2952,45 +2976,81 @@
         <h2>Những Khoảnh Khắc Bình Yên.</h2>
       </div>
       <div class="gallery-masonry" id="galleryMasonry">
-        <div class="gallery-item" data-src="./images/gallery-1.jpg" data-caption="View hồ panorama từ trên cao">
-          <img src="./images/gallery-1.jpg" alt="View hồ panorama từ trên cao" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-1.webp" data-caption="View hồ panorama từ trên cao">
+          <picture>
+            <source srcset="./images/gallery-1.webp" type="image/webp">
+            <img src="./images/gallery-1.jpg" alt="View hồ panorama từ trên cao" loading="lazy">
+          </picture>
         </div>
         <div class="gallery-item-video">
           <video src="./videos/hero-drone.web.clean.mp4" muted loop playsinline></video>
           <div class="gallery-video-overlay"><div class="gallery-play-btn">▶</div></div>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-2.jpg" data-caption="Cổng vào Hiền Lê Garden">
-          <img src="./images/gallery-2.jpg" alt="Cổng vào Hiền Lê Garden" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-2.webp" data-caption="Cổng vào Hiền Lê Garden">
+          <picture>
+            <source srcset="./images/gallery-2.webp" type="image/webp">
+            <img src="./images/gallery-2.jpg" alt="Cổng vào Hiền Lê Garden" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-3.jpg" data-caption="Triangle Houses buổi sáng sương mù">
-          <img src="./images/gallery-3.jpg" alt="Triangle Houses buổi sáng sương mù" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-3.webp" data-caption="Triangle Houses buổi sáng sương mù">
+          <picture>
+            <source srcset="./images/gallery-3.webp" type="image/webp">
+            <img src="./images/gallery-3.jpg" alt="Triangle Houses buổi sáng sương mù" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-4.jpg" data-caption="Vườn hoa cỏ may">
-          <img src="./images/gallery-4.jpg" alt="Vườn hoa cỏ may" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-4.webp" data-caption="Vườn hoa cỏ may">
+          <picture>
+            <source srcset="./images/gallery-4.webp" type="image/webp">
+            <img src="./images/gallery-4.jpg" alt="Vườn hoa cỏ may" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-5.jpg" data-caption="Hoa cỏ may và cabin">
-          <img src="./images/gallery-5.jpg" alt="Hoa cỏ may và cabin" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-5.webp" data-caption="Hoa cỏ may và cabin">
+          <picture>
+            <source srcset="./images/gallery-5.webp" type="image/webp">
+            <img src="./images/gallery-5.jpg" alt="Hoa cỏ may và cabin" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-6.jpg" data-caption="Khuôn viên và hồ">
-          <img src="./images/gallery-6.jpg" alt="Khuôn viên và hồ" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-6.webp" data-caption="Khuôn viên và hồ">
+          <picture>
+            <source srcset="./images/gallery-6.webp" type="image/webp">
+            <img src="./images/gallery-6.jpg" alt="Khuôn viên và hồ" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-7.jpg" data-caption="VIP House sân hiên">
-          <img src="./images/gallery-7.jpg" alt="VIP House sân hiên" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-7.webp" data-caption="VIP House sân hiên">
+          <picture>
+            <source srcset="./images/gallery-7.webp" type="image/webp">
+            <img src="./images/gallery-7.jpg" alt="VIP House sân hiên" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-8.jpg" data-caption="View từ trong phòng">
-          <img src="./images/gallery-8.jpg" alt="View từ trong phòng" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-8.webp" data-caption="View từ trong phòng">
+          <picture>
+            <source srcset="./images/gallery-8.webp" type="image/webp">
+            <img src="./images/gallery-8.jpg" alt="View từ trong phòng" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-9.jpg" data-caption="Khu vui chơi hoàng hôn">
-          <img src="./images/gallery-9.jpg" alt="Khu vui chơi hoàng hôn" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-9.webp" data-caption="Khu vui chơi hoàng hôn">
+          <picture>
+            <source srcset="./images/gallery-9.webp" type="image/webp">
+            <img src="./images/gallery-9.jpg" alt="Khu vui chơi hoàng hôn" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-10.jpg" data-caption="Circle Houses bình minh">
-          <img src="./images/gallery-10.jpg" alt="Circle Houses bình minh" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-10.webp" data-caption="Circle Houses bình minh">
+          <picture>
+            <source srcset="./images/gallery-10.webp" type="image/webp">
+            <img src="./images/gallery-10.jpg" alt="Circle Houses bình minh" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-11.jpg" data-caption="Toàn cảnh Triangle Houses và hồ">
-          <img src="./images/gallery-11.jpg" alt="Toàn cảnh Triangle Houses và hồ" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-11.webp" data-caption="Toàn cảnh Triangle Houses và hồ">
+          <picture>
+            <source srcset="./images/gallery-11.webp" type="image/webp">
+            <img src="./images/gallery-11.jpg" alt="Toàn cảnh Triangle Houses và hồ" loading="lazy">
+          </picture>
         </div>
-        <div class="gallery-item" data-src="./images/gallery-12.jpg" data-caption="Triangle Houses rừng thông">
-          <img src="./images/gallery-12.jpg" alt="Triangle Houses rừng thông" loading="lazy">
+        <div class="gallery-item" data-src="./images/gallery-12.webp" data-caption="Triangle Houses rừng thông">
+          <picture>
+            <source srcset="./images/gallery-12.webp" type="image/webp">
+            <img src="./images/gallery-12.jpg" alt="Triangle Houses rừng thông" loading="lazy">
+          </picture>
         </div>
       </div>
     </div>
@@ -3018,7 +3078,7 @@
         <h2 style="color:#fff;">Nhìn Từ Trên Cao</h2>
       </div>
       <div class="video-embed-wrap fade-in">
-        <video id="droneVideo" controls poster="./images/gallery-1.jpg">
+        <video id="droneVideo" controls poster="./images/gallery-1.webp">
           <source src="./videos/drone.web.mp4" type="video/mp4">
         </video>
         <div class="video-play-overlay" id="droneVideoOverlay">
@@ -3164,7 +3224,10 @@
 
         <article class="cn-card gs-fade">
           <div class="cn-img-wrap">
-            <img src="./images/gallery-1.jpg" alt="10 điểm check-in quanh Gia Nghĩa" loading="lazy">
+            <picture>
+              <source srcset="./images/gallery-1.webp" type="image/webp">
+              <img src="./images/gallery-1.jpg" alt="10 điểm check-in quanh Gia Nghĩa" loading="lazy">
+            </picture>
           </div>
           <div class="cn-body">
             <h3 class="cn-title">10 Điểm Check-In Quanh Gia Nghĩa</h3>
@@ -3175,7 +3238,10 @@
 
         <article class="cn-card gs-fade">
           <div class="cn-img-wrap">
-            <img src="./images/gallery-4.jpg" alt="Ăn gì khi du lịch Gia Nghĩa" loading="lazy">
+            <picture>
+              <source srcset="./images/gallery-4.webp" type="image/webp">
+              <img src="./images/gallery-4.jpg" alt="Ăn gì khi du lịch Gia Nghĩa" loading="lazy">
+            </picture>
           </div>
           <div class="cn-body">
             <h3 class="cn-title">Ăn Gì Khi Du Lịch Gia Nghĩa</h3>
@@ -3186,7 +3252,10 @@
 
         <article class="cn-card gs-fade">
           <div class="cn-img-wrap">
-            <img src="./images/gallery-3.jpg" alt="Mùa đẹp nhất để đến Tây Nguyên" loading="lazy">
+            <picture>
+              <source srcset="./images/gallery-3.webp" type="image/webp">
+              <img src="./images/gallery-3.jpg" alt="Mùa đẹp nhất để đến Tây Nguyên" loading="lazy">
+            </picture>
           </div>
           <div class="cn-body">
             <h3 class="cn-title">Mùa Đẹp Nhất Để Đến Tây Nguyên</h3>

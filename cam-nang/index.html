@@ -44,7 +44,7 @@
       display: flex; align-items: flex-end;
       padding: 4rem 2rem 3rem; overflow: hidden;
     }
-    .page-hero-bg { position: absolute; inset: 0; background-image: url('../images/gallery-1.jpg'); background-size: cover; background-position: center; }
+    .page-hero-bg { position: absolute; inset: 0; background-image: url('../images/gallery-1.webp'); background-size: cover; background-position: center; }
     .page-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(13,31,20,0.45) 0%, rgba(13,31,20,0.9) 100%); }
     .page-hero-content { position: relative; z-index: 1; max-width: 720px; }
     .page-label { font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 1rem; display: block; }
@@ -116,7 +116,10 @@
 
       <a href="10-diem-check-in/" class="guide-card">
         <div class="guide-img-wrap">
-          <img src="../images/gallery-1.jpg" alt="10 điểm check-in quanh Gia Nghĩa" loading="lazy">
+          <picture>
+            <source srcset="../images/gallery-1.webp" type="image/webp">
+            <img src="../images/gallery-1.jpg" alt="10 điểm check-in quanh Gia Nghĩa" loading="lazy">
+          </picture>
         </div>
         <div class="guide-body">
           <span class="guide-tag">Điểm tham quan</span>
@@ -128,7 +131,10 @@
 
       <a href="am-thuc-gia-nghia/" class="guide-card">
         <div class="guide-img-wrap">
-          <img src="../images/gallery-4.jpg" alt="Ăn gì khi du lịch Gia Nghĩa" loading="lazy">
+          <picture>
+            <source srcset="../images/gallery-4.webp" type="image/webp">
+            <img src="../images/gallery-4.jpg" alt="Ăn gì khi du lịch Gia Nghĩa" loading="lazy">
+          </picture>
         </div>
         <div class="guide-body">
           <span class="guide-tag">Ẩm thực</span>
@@ -140,7 +146,10 @@
 
       <a href="du-lich-gia-nghia/" class="guide-card">
         <div class="guide-img-wrap">
-          <img src="../images/gallery-3.jpg" alt="Mùa đẹp nhất để đến Tây Nguyên" loading="lazy">
+          <picture>
+            <source srcset="../images/gallery-3.webp" type="image/webp">
+            <img src="../images/gallery-3.jpg" alt="Mùa đẹp nhất để đến Tây Nguyên" loading="lazy">
+          </picture>
         </div>
         <div class="guide-body">
           <span class="guide-tag">Mùa du lịch</span>
