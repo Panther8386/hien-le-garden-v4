@@ -233,6 +233,12 @@ th { color: var(--gold); font-weight: 600; }
 .room-needs_cleaning { background: rgba(217,166,92,0.12); }
 .room-draggable { cursor: grab; user-select: none; }
 .room-dragging { cursor: grabbing; opacity: 0.6; border-color: var(--gold); }
+.room-booked { background: rgba(217,166,92,0.15); }
+.room-booked_deposited { background: rgba(120,160,220,0.18); }
+.room-used { background: rgba(160,160,160,0.15); }
+.room-needs-cleaning-badge { display: inline-block; margin-left: 6px; }
+.room-filters { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.room-layout-history { margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); }
 .room-card button { margin-top: 8px; width: auto; padding: 6px 10px; font-size: 0.8rem; }
 
 .confirm-overlay {

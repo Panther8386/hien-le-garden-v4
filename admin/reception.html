@@ -78,7 +78,22 @@
     <div id="inhouseList" class="booking-list"></div>
 
     <h2>Trạng thái phòng</h2>
+    <div class="room-filters">
+      <label>Ngày <input type="date" id="roomDateFilter" /></label>
+      <label>Trạng thái
+        <select id="roomStatusFilter">
+          <option value="">Tất cả</option>
+          <option value="empty">Phòng trống</option>
+          <option value="booked">Đã có khách đặt</option>
+          <option value="booked_deposited">Đã đặt & có cọc</option>
+          <option value="occupied">Đang có khách</option>
+          <option value="used">Đã sử dụng</option>
+        </select>
+      </label>
+      <button type="button" id="saveRoomOrderBtn" class="hidden">Lưu bố cục</button>
+    </div>
     <div id="roomsGrid" class="rooms-grid"></div>
+    <div id="roomLayoutHistory" class="room-layout-history"></div>
 
     <div id="promoLookupSection">
     <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
