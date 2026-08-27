@@ -1,9 +1,14 @@
 // admin/customers.js
+let currentRole = null;
+
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
+    return;
   }
+  const { role } = await res.json();
+  currentRole = role;
 })();
 
 let currentPage = 1;
@@ -36,13 +41,12 @@ async function loadCustomers() {
 
   results.forEach((c) => {
     const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
 
     const tdName = document.createElement('td');
     tdName.textContent = c.guestName;
 
     const tdPhone = document.createElement('td');
-    tdPhone.textContent = c.phone;
+    tdPhone.textContent = c.phone || '—';
 
     const tdRating = document.createElement('td');
     tdRating.textContent = c.rating;
@@ -63,7 +67,10 @@ async function loadCustomers() {
     tdDate.textContent = new Date(c.submittedAt).toLocaleDateString('vi-VN');
 
     tr.append(tdName, tdPhone, tdRating, tdPromoCode, tdDiscount, tdStatus, tdDate);
-    tr.addEventListener('click', () => showDetail(c.feedbackId));
+    if (currentRole !== 'observer') {
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', () => showDetail(c.feedbackId));
+    }
     tbody.appendChild(tr);
   });
 
