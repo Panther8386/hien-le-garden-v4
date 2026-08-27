@@ -62,6 +62,28 @@ async function loadUsers() {
     });
     tdRole.appendChild(roleSelect);
 
+    const tdLayout = document.createElement('td');
+    const layoutCheckbox = document.createElement('input');
+    layoutCheckbox.type = 'checkbox';
+    layoutCheckbox.checked = !!u.canManageRoomLayout;
+    layoutCheckbox.title = 'Quản trị bố cục phòng';
+    layoutCheckbox.addEventListener('change', async () => {
+      const response = await fetch(`/api/users/${u.id}/room-layout-access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canManageRoomLayout: layoutCheckbox.checked }),
+      });
+      const listError = document.getElementById('listError');
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        listError.textContent = body.error || 'Có lỗi khi cập nhật quyền bố cục phòng';
+        layoutCheckbox.checked = !layoutCheckbox.checked;
+        return;
+      }
+      listError.textContent = '';
+    });
+    tdLayout.appendChild(layoutCheckbox);
+
     const tdCreated = document.createElement('td');
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
@@ -83,7 +105,7 @@ async function loadUsers() {
     });
     tdActions.appendChild(deleteBtn);
 
-    tr.append(tdName, tdRole, tdCreated, tdActions);
+    tr.append(tdName, tdRole, tdLayout, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
 }
