@@ -10,6 +10,8 @@
   loadUsers();
 })();
 
+const ROLE_LABELS = { manager: 'Quản lý', reception: 'Lễ tân', admin: 'Quản trị', observer: 'Người quan sát' };
+
 async function loadUsers() {
   const response = await fetch('/api/users');
   const listError = document.getElementById('listError');
@@ -36,10 +38,10 @@ async function loadUsers() {
 
     const tdRole = document.createElement('td');
     const roleSelect = document.createElement('select');
-    ['reception', 'manager'].forEach((role) => {
+    Object.keys(ROLE_LABELS).forEach((role) => {
       const opt = document.createElement('option');
       opt.value = role;
-      opt.textContent = role === 'manager' ? 'Quản lý' : 'Lễ tân';
+      opt.textContent = ROLE_LABELS[role];
       opt.selected = role === u.role;
       roleSelect.appendChild(opt);
     });
