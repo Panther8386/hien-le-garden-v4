@@ -23,12 +23,12 @@ const NAV_GROUPS = [
   },
 ];
 
-function currentPage() {
+function currentPageFile() {
   return window.location.pathname.split('/').pop();
 }
 
 function buildDrawer(role, username) {
-  const page = currentPage();
+  const page = currentPageFile();
 
   const topbar = document.createElement('div');
   topbar.className = 'nav-topbar';
@@ -91,6 +91,11 @@ function buildDrawer(role, username) {
   userLine.textContent = `👤 ${username}`;
   const footerLinks = document.createElement('div');
   footerLinks.className = 'nav-drawer-footer-links';
+  const homeLink = document.createElement('a');
+  homeLink.href = '/';
+  homeLink.target = '_blank';
+  homeLink.rel = 'noopener';
+  homeLink.textContent = '🏠 Trang chủ';
   const changePasswordLink = document.createElement('a');
   changePasswordLink.href = 'change-password.html';
   changePasswordLink.textContent = 'Đổi mật khẩu';
@@ -103,6 +108,7 @@ function buildDrawer(role, username) {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = 'login.html';
   });
+  footerLinks.appendChild(homeLink);
   footerLinks.appendChild(changePasswordLink);
   footerLinks.appendChild(logoutLink);
   drawerFooter.appendChild(userLine);
