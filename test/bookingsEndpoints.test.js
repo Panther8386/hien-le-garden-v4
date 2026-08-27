@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as createBooking, onRequestGet as listBookings } from '../functions/api/bookings/index.js';
+import { onRequestPatch as setDeposit } from '../functions/api/bookings/[id]/deposit.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken;
 let observerToken;
+let receptionToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -17,6 +19,9 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 2);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  receptionToken = await createSession(env.DB, 3);
 });
 
 function postReq(url, body) {
@@ -191,6 +196,7 @@ describe('GET /api/bookings', () => {
     const response = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
     const body = await response.json();
     expect(body.map((b) => b.guestName)).toEqual(['Leaving Today', 'Arriving Today', 'Pending Guest']);
+    expect(body.find((b) => b.guestName === 'Pending Guest').depositAmount).toBe(0);
   });
 
   it('lets an observer list bookings', async () => {
@@ -217,5 +223,78 @@ describe('GET /api/bookings', () => {
     });
     const observerArriving = observerBody.find((b) => b.guestName === 'Arriving Today');
     expect(observerArriving.email).toBeNull();
+  });
+});
+
+describe('PATCH /api/bookings/:id/deposit', () => {
+  it('lets reception set a deposit amount', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Test', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 200000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(row.deposit_amount).toBe(200000);
+  });
+
+  it('rejects a negative amount (400)', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Test 2', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: -1 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent booking', async () => {
+    const request = new Request('https://x/api/bookings/999999/deposit', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 100000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects an observer (403)', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Test 3', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${observerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 100000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const request = new Request('https://x/api/bookings/1/deposit', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 100000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: '1' } });
+    expect(response.status).toBe(401);
   });
 });
