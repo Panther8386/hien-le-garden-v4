@@ -4,24 +4,33 @@
 # existing physical file in admin/. Every page referenced here already has
 # its own client-side role check via GET /api/auth/me (unauthorized visits
 # get redirected to /admin, the shared login page, by that page's own JS).
+#
+# Targets deliberately omit the .html extension: Cloudflare Pages
+# auto-redirects every *.html file to its extensionless form (a platform
+# behavior independent of this file, confirmed via curl against files with
+# no _redirects rule at all involved). Rewriting to the .html path would
+# chain into a second 308 redirect to the extensionless path, which changes
+# the visible URL away from the clean one this file exists to keep stable
+# -- so every target here already uses the form Cloudflare would redirect
+# to anyway, avoiding that extra hop.
 
-/admin                        /admin/login.html           200
+/admin                        /admin/login           200
 
-/manager                      /admin/reception.html       200
-/manager/dashboard            /admin/dashboard.html       200
-/manager/customers            /admin/customers.html       200
-/manager/templates            /admin/templates.html       200
-/manager/config               /admin/manager.html         200
-/manager/users                /admin/users.html            200
-/manager/change-password      /admin/change-password.html 200
+/manager                      /admin/reception       200
+/manager/dashboard            /admin/dashboard       200
+/manager/customers            /admin/customers       200
+/manager/templates            /admin/templates       200
+/manager/config                /admin/manager         200
+/manager/users                 /admin/users            200
+/manager/change-password      /admin/change-password 200
 
-/reception                    /admin/reception.html       200
-/reception/customers          /admin/customers.html       200
-/reception/templates          /admin/templates.html       200
-/reception/config             /admin/manager.html         200
-/reception/change-password    /admin/change-password.html 200
+/reception                    /admin/reception       200
+/reception/customers          /admin/customers       200
+/reception/templates          /admin/templates       200
+/reception/config              /admin/manager         200
+/reception/change-password    /admin/change-password 200
 
-/observer                     /admin/reception.html       200
-/observer/dashboard           /admin/dashboard.html       200
-/observer/customers           /admin/customers.html       200
-/observer/change-password     /admin/change-password.html 200
+/observer                     /admin/reception       200
+/observer/dashboard            /admin/dashboard       200
+/observer/customers            /admin/customers       200
+/observer/change-password      /admin/change-password 200
