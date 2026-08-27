@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as listRooms } from '../functions/api/rooms/index.js';
 import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js';
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
+import { onRequestGet as getLayoutLog } from '../functions/api/rooms/layout-log.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken, layoutToken;
@@ -237,5 +238,38 @@ describe('PATCH /api/rooms/reorder', () => {
     });
     const response = await reorderRooms({ request, env });
     expect(response.status).toBe(400);
+  });
+});
+
+describe('GET /api/rooms/layout-log', () => {
+  it('returns recent entries newest-first, respecting limit', async () => {
+    await env.DB.prepare(`DELETE FROM room_layout_log`).run();
+    await env.DB.prepare(`INSERT INTO room_layout_log (changed_by, old_order, new_order, changed_at) VALUES ('a', '[]', '[]', '2026-08-27T10:00:00Z')`).run();
+    await env.DB.prepare(`INSERT INTO room_layout_log (changed_by, old_order, new_order, changed_at) VALUES ('b', '[]', '[]', '2026-08-27T11:00:00Z')`).run();
+    await env.DB.prepare(`INSERT INTO room_layout_log (changed_by, old_order, new_order, changed_at) VALUES ('c', '[]', '[]', '2026-08-27T12:00:00Z')`).run();
+
+    const response = await getLayoutLog({ request: authedRequest('https://x/api/rooms/layout-log?limit=2'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual([
+      { changedBy: 'c', changedAt: '2026-08-27T12:00:00Z' },
+      { changedBy: 'b', changedAt: '2026-08-27T11:00:00Z' },
+    ]);
+  });
+
+  it('defaults to 5 entries when limit is omitted', async () => {
+    const response = await getLayoutLog({ request: authedRequest('https://x/api/rooms/layout-log'), env });
+    expect(response.status).toBe(200);
+  });
+
+  it('lets an observer view the log', async () => {
+    const request = new Request('https://x/api/rooms/layout-log', { headers: { Cookie: `session=${observerToken}` } });
+    const response = await getLayoutLog({ request, env });
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await getLayoutLog({ request: new Request('https://x/api/rooms/layout-log'), env });
+    expect(response.status).toBe(401);
   });
 });
