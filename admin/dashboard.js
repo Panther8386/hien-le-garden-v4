@@ -99,7 +99,7 @@ async function loadSummary(month) {
   }
   if (!response.ok) {
     if (response.status === 401) {
-      window.location.href = 'login.html';
+      window.location.href = '/admin';
       return;
     }
     const body = await response.json().catch(() => ({}));
@@ -123,7 +123,7 @@ async function loadSummary(month) {
     return;
   }
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
     return;
   }
 

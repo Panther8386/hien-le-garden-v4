@@ -2,7 +2,7 @@
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
     return;
   }
   const { username: currentUsername } = await res.json();

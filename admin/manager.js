@@ -163,7 +163,7 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
     return;
   }
   const { role } = await res.json();

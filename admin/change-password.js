@@ -52,7 +52,7 @@ function mountChangePasswordWidget() {
     return;
   }
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
     return;
   }
   mountChangePasswordWidget();
