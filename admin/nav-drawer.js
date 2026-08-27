@@ -3,25 +3,27 @@ const NAV_GROUPS = [
   {
     label: 'Vận hành',
     items: [
-      { href: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', roles: ['manager'] },
-      { href: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', roles: ['reception', 'manager'] },
+      { page: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', roles: ['manager', 'admin', 'observer'] },
+      { page: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', roles: ['reception', 'manager', 'admin', 'observer'] },
     ],
   },
   {
     label: 'Khách hàng & CRM',
     items: [
-      { href: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', roles: ['reception', 'manager'] },
-      { href: 'templates.html', label: 'Kho template', icon: '✉️', roles: ['reception', 'manager'] },
+      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', roles: ['reception', 'manager', 'admin', 'observer'] },
+      { page: 'templates.html', label: 'Kho template', icon: '✉️', roles: ['reception', 'manager', 'admin'] },
     ],
   },
   {
     label: 'Cấu hình & Quản trị',
     items: [
-      { href: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', roles: ['reception', 'manager'] },
-      { href: 'users.html', label: 'Quản lý user', icon: '🔑', roles: ['manager'] },
+      { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', roles: ['reception', 'manager', 'admin'] },
+      { page: 'users.html', label: 'Quản lý user', icon: '🔑', roles: ['manager', 'admin'] },
     ],
   },
 ];
+
+const ROLE_URL_PREFIX = { admin: '/manager', manager: '/manager', reception: '/reception', observer: '/observer' };
 
 function currentPageFile() {
   return window.location.pathname.split('/').pop();
@@ -29,6 +31,12 @@ function currentPageFile() {
 
 function buildDrawer(role, username) {
   const page = currentPageFile();
+  const prefix = ROLE_URL_PREFIX[role] || '/reception';
+  const pageSlug = { 'dashboard.html': 'dashboard', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'users.html': 'users', 'change-password.html': 'change-password' };
+  function urlFor(pageFile) {
+    if (pageFile === 'reception.html') return prefix;
+    return `${prefix}/${pageSlug[pageFile]}`;
+  }
 
   const topbar = document.createElement('div');
   topbar.className = 'nav-topbar';
@@ -75,8 +83,8 @@ function buildDrawer(role, username) {
 
     visibleItems.forEach((item) => {
       const a = document.createElement('a');
-      a.href = item.href;
-      a.className = 'nav-drawer-item' + (item.href === page ? ' active' : '');
+      a.href = urlFor(item.page);
+      a.className = 'nav-drawer-item' + (item.page === page ? ' active' : '');
       a.textContent = `${item.icon} ${item.label}`;
       groupEl.appendChild(a);
     });
@@ -97,7 +105,7 @@ function buildDrawer(role, username) {
   homeLink.rel = 'noopener';
   homeLink.textContent = '🏠 Trang chủ';
   const changePasswordLink = document.createElement('a');
-  changePasswordLink.href = 'change-password.html';
+  changePasswordLink.href = urlFor('change-password.html');
   changePasswordLink.textContent = 'Đổi mật khẩu';
   if (page === 'change-password.html') changePasswordLink.className = 'active';
   const logoutLink = document.createElement('a');
@@ -106,7 +114,7 @@ function buildDrawer(role, username) {
   logoutLink.addEventListener('click', async (event) => {
     event.preventDefault();
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
   });
   footerLinks.appendChild(homeLink);
   footerLinks.appendChild(changePasswordLink);
