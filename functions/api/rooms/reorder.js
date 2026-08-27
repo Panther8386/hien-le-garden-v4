@@ -7,7 +7,7 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env }) {
   const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
-  if (!auth.canManageRoomLayout) {
+  if (!auth.canManageRoomLayout || auth.role === 'observer') {
     return jsonError('Tài khoản không có quyền sắp xếp phòng', 403);
   }
 

@@ -5,7 +5,7 @@ import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.j
 import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
 import { createSession } from '../lib/auth.js';
 
-let managerAId, managerBId, receptionId, adminId, managerAToken, receptionToken, adminToken;
+let managerAId, managerBId, receptionId, adminId, observerId, managerAToken, receptionToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -15,10 +15,12 @@ beforeEach(async () => {
   const b = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_b', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   const c = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   const d = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
+  const e = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   managerAId = a.meta.last_row_id;
   managerBId = b.meta.last_row_id;
   receptionId = c.meta.last_row_id;
   adminId = d.meta.last_row_id;
+  observerId = e.meta.last_row_id;
   managerAToken = await createSession(env.DB, managerAId);
   receptionToken = await createSession(env.DB, receptionId);
   adminToken = await createSession(env.DB, adminId);
@@ -121,5 +123,22 @@ describe('PATCH /api/users/:id/room-layout-access', () => {
     const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: 'yes' });
     const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
     expect(response.status).toBe(400);
+  });
+
+  it('rejects granting the flag to an observer account (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${observerId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(observerId) } });
+    expect(response.status).toBe(400);
+    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.can_manage_room_layout).toBe(0);
+  });
+
+  it('lets a manager revoke the flag on an observer account even though granting is blocked', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = ?`).bind(observerId).run();
+    const request = authedRequest(`https://x/api/users/${observerId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: false });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(observerId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.can_manage_room_layout).toBe(0);
   });
 });

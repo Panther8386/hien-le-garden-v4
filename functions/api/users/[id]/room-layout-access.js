@@ -20,9 +20,13 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError('Giá trị không hợp lệ', 400);
   }
 
-  const target = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE id = ?`).bind(params.id).first();
+  const target = await env.DB.prepare(`SELECT id, role FROM staff_accounts WHERE id = ?`).bind(params.id).first();
   if (!target) {
     return jsonError('Không tìm thấy tài khoản', 404);
+  }
+
+  if (canManageRoomLayout && target.role === 'observer') {
+    return jsonError('Không thể cấp quyền bố cục phòng cho tài khoản người quan sát', 400);
   }
 
   await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = ? WHERE id = ?`).bind(canManageRoomLayout ? 1 : 0, params.id).run();

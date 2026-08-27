@@ -239,6 +239,13 @@ describe('PATCH /api/rooms/reorder', () => {
     const response = await reorderRooms({ request, env });
     expect(response.status).toBe(400);
   });
+
+  it('rejects an observer even if the layout flag is set on their account (403)', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = 4`).run();
+    const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
+    const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', observerToken, 'PATCH', { order: rooms.map((r) => r.id) }), env });
+    expect(response.status).toBe(403);
+  });
 });
 
 describe('GET /api/rooms/layout-log', () => {
