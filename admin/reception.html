@@ -17,6 +17,7 @@
     <h1>Bảng hôm nay</h1>
     <p id="opsError" class="error"></p>
 
+    <div id="newBookingSection">
     <h2>+ Tạo đặt phòng mới</h2>
     <form id="newBookingForm">
       <div class="form-row">
@@ -59,6 +60,7 @@
       <button type="submit">Tạo đặt phòng</button>
       <p id="newBookingError" class="error"></p>
     </form>
+    </div>
 
     <h2>Cần xử lý</h2>
     <div id="pendingList" class="booking-list"></div>
@@ -78,6 +80,7 @@
     <h2>Trạng thái phòng</h2>
     <div id="roomsGrid" class="rooms-grid"></div>
 
+    <div id="promoLookupSection">
     <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
     <form id="lookupForm">
       <label>Mã ưu đãi <input type="text" name="code" required autocapitalize="characters" /></label>
@@ -94,6 +97,7 @@
       <button id="claimGiftBtn">Đã phát quà</button>
       <p id="actionError" class="error"></p>
     </section>
+    </div>
   </div>
 
   <div id="confirmOverlay" class="confirm-overlay hidden">

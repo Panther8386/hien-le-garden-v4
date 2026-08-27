@@ -36,11 +36,15 @@ function showOpsError(message) {
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
-    window.location.href = 'login.html';
+    window.location.href = '/admin';
     return;
   }
   const { role } = await res.json();
   currentRole = role;
+  if (currentRole === 'observer') {
+    document.getElementById('newBookingSection').classList.add('hidden');
+    document.getElementById('promoLookupSection').classList.add('hidden');
+  }
   await refreshAll();
 })();
 
@@ -118,6 +122,7 @@ function renderList(containerId, bookings, emptyText, buildActions) {
 async function loadPending() {
   const bookings = await fetchBookings('status=pending');
   renderList('pendingList', bookings, 'Không có yêu cầu nào đang chờ.', (actions, b) => {
+    if (currentRole === 'observer') return;
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = 'Xác nhận';
     confirmBtn.addEventListener('click', () => openConfirmDialog(b));
@@ -134,6 +139,7 @@ async function loadPending() {
 async function loadArrivals() {
   const bookings = await fetchBookings(`status=confirmed&date=${todayISO()}&view=arrivals`);
   renderList('arrivalsList', bookings, 'Không có khách đến hôm nay.', (actions, b) => {
+    if (currentRole === 'observer') return;
     const btn = document.createElement('button');
     btn.textContent = 'Check-in';
     btn.addEventListener('click', () => doBookingAction(b.id, 'check-in'));
@@ -152,6 +158,7 @@ async function loadUpcomingConfirmed() {
   const today = todayISO();
   const upcoming = bookings.filter((b) => b.checkIn !== today);
   renderList('upcomingConfirmedList', upcoming, 'Không có đặt phòng đã xác nhận sắp tới.', (actions, b) => {
+    if (currentRole === 'observer') return;
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Hủy đặt phòng';
     cancelBtn.className = 'btn-secondary';
@@ -163,6 +170,7 @@ async function loadUpcomingConfirmed() {
 async function loadDepartures() {
   const bookings = await fetchBookings(`status=checked_in&date=${todayISO()}&view=departures`);
   renderList('departuresList', bookings, 'Không có khách đi hôm nay.', (actions, b) => {
+    if (currentRole === 'observer') return;
     const btn = document.createElement('button');
     btn.textContent = 'Check-out';
     btn.addEventListener('click', () => doBookingAction(b.id, 'check-out'));
@@ -400,7 +408,7 @@ async function loadRooms() {
     statusEl.textContent = { empty: 'Trống', occupied: 'Đang có khách', needs_cleaning: 'Cần dọn' }[r.status] || r.status;
     card.appendChild(statusEl);
 
-    if (r.status === 'needs_cleaning') {
+    if (r.status === 'needs_cleaning' && currentRole !== 'observer') {
       const btn = document.createElement('button');
       btn.textContent = 'Đã dọn xong';
       btn.addEventListener('click', async () => {
