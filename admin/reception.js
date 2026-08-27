@@ -115,6 +115,10 @@ function renderBookingCard(b) {
     depositBtn.textContent = 'Lưu cọc';
     depositBtn.className = 'btn-secondary';
     depositBtn.addEventListener('click', async () => {
+      if (depositInput.value.trim() === '') {
+        showOpsError('Vui lòng nhập số tiền cọc');
+        return;
+      }
       const amount = Number(depositInput.value);
       if (!Number.isInteger(amount) || amount < 0) {
         showOpsError('Số tiền cọc phải là số nguyên không âm');
@@ -137,6 +141,7 @@ function renderBookingCard(b) {
         return;
       }
       showOpsError('');
+      await loadRooms();
     });
     depositLine.appendChild(document.createTextNode('Cọc: '));
     depositLine.appendChild(depositInput);
@@ -526,6 +531,8 @@ function applyRoomStatusFilter() {
 }
 
 async function loadLayoutHistory() {
+  const container = document.getElementById('roomLayoutHistory');
+  container.innerHTML = '';
   let response;
   try {
     response = await fetch('/api/rooms/layout-log?limit=5');
@@ -534,9 +541,7 @@ async function loadLayoutHistory() {
   }
   if (!response.ok) return;
   const entries = await response.json();
-  const container = document.getElementById('roomLayoutHistory');
-  container.innerHTML = '';
-  if (entries.length === 0) return;
+  if (!Array.isArray(entries) || entries.length === 0) return;
   const title = document.createElement('p');
   title.innerHTML = '<strong>Lịch sử sắp xếp gần đây</strong>';
   container.appendChild(title);
@@ -552,10 +557,11 @@ let draggedRoomCard = null;
 function enableRoomDragAndDrop(container) {
   container.onpointerdown = (event) => {
     if (document.getElementById('roomStatusFilter').value) return;
-    const card = event.target.closest('.room-card');
+    const card = event.target.closest('.room-draggable');
     if (!card || event.target.closest('button')) return;
 
     draggedRoomCard = card;
+    const orderAtDragStart = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
     card.classList.add('room-dragging');
     card.setPointerCapture(event.pointerId);
 
@@ -592,13 +598,19 @@ function enableRoomDragAndDrop(container) {
         draggedRoomCard.classList.remove('room-dragging');
         draggedRoomCard = null;
       }
-      roomOrderDirty = true;
-      document.getElementById('saveRoomOrderBtn').classList.remove('hidden');
+      const orderAtDragEnd = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
+      const orderChanged = orderAtDragEnd.length !== orderAtDragStart.length
+        || orderAtDragEnd.some((id, i) => id !== orderAtDragStart[i]);
+      if (orderChanged) {
+        roomOrderDirty = true;
+        document.getElementById('saveRoomOrderBtn').classList.remove('hidden');
+      }
     };
   };
 }
 
 document.getElementById('saveRoomOrderBtn').addEventListener('click', async () => {
+  if (!roomOrderDirty) return;
   const container = document.getElementById('roomsGrid');
   const orderedIds = [...container.querySelectorAll('.room-card')].map((c) => Number(c.dataset.roomId));
   let response;
@@ -620,6 +632,7 @@ document.getElementById('saveRoomOrderBtn').addEventListener('click', async () =
   showOpsError('');
   roomOrderDirty = false;
   document.getElementById('saveRoomOrderBtn').classList.add('hidden');
+  await loadRooms();
   await loadLayoutHistory();
 });
 
