@@ -1,0 +1,27 @@
+# v4/_redirects
+# Clean, role-based entry URLs for the CRM/admin area. HTTP-200 rewrites --
+# the browser's address bar keeps the clean URL; the body comes from the
+# existing physical file in admin/. Every page referenced here already has
+# its own client-side role check via GET /api/auth/me (unauthorized visits
+# get redirected to /admin, the shared login page, by that page's own JS).
+
+/admin                        /admin/login.html           200
+
+/manager                      /admin/reception.html       200
+/manager/dashboard            /admin/dashboard.html       200
+/manager/customers            /admin/customers.html       200
+/manager/templates            /admin/templates.html       200
+/manager/config               /admin/manager.html         200
+/manager/users                /admin/users.html            200
+/manager/change-password      /admin/change-password.html 200
+
+/reception                    /admin/reception.html       200
+/reception/customers          /admin/customers.html       200
+/reception/templates          /admin/templates.html       200
+/reception/config             /admin/manager.html         200
+/reception/change-password    /admin/change-password.html 200
+
+/observer                     /admin/reception.html       200
+/observer/dashboard           /admin/dashboard.html       200
+/observer/customers           /admin/customers.html       200
+/observer/change-password     /admin/change-password.html 200
