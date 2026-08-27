@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const template = await env.DB.prepare(`SELECT id FROM message_templates WHERE id = ?`).bind(params.id).first();

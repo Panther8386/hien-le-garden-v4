@@ -5,7 +5,7 @@ import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken;
+let managerToken, receptionToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -15,8 +15,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
+  adminToken = await createSession(env.DB, 3);
 });
 
 function authedRequest(url, method = 'GET') {
@@ -106,6 +108,14 @@ describe('PATCH /api/rooms/reorder', () => {
     const listResponse = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
     const body = await listResponse.json();
     expect(body.map((r) => r.id)).toEqual(reversed);
+  });
+
+  it('lets an admin reorder rooms', async () => {
+    const results = await listRooms({ request: authedRequest('https://x/api/rooms'), env }).then((r) => r.json());
+    const ids = results.map((r) => r.id).reverse();
+    const request = authedBody('https://x/api/rooms/reorder', adminToken, 'PATCH', { order: ids });
+    const response = await reorderRooms({ request, env, params: {} });
+    expect(response.status).toBe(200);
   });
 
   it('rejects a reception account (403)', async () => {

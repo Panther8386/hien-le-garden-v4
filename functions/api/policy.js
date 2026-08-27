@@ -8,7 +8,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;
@@ -43,7 +43,7 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
@@ -62,7 +62,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT is_active, valid_from, valid_to FROM promo_policy WHERE id = ?`).bind(params.id).first();

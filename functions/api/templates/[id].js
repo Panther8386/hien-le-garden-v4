@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPut({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT id FROM message_templates WHERE id = ?`).bind(params.id).first();
@@ -44,7 +44,7 @@ export async function onRequestPut({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT is_active FROM message_templates WHERE id = ?`).bind(params.id).first();

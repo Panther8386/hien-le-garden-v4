@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;

@@ -84,7 +84,7 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);

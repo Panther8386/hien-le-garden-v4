@@ -2,7 +2,7 @@ import { requireAuth } from '../../../lib/requireAuth.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);

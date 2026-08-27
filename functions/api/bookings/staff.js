@@ -12,7 +12,7 @@ const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;

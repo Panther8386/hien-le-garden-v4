@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const feedback = await env.DB.prepare(`SELECT id, gift_claimed, gift_offered FROM feedback_responses WHERE promo_code = ?`)

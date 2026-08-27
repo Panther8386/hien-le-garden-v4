@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;
@@ -15,8 +15,8 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
   const { role } = body;
-  if (role !== 'manager' && role !== 'reception') {
-    return jsonError('Vai trò phải là manager hoặc reception', 400);
+  if (!['manager', 'reception', 'admin', 'observer'].includes(role)) {
+    return jsonError('Vai trò phải là manager, reception, admin hoặc observer', 400);
   }
 
   const target = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(params.id).first();

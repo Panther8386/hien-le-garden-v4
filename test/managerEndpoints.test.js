@@ -5,7 +5,7 @@ import { onRequestPost as createPolicy, onRequestGet as listPolicy, onRequestDel
 import { onRequestPost as setGiftStock, onRequestGet as getGiftStock } from '../functions/api/gift-inventory.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken;
+let managerToken, receptionToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -15,8 +15,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
+  adminToken = await createSession(env.DB, 3);
 });
 
 function authedRequest(url, token, method, body) {
@@ -30,6 +32,14 @@ function authedRequest(url, token, method, body) {
 describe('POST /api/policy', () => {
   it('lets a manager create a policy', async () => {
     const request = authedRequest('https://x/api/policy', managerToken, 'POST', {
+      discountPercent: 20, validFrom: '2026-09-01', validTo: '2026-09-30', giftEnabled: true,
+    });
+    const response = await createPolicy({ request, env });
+    expect(response.status).toBe(201);
+  });
+
+  it('lets an admin create a policy', async () => {
+    const request = authedRequest('https://x/api/policy', adminToken, 'POST', {
       discountPercent: 20, validFrom: '2026-09-01', validTo: '2026-09-30', giftEnabled: true,
     });
     const response = await createPolicy({ request, env });

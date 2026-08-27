@@ -6,7 +6,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
@@ -17,7 +17,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;
@@ -31,8 +31,8 @@ export async function onRequestPost({ request, env }) {
   if (typeof username !== 'string' || username.trim().length === 0) {
     return jsonError('Tên đăng nhập không được để trống', 400);
   }
-  if (role !== 'manager' && role !== 'reception') {
-    return jsonError('Vai trò phải là manager hoặc reception', 400);
+  if (!['manager', 'reception', 'admin', 'observer'].includes(role)) {
+    return jsonError('Vai trò phải là manager, reception, admin hoặc observer', 400);
   }
   if (typeof password !== 'string' || password.length < 8) {
     return jsonError('Mật khẩu phải có ít nhất 8 ký tự', 400);

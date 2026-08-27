@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const room = await env.DB.prepare(`SELECT id FROM rooms WHERE id = ?`).bind(params.id).first();

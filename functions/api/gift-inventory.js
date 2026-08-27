@@ -8,7 +8,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   let body;
@@ -42,7 +42,7 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const row = await env.DB.prepare(`SELECT name, stock_count AS stockCount FROM gift_inventory ORDER BY id DESC LIMIT 1`).first();

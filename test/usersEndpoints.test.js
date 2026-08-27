@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as listUsers, onRequestPost as createUser } from '../functions/api/users/index.js';
 import { createSession, verifyPassword } from '../lib/auth.js';
 
-let managerToken, receptionToken;
+let managerToken, receptionToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -11,8 +11,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
+  adminToken = await createSession(env.DB, 3);
 });
 
 function authedRequest(url, token, method, body) {
@@ -24,7 +26,7 @@ describe('GET /api/users', () => {
     const response = await listUsers({ request: authedRequest('https://x/api/users', managerToken, 'GET'), env });
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toHaveLength(2);
+    expect(body).toHaveLength(3);
     expect(body[0]).not.toHaveProperty('passwordHash');
     expect(body[0]).not.toHaveProperty('password_hash');
   });
@@ -46,13 +48,37 @@ describe('POST /api/users', () => {
     expect(await verifyPassword('MatKhauManh123', row.passwordHash)).toBe(true);
   });
 
+  it('lets an admin create a reception account', async () => {
+    const request = authedRequest('https://x/api/users', adminToken, 'POST', {
+      username: 'new_reception', password: 'password123', role: 'reception',
+    });
+    const response = await createUser({ request, env });
+    expect(response.status).toBe(201);
+  });
+
+  it('lets an admin create another admin account', async () => {
+    const request = authedRequest('https://x/api/users', adminToken, 'POST', {
+      username: 'second_admin', password: 'password123', role: 'admin',
+    });
+    const response = await createUser({ request, env });
+    expect(response.status).toBe(201);
+  });
+
+  it('lets a manager create an observer account', async () => {
+    const request = authedRequest('https://x/api/users', managerToken, 'POST', {
+      username: 'obs_a', password: 'password123', role: 'observer',
+    });
+    const response = await createUser({ request, env });
+    expect(response.status).toBe(201);
+  });
+
   it('rejects a duplicate username (409)', async () => {
     const response = await createUser({ request: authedRequest('https://x/api/users', managerToken, 'POST', { username: 'quan_ly_a', password: 'x12345678', role: 'reception' }), env });
     expect(response.status).toBe(409);
   });
 
   it('rejects an invalid role', async () => {
-    const response = await createUser({ request: authedRequest('https://x/api/users', managerToken, 'POST', { username: 'x', password: 'x12345678', role: 'admin' }), env });
+    const response = await createUser({ request: authedRequest('https://x/api/users', managerToken, 'POST', { username: 'x', password: 'x12345678', role: 'superadmin' }), env });
     expect(response.status).toBe(400);
   });
 

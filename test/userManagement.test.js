@@ -4,7 +4,7 @@ import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { createSession } from '../lib/auth.js';
 
-let managerAId, managerBId, receptionId, managerAToken, receptionToken;
+let managerAId, managerBId, receptionId, adminId, managerAToken, receptionToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -13,11 +13,14 @@ beforeEach(async () => {
   const a = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   const b = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_b', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   const c = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  const d = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   managerAId = a.meta.last_row_id;
   managerBId = b.meta.last_row_id;
   receptionId = c.meta.last_row_id;
+  adminId = d.meta.last_row_id;
   managerAToken = await createSession(env.DB, managerAId);
   receptionToken = await createSession(env.DB, receptionId);
+  adminToken = await createSession(env.DB, adminId);
 });
 
 function authedRequest(url, token, method, body) {
@@ -60,8 +63,14 @@ describe('PATCH /api/users/:id/role', () => {
     expect(row.role).toBe('manager');
   });
 
+  it('lets an admin change a role', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/role`, adminToken, 'PATCH', { role: 'observer' });
+    const response = await changeRole({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+  });
+
   it('rejects an invalid role value', async () => {
-    const response = await changeRole({ request: authedRequest(`https://x/api/users/${receptionId}/role`, managerAToken, 'PATCH', { role: 'admin' }), env, params: { id: String(receptionId) } });
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${receptionId}/role`, managerAToken, 'PATCH', { role: 'superadmin' }), env, params: { id: String(receptionId) } });
     expect(response.status).toBe(400);
   });
 

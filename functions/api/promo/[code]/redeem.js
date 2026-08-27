@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager']);
+  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const row = await env.DB.prepare(`SELECT promo_status, promo_expires_at FROM feedback_responses WHERE promo_code = ?`)
