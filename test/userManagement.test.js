@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
+import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
 import { createSession } from '../lib/auth.js';
 
 let managerAId, managerBId, receptionId, adminId, managerAToken, receptionToken, adminToken;
@@ -83,5 +84,42 @@ describe('PATCH /api/users/:id/role', () => {
   it('rejects a reception account (403)', async () => {
     const response = await changeRole({ request: authedRequest(`https://x/api/users/${managerBId}/role`, receptionToken, 'PATCH', { role: 'reception' }), env, params: { id: String(managerBId) } });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/users/:id/room-layout-access', () => {
+  it('lets a manager grant the flag', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_manage_room_layout).toBe(1);
+  });
+
+  it('lets a manager revoke the flag', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = ?`).bind(receptionId).run();
+    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: false });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_manage_room_layout).toBe(0);
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const request = authedRequest(`https://x/api/users/${managerBId}/room-layout-access`, receptionToken, 'PATCH', { canManageRoomLayout: true });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(managerBId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const request = authedRequest('https://x/api/users/999999/room-layout-access', managerAToken, 'PATCH', { canManageRoomLayout: true });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a non-boolean value (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: 'yes' });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(400);
   });
 });

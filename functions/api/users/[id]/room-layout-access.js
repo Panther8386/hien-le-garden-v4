@@ -1,0 +1,30 @@
+import { requireAuth } from '../../../../lib/requireAuth.js';
+
+function jsonError(message, status) {
+  return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+export async function onRequestPatch({ request, env, params }) {
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  if (auth instanceof Response) return auth;
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (err) {
+    return jsonError('Dữ liệu không hợp lệ', 400);
+  }
+  const { canManageRoomLayout } = body || {};
+
+  if (typeof canManageRoomLayout !== 'boolean') {
+    return jsonError('Giá trị không hợp lệ', 400);
+  }
+
+  const target = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE id = ?`).bind(params.id).first();
+  if (!target) {
+    return jsonError('Không tìm thấy tài khoản', 404);
+  }
+
+  await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = ? WHERE id = ?`).bind(canManageRoomLayout ? 1 : 0, params.id).run();
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
