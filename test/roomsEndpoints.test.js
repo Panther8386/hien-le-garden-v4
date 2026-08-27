@@ -79,6 +79,55 @@ describe('GET /api/rooms', () => {
     const response = await listRooms({ request, env });
     expect(response.status).toBe(200);
   });
+
+  it('returns the date-scoped 5-state model when ?date= is passed', async () => {
+    const rooms = await env.DB.prepare(`SELECT id, room_type FROM rooms WHERE is_active = 1 ORDER BY id`).all().then((r) => r.results);
+    const [emptyRoom, bookedRoom, depositedRoom, occupiedRoom, usedRoom] = rooms;
+
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, deposit_amount, created_at)
+       VALUES ('B', '090', ?, ?, '2026-09-10', '2026-09-12', 'pending', 'website', 0, '2026-08-27T00:00:00Z')`
+    ).bind(bookedRoom.room_type, bookedRoom.id).run();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, deposit_amount, created_at)
+       VALUES ('C', '090', ?, ?, '2026-09-10', '2026-09-12', 'confirmed', 'website', 200000, '2026-08-27T00:00:00Z')`
+    ).bind(depositedRoom.room_type, depositedRoom.id).run();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('D', '090', ?, ?, '2026-09-10', '2026-09-12', 'checked_in', 'website', '2026-08-27T00:00:00Z')`
+    ).bind(occupiedRoom.room_type, occupiedRoom.id).run();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('E', '090', ?, ?, '2026-09-10', '2026-09-12', 'checked_out', 'website', '2026-08-27T00:00:00Z')`
+    ).bind(usedRoom.room_type, usedRoom.id).run();
+    // A cancelled booking overlapping the date must not affect the room's status.
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('F', '090', ?, ?, '2026-09-10', '2026-09-12', 'cancelled', 'website', '2026-08-27T00:00:00Z')`
+    ).bind(emptyRoom.room_type, emptyRoom.id).run();
+
+    const response = await listRooms({ request: authedRequest('https://x/api/rooms?date=2026-09-11'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const byId = Object.fromEntries(body.map((r) => [r.id, r]));
+    expect(byId[emptyRoom.id].status).toBe('empty');
+    expect(byId[bookedRoom.id].status).toBe('booked');
+    expect(byId[depositedRoom.id].status).toBe('booked_deposited');
+    expect(byId[occupiedRoom.id].status).toBe('occupied');
+    expect(byId[usedRoom.id].status).toBe('used');
+  });
+
+  it('does not include a booking whose date range does not cover the queried date', async () => {
+    const room = await env.DB.prepare(`SELECT id, room_type FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('G', '090', ?, ?, '2026-09-10', '2026-09-12', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).bind(room.room_type, room.id).run();
+
+    const response = await listRooms({ request: authedRequest('https://x/api/rooms?date=2026-09-20'), env });
+    const body = await response.json();
+    expect(body.find((r) => r.id === room.id).status).toBe('empty');
+  });
 });
 
 describe('POST /api/rooms/:id/clean', () => {
