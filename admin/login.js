@@ -14,5 +14,6 @@ document.getElementById('loginForm').addEventListener('submit', async (event) =>
   }
 
   const { role } = await response.json();
-  window.location.href = role === 'manager' ? 'manager.html' : 'reception.html';
+  const landing = { admin: '/manager', manager: '/manager', reception: '/reception', observer: '/observer' };
+  window.location.href = landing[role] || '/reception';
 });
