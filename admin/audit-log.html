@@ -1,0 +1,45 @@
+<!-- v4/admin/audit-log.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Nhật ký thao tác — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Nhật ký thao tác</h1>
+    <p>Lịch sử đổi tiền cọc, huỷ đặt phòng, huỷ dịch vụ và đổi quyền tài khoản — 50 thao tác gần nhất.</p>
+
+    <label>Lọc theo loại
+      <select id="typeFilter">
+        <option value="">Tất cả</option>
+        <option value="deposit_change">Đổi tiền cọc</option>
+        <option value="booking_cancel">Huỷ đặt phòng</option>
+        <option value="service_void">Huỷ dịch vụ</option>
+        <option value="account_role_change">Đổi vai trò tài khoản</option>
+        <option value="account_permission_change">Đổi quyền sắp xếp phòng</option>
+      </select>
+    </label>
+
+    <p id="listError" class="error"></p>
+    <p id="emptyState" class="hidden">Chưa có thao tác nào được ghi nhận.</p>
+    <div class="table-scroll">
+      <table id="logTable">
+        <thead><tr><th>Thời gian</th><th>Loại thao tác</th><th>Người thực hiện</th><th>Đối tượng</th><th>Thay đổi</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/admin/audit-log.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>

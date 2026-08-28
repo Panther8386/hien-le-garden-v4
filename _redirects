@@ -24,6 +24,7 @@
 /manager/catalog               /admin/catalog          200
 /manager/cancellation-policy    /admin/cancellation-policy   200
 /manager/users                 /admin/users            200
+/manager/audit-log             /admin/audit-log        200
 /manager/change-password      /admin/change-password 200
 
 /reception                    /admin/reception       200
