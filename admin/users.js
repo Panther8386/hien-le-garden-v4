@@ -5,8 +5,9 @@
     window.location.href = '/admin';
     return;
   }
-  const { username: currentUsername } = await res.json();
+  const { username: currentUsername, role: currentRole } = await res.json();
   window.__currentUsername = currentUsername;
+  window.__currentRole = currentRole;
   loadUsers();
 })();
 
@@ -88,6 +89,18 @@ async function loadUsers() {
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
     const tdActions = document.createElement('td');
+
+    if (window.__currentRole === 'admin') {
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'btn-secondary';
+      resetBtn.textContent = 'Đặt lại mật khẩu';
+      resetBtn.disabled = isSelf;
+      if (isSelf) resetBtn.title = 'Không thể tự đặt lại mật khẩu bằng chức năng này — dùng trang Đổi mật khẩu';
+      resetBtn.addEventListener('click', () => openResetPasswordRow(u.id, tr));
+      tdActions.appendChild(resetBtn);
+    }
+
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = 'Xoá';
     deleteBtn.disabled = isSelf || isLastManager;
@@ -108,6 +121,57 @@ async function loadUsers() {
     tr.append(tdName, tdRole, tdLayout, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
+}
+
+function openResetPasswordRow(userId, afterRow) {
+  document.querySelectorAll('.reset-password-row').forEach((el) => el.remove());
+
+  const tr = document.createElement('tr');
+  tr.className = 'reset-password-row';
+  const td = document.createElement('td');
+  td.colSpan = 5;
+
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.placeholder = 'Mật khẩu mới (tối thiểu 8 ký tự)';
+  input.minLength = 8;
+  input.style.display = 'inline-block';
+  input.style.width = 'auto';
+  input.style.marginRight = '8px';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.textContent = 'Xác nhận';
+  confirmBtn.style.width = 'auto';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-secondary';
+  cancelBtn.textContent = 'Huỷ';
+  cancelBtn.style.width = 'auto';
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'error';
+
+  confirmBtn.addEventListener('click', async () => {
+    errorEl.textContent = '';
+    const response = await fetch(`/api/users/${userId}/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: input.value }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      errorEl.textContent = body.error || 'Có lỗi khi đặt lại mật khẩu';
+      return;
+    }
+    tr.remove();
+  });
+  cancelBtn.addEventListener('click', () => tr.remove());
+
+  td.append(input, confirmBtn, cancelBtn, errorEl);
+  tr.appendChild(td);
+  afterRow.after(tr);
 }
 
 document.getElementById('userForm').addEventListener('submit', async (event) => {
