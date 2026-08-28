@@ -80,7 +80,10 @@ function renderSummary(data) {
 
   renderStatCards('monthStats', [
     { label: 'Tỷ lệ lấp đầy', value: `${Math.round(data.monthSummary.occupancyRate * 100)}%` },
-    { label: 'Doanh thu ước tính', value: formatVnd(data.monthSummary.estimatedRevenueVnd) },
+    { label: 'Giá phòng bình quân (ADR)', value: formatVnd(data.monthSummary.adrVnd) },
+    { label: 'Doanh thu phòng', value: formatVnd(data.monthSummary.roomRevenueVnd) },
+    { label: 'Doanh thu dịch vụ', value: formatVnd(data.monthSummary.serviceRevenueVnd) },
+    { label: 'Tổng doanh thu', value: formatVnd(data.monthSummary.totalRevenueVnd) },
   ]);
 
   renderCountTable('#funnelTable tbody', data.monthSummary.statusFunnel, STATUS_LABELS);

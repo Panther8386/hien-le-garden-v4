@@ -47,7 +47,10 @@ describe('GET /api/dashboard/summary', () => {
     expect(body.today).toHaveProperty('roomsOccupied');
     expect(body.today).toHaveProperty('roomsEmpty');
     expect(body.monthSummary).toHaveProperty('occupancyRate');
-    expect(body.monthSummary).toHaveProperty('estimatedRevenueVnd');
+    expect(body.monthSummary).toHaveProperty('roomRevenueVnd');
+    expect(body.monthSummary).toHaveProperty('serviceRevenueVnd');
+    expect(body.monthSummary).toHaveProperty('totalRevenueVnd');
+    expect(body.monthSummary).toHaveProperty('adrVnd');
     expect(body.monthSummary.statusFunnel).toEqual({ pending: 0, confirmed: 0, checked_in: 0, checked_out: 0, cancelled: 0 });
   });
 

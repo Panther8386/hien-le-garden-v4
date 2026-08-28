@@ -70,7 +70,10 @@ describe('getMonthSummary', () => {
   it('returns zeros for a month with no bookings', async () => {
     const summary = await getMonthSummary(env, '2026-08');
     expect(summary.occupancyRate).toBe(0);
-    expect(summary.estimatedRevenueVnd).toBe(0);
+    expect(summary.roomRevenueVnd).toBe(0);
+    expect(summary.serviceRevenueVnd).toBe(0);
+    expect(summary.totalRevenueVnd).toBe(0);
+    expect(summary.adrVnd).toBe(0);
     expect(summary.statusFunnel).toEqual({ pending: 0, confirmed: 0, checked_in: 0, checked_out: 0, cancelled: 0 });
     expect(summary.sourceBreakdown).toEqual({ website: 0, phone: 0, zalo: 0, walk_in: 0 });
   });
@@ -85,8 +88,8 @@ describe('getMonthSummary', () => {
     const august = await getMonthSummary(env, '2026-08');
 
     // circle = 600000 VND/night; stay is Jul30,Jul31,Aug1 = 3 nights total, split 2/1
-    expect(july.estimatedRevenueVnd).toBe(2 * 600000);
-    expect(august.estimatedRevenueVnd).toBe(1 * 600000);
+    expect(july.roomRevenueVnd).toBe(2 * 600000);
+    expect(august.roomRevenueVnd).toBe(1 * 600000);
     expect(july.statusFunnel.confirmed).toBe(1);
     expect(august.statusFunnel.confirmed).toBe(1);
   });
@@ -103,7 +106,7 @@ describe('getMonthSummary', () => {
 
     const summary = await getMonthSummary(env, '2026-08');
     expect(summary.occupancyRate).toBe(0);
-    expect(summary.estimatedRevenueVnd).toBe(0);
+    expect(summary.roomRevenueVnd).toBe(0);
     expect(summary.statusFunnel.pending).toBe(1);
     expect(summary.statusFunnel.cancelled).toBe(1);
   });
@@ -129,6 +132,77 @@ describe('getMonthSummary', () => {
     expect(summary.occupancyRate).toBeCloseTo(10 / (16 * 31), 5);
   });
 
+  it('computes ADR as room revenue over occupied nights', async () => {
+    // circle = 600000 VND/night, 10 occupied nights => ADR is just the flat rate here,
+    // but ADR is computed as roomRevenueVnd / occupiedNights, not read from ROOM_TYPES directly
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-01', '2026-08-11', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.adrVnd).toBe(600000);
+  });
+
+  it('returns an ADR of 0 when there are no occupied nights (avoids divide-by-zero)', async () => {
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.adrVnd).toBe(0);
+  });
+
+  it('sums posted service revenue within the month, excluding voided items', async () => {
+    const booking = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-01', '2026-08-03', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+    const bookingId = booking.meta.last_row_id;
+
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, 'Cà phê', 30000, 2, 60000, 'posted', 'le_tan', '2026-08-05T00:00:00Z')`
+    ).bind(bookingId).run();
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, 'BBQ', 200000, 1, 200000, 'voided', 'le_tan', '2026-08-06T00:00:00Z')`
+    ).bind(bookingId).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.serviceRevenueVnd).toBe(60000);
+  });
+
+  it('excludes service items added outside the queried month', async () => {
+    const booking = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-01', '2026-08-03', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+    const bookingId = booking.meta.last_row_id;
+
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'le_tan', '2026-09-01T00:00:00Z')`
+    ).bind(bookingId).run();
+
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.serviceRevenueVnd).toBe(0);
+  });
+
+  it('computes totalRevenueVnd as room revenue plus service revenue', async () => {
+    const booking = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', '2026-08-01', '2026-08-03', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).run();
+    const bookingId = booking.meta.last_row_id;
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, 'Cà phê', 30000, 2, 60000, 'posted', 'le_tan', '2026-08-05T00:00:00Z')`
+    ).bind(bookingId).run();
+
+    // circle = 600000 VND/night, 2 nights => 1,200,000 room revenue + 60,000 service revenue
+    const summary = await getMonthSummary(env, '2026-08');
+    expect(summary.roomRevenueVnd).toBe(1200000);
+    expect(summary.serviceRevenueVnd).toBe(60000);
+    expect(summary.totalRevenueVnd).toBe(1260000);
+  });
+
   it('counts the full month of nights for a booking that starts before and ends after the queried month', async () => {
     await env.DB.prepare(
       `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
@@ -137,7 +211,7 @@ describe('getMonthSummary', () => {
 
     // triangle = 300000 VND/night; August 2026 has 31 days, all of which fall inside the stay
     const summary = await getMonthSummary(env, '2026-08');
-    expect(summary.estimatedRevenueVnd).toBe(31 * 300000);
+    expect(summary.roomRevenueVnd).toBe(31 * 300000);
     expect(summary.occupancyRate).toBeCloseTo(31 / (16 * 31), 5);
   });
 
@@ -149,10 +223,10 @@ describe('getMonthSummary', () => {
 
     // circle = 600000 VND/night; December's share is Dec20..Dec31 = 12 nights
     const december = await getMonthSummary(env, '2026-12');
-    expect(december.estimatedRevenueVnd).toBe(12 * 600000);
+    expect(december.roomRevenueVnd).toBe(12 * 600000);
 
     // January's share is Jan1..Jan5 = 4 nights
     const january = await getMonthSummary(env, '2027-01');
-    expect(january.estimatedRevenueVnd).toBe(4 * 600000);
+    expect(january.roomRevenueVnd).toBe(4 * 600000);
   });
 });
