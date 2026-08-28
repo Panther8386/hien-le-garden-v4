@@ -266,6 +266,29 @@ describe('PATCH /api/bookings/:id/deposit', () => {
     expect(row.deposit_amount).toBe(200000);
   });
 
+  it('writes an audit_log row on deposit change', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, deposit_amount, created_at)
+       VALUES ('Deposit Audit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', 50000, '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 200000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'deposit_change' AND entity_id = ?`).bind(id).first();
+    expect(row.entity_type).toBe('booking');
+    expect(row.entity_label).toBe('Deposit Audit Guest');
+    expect(row.old_value).toBe('50000');
+    expect(row.new_value).toBe('200000');
+    expect(row.actor).toBe('le_tan_a');
+  });
+
   it('rejects a negative amount (400)', async () => {
     const created = await env.DB.prepare(
       `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
