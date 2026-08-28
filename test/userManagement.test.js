@@ -3,7 +3,8 @@ import { env } from 'cloudflare:test';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
-import { createSession } from '../lib/auth.js';
+import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
+import { createSession, verifyPassword } from '../lib/auth.js';
 
 let managerAId, managerBId, receptionId, adminId, observerId, managerAToken, receptionToken, adminToken;
 
@@ -140,5 +141,45 @@ describe('PATCH /api/users/:id/room-layout-access', () => {
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
     expect(row.can_manage_room_layout).toBe(0);
+  });
+});
+
+describe('PATCH /api/users/:id/password', () => {
+  it('lets an admin reset another account\'s password', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/password`, adminToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT password_hash FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(await verifyPassword('MatKhauMoi123', row.password_hash)).toBe(true);
+  });
+
+  it('rejects a manager (403) -- admin-only, not the usual manager+admin', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/password`, managerAToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const request = authedRequest(`https://x/api/users/${managerBId}/password`, receptionToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: String(managerBId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects an admin resetting their own password through this endpoint (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${adminId}/password`, adminToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: String(adminId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a password shorter than 8 characters (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/password`, adminToken, 'PATCH', { password: 'short' });
+    const response = await resetPassword({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const request = authedRequest('https://x/api/users/999999/password', adminToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
   });
 });
