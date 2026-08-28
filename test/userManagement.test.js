@@ -67,6 +67,18 @@ describe('PATCH /api/users/:id/role', () => {
     expect(row.role).toBe('manager');
   });
 
+  it('writes an audit_log row with the old and new role', async () => {
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${receptionId}/role`, managerAToken, 'PATCH', { role: 'observer' }), env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_role_change' AND entity_id = ?`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBe('reception');
+    expect(row.new_value).toBe('observer');
+    expect(row.actor).toBe('quan_ly_a');
+  });
+
   it('lets an admin change a role', async () => {
     const request = authedRequest(`https://x/api/users/${receptionId}/role`, adminToken, 'PATCH', { role: 'observer' });
     const response = await changeRole({ request, env, params: { id: String(receptionId) } });
