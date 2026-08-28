@@ -111,6 +111,19 @@ describe('PATCH /api/users/:id/room-layout-access', () => {
     expect(row.can_manage_room_layout).toBe(1);
   });
 
+  it('writes an audit_log row with Bật/Tắt values', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
+    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ?`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBe('Tắt');
+    expect(row.new_value).toBe('Bật');
+    expect(row.actor).toBe('quan_ly_a');
+  });
+
   it('lets a manager revoke the flag', async () => {
     await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = ?`).bind(receptionId).run();
     const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: false });
