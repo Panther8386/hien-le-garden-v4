@@ -26,7 +26,11 @@
     <form id="catalogForm" class="hidden">
       <input type="hidden" name="id" />
       <input type="hidden" name="category" />
-      <label>Nhóm phụ (tuỳ chọn) <input type="text" name="subgroup" /></label>
+      <label>Nhóm phụ (tuỳ chọn) <input type="text" name="subgroup" list="luuTruSubgroups" /></label>
+      <datalist id="luuTruSubgroups">
+        <option value="Lưu Trú Theo Đêm"></option>
+        <option value="Thuê Theo Giờ"></option>
+      </datalist>
       <label>Tên dịch vụ <input type="text" name="name" required /></label>
       <label>Kiểu giá
         <select name="priceType">
