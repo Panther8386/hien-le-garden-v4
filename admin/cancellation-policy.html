@@ -1,0 +1,46 @@
+<!-- v4/admin/cancellation-policy.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Chính sách hoàn cọc — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Chính sách hoàn cọc</h1>
+    <p>Số ngày trước ngày nhận phòng (check-in) quyết định phần trăm hoàn cọc khi huỷ đặt phòng.</p>
+
+    <form id="tierForm" class="hidden">
+      <input type="hidden" name="id" />
+      <label>Số ngày tối thiểu trước check-in <input type="number" name="minDaysBeforeCheckin" min="0" required /></label>
+      <label>Phần trăm hoàn cọc <input type="number" name="refundPercent" min="0" max="100" required /></label>
+      <label>Ghi chú (tuỳ chọn) <input type="text" name="label" /></label>
+      <button type="submit" id="tierSubmitBtn">Thêm bậc</button>
+      <button type="button" id="tierCancelBtn" class="btn-secondary">Huỷ</button>
+      <p id="formError" class="error"></p>
+    </form>
+
+    <button type="button" id="addTierBtn" class="hidden">+ Thêm bậc</button>
+
+    <p id="listError" class="error"></p>
+    <p id="emptyState" class="hidden">Chưa cấu hình chính sách hoàn cọc — mặc định không hoàn cọc khi huỷ.</p>
+    <div class="table-scroll">
+      <table id="tierTable">
+        <thead><tr><th>Số ngày tối thiểu trước check-in</th><th>% Hoàn cọc</th><th>Ghi chú</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/admin/cancellation-policy.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
