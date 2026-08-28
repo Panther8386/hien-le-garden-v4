@@ -229,6 +229,23 @@ describe('PATCH /api/bookings/:id/services/:itemId', () => {
     expect(row.voided_by).toBe('le_tan_svc');
   });
 
+  it('writes an audit_log row with the service and guest in the label', async () => {
+    const itemId = await addPostedItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'service_void' AND entity_id = ?`).bind(itemId).first();
+    expect(row.entity_type).toBe('service_item');
+    expect(row.entity_label).toBe('Cà phê ×1 — Confirmed Guest');
+    expect(row.old_value).toBe('posted');
+    expect(row.new_value).toBe('voided');
+    expect(row.actor).toBe('le_tan_svc');
+  });
+
   it('404s when the item does not belong to the booking in the URL', async () => {
     const itemId = await addPostedItem(confirmedBookingId);
     const response = await voidServiceItem({
