@@ -22,7 +22,7 @@ export async function onRequestPost({ request, env, params }) {
   } catch (err) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
-  const { serviceCatalogId, unitPrice, quantity } = body || {};
+  const { serviceCatalogId, unitPrice, quantity, paid, paymentMethod } = body || {};
 
   if (!Number.isInteger(serviceCatalogId)) {
     return jsonError('Vui lòng chọn dịch vụ', 400);
@@ -33,6 +33,9 @@ export async function onRequestPost({ request, env, params }) {
   if (!Number.isInteger(quantity) || quantity < 1) {
     return jsonError('Số lượng phải là số nguyên lớn hơn 0', 400);
   }
+  if (paid === true && paymentMethod !== 'cash' && paymentMethod !== 'transfer') {
+    return jsonError('Vui lòng chọn hình thức thanh toán', 400);
+  }
 
   const catalogItem = await env.DB.prepare(`SELECT id, name FROM service_catalog WHERE id = ? AND is_active = 1`).bind(serviceCatalogId).first();
   if (!catalogItem) {
@@ -41,12 +44,14 @@ export async function onRequestPost({ request, env, params }) {
 
   const amount = unitPrice * quantity;
   const now = new Date().toISOString();
+  const paymentStatus = paid === true ? 'paid' : 'pending';
+  const resolvedPaymentMethod = paid === true ? paymentMethod : null;
 
   const result = await env.DB.prepare(
-    `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?)`
+    `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method)
+     VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?)`
   )
-    .bind(params.id, catalogItem.id, catalogItem.name, unitPrice, quantity, amount, auth.username, now)
+    .bind(params.id, catalogItem.id, catalogItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod)
     .run();
 
   return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });

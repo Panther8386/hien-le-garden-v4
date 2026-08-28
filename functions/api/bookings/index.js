@@ -134,6 +134,7 @@ export async function onRequestGet({ request, env }) {
   if (results.length > 0) {
     const { results: serviceRows } = await env.DB.prepare(
       `SELECT id, booking_id AS bookingId, name, unit_price AS unitPrice, quantity, amount, status,
+              payment_status AS paymentStatus, payment_method AS paymentMethod,
               created_by AS createdBy, created_at AS createdAt, voided_by AS voidedBy, voided_at AS voidedAt
        FROM booking_service_items
        WHERE booking_id IN (SELECT id FROM bookings ${where})

@@ -69,6 +69,61 @@ describe('POST /api/bookings/:id/services', () => {
     expect(row.amount).toBe(70000);
     expect(row.status).toBe('posted');
     expect(row.created_by).toBe('le_tan_svc');
+    expect(row.payment_status).toBe('pending');
+    expect(row.payment_method).toBeNull();
+  });
+
+  it('stores paid status and payment method when paid is true', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1, paid: true, paymentMethod: 'cash' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT payment_status, payment_method FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.payment_status).toBe('paid');
+    expect(row.payment_method).toBe('cash');
+  });
+
+  it('stores transfer as a valid payment method', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1, paid: true, paymentMethod: 'transfer' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT payment_method FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.payment_method).toBe('transfer');
+  });
+
+  it('rejects paid: true without a paymentMethod (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1, paid: true }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects an invalid paymentMethod value (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1, paid: true, paymentMethod: 'crypto' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('ignores a stray paymentMethod when paid is false or omitted', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1, paymentMethod: 'cash' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT payment_status, payment_method FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.payment_status).toBe('pending');
+    expect(row.payment_method).toBeNull();
   });
 
   it('rejects a pending booking (400)', async () => {

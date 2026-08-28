@@ -249,6 +249,7 @@ th { color: var(--gold); font-weight: 600; }
 .service-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .add-service-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 .add-service-form select, .add-service-form input { width: auto; margin-top: 0; }
+.add-service-form .checkbox-label { display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; }
 
 .confirm-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);

@@ -91,7 +91,10 @@ function renderServicesSection(b, card) {
     const line = document.createElement('p');
     line.className = 'service-line';
     const text = document.createElement('span');
-    text.textContent = `${item.name} ×${item.quantity} — ${formatVnd(item.amount)}`;
+    const paymentSuffix = item.paymentStatus === 'paid'
+      ? ` · Đã thanh toán (${item.paymentMethod === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'})`
+      : ' · Chưa thanh toán';
+    text.textContent = `${item.name} ×${item.quantity} — ${formatVnd(item.amount)}${paymentSuffix}`;
     if (item.status === 'voided') {
       text.style.textDecoration = 'line-through';
       text.style.opacity = '0.5';
@@ -180,6 +183,24 @@ function openAddServiceForm(bookingId, section) {
   qtyInput.step = '1';
   qtyInput.value = '1';
 
+  const paidLabel = document.createElement('label');
+  paidLabel.className = 'checkbox-label';
+  const paidCheckbox = document.createElement('input');
+  paidCheckbox.type = 'checkbox';
+  paidLabel.append(paidCheckbox, ' Đã thanh toán');
+
+  const methodLabel = document.createElement('label');
+  methodLabel.className = 'checkbox-label';
+  const methodCheckbox = document.createElement('input');
+  methodCheckbox.type = 'checkbox';
+  methodCheckbox.checked = true;
+  methodLabel.append(methodCheckbox, ' Tiền mặt');
+  methodLabel.style.display = 'none';
+
+  paidCheckbox.addEventListener('change', () => {
+    methodLabel.style.display = paidCheckbox.checked ? '' : 'none';
+  });
+
   const confirmBtn = document.createElement('button');
   confirmBtn.type = 'button';
   confirmBtn.textContent = 'Thêm';
@@ -209,12 +230,14 @@ function openAddServiceForm(bookingId, section) {
       errorEl.textContent = 'Số lượng phải là số nguyên lớn hơn 0';
       return;
     }
+    const paid = paidCheckbox.checked;
+    const paymentMethod = paid ? (methodCheckbox.checked ? 'cash' : 'transfer') : undefined;
     let response;
     try {
       response = await fetch(`/api/bookings/${bookingId}/services`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity }),
+        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity, paid, paymentMethod }),
       });
     } catch (err) {
       errorEl.textContent = 'Có lỗi khi thêm dịch vụ';
@@ -229,7 +252,7 @@ function openAddServiceForm(bookingId, section) {
   });
   cancelBtn.addEventListener('click', () => form.remove());
 
-  form.append(select, priceInput, qtyInput, confirmBtn, cancelBtn, errorEl);
+  form.append(select, priceInput, qtyInput, paidLabel, methodLabel, confirmBtn, cancelBtn, errorEl);
   section.appendChild(form);
 }
 
