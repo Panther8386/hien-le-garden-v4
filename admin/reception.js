@@ -58,7 +58,62 @@ let catalogItems = [];
 })();
 
 async function refreshAll() {
-  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadRooms()]);
+  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadRooms(), loadReminders()]);
+}
+
+async function loadReminders() {
+  const container = document.getElementById('remindersSection');
+  container.innerHTML = '';
+  let response;
+  try {
+    response = await fetch('/api/reception/reminders');
+  } catch (err) {
+    return;
+  }
+  if (!response.ok) return;
+  const data = await response.json();
+
+  const { pendingNoDeposit, arrivingToday, roomsNotCleaned, thresholds } = data;
+
+  if (pendingNoDeposit.length === 0 && arrivingToday.length === 0 && roomsNotCleaned.length === 0) {
+    const okLine = document.createElement('p');
+    okLine.textContent = '✅ Không có việc cần nhắc.';
+    container.appendChild(okLine);
+    return;
+  }
+
+  if (pendingNoDeposit.length > 0) {
+    const heading = document.createElement('p');
+    heading.innerHTML = `<strong>Chờ cọc quá ${thresholds.pendingDepositHours} giờ (${pendingNoDeposit.length})</strong>`;
+    container.appendChild(heading);
+    pendingNoDeposit.forEach((b) => {
+      const p = document.createElement('p');
+      p.textContent = `${b.guestName} — ${b.phone} — chờ ${b.hoursWaiting} giờ`;
+      container.appendChild(p);
+    });
+  }
+
+  if (arrivingToday.length > 0) {
+    const heading = document.createElement('p');
+    heading.innerHTML = `<strong>Khách sắp đến hôm nay (${arrivingToday.length})</strong>`;
+    container.appendChild(heading);
+    arrivingToday.forEach((b) => {
+      const p = document.createElement('p');
+      p.textContent = `${b.guestName} — ${b.phone} — ${ROOM_TYPE_LABELS[b.roomType] || b.roomType}`;
+      container.appendChild(p);
+    });
+  }
+
+  if (roomsNotCleaned.length > 0) {
+    const heading = document.createElement('p');
+    heading.innerHTML = `<strong>Phòng chưa dọn quá ${thresholds.cleaningMinutes} phút (${roomsNotCleaned.length})</strong>`;
+    container.appendChild(heading);
+    roomsNotCleaned.forEach((r) => {
+      const p = document.createElement('p');
+      p.textContent = `${r.name} — ${ROOM_TYPE_LABELS[r.roomType] || r.roomType} — ${r.minutesWaiting} phút`;
+      container.appendChild(p);
+    });
+  }
 }
 
 async function fetchBookings(query) {
