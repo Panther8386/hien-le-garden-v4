@@ -224,6 +224,26 @@ describe('GET /api/bookings', () => {
     const observerArriving = observerBody.find((b) => b.guestName === 'Arriving Today');
     expect(observerArriving.email).toBeNull();
   });
+
+  it('attaches services grouped per booking, empty array when none exist', async () => {
+    await env.DB.exec('DELETE FROM booking_service_items');
+    const pendingRow = await env.DB.prepare(`SELECT id FROM bookings WHERE guest_name = 'Pending Guest'`).first();
+    const arrivingRow = await env.DB.prepare(`SELECT id FROM bookings WHERE guest_name = 'Arriving Today'`).first();
+
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'quan_ly_a', '2026-08-01T00:00:00Z')`
+    ).bind(arrivingRow.id).run();
+
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
+    const body = await response.json();
+
+    const pendingResult = body.find((b) => b.id === pendingRow.id);
+    expect(pendingResult.services).toEqual([]);
+
+    const arrivingResult = body.find((b) => b.id === arrivingRow.id);
+    expect(arrivingResult.services).toHaveLength(1);
+    expect(arrivingResult.services[0]).toMatchObject({ name: 'Cà phê', unitPrice: 30000, quantity: 1, amount: 30000, status: 'posted' });
+  });
 });
 
 describe('PATCH /api/bookings/:id/deposit', () => {
