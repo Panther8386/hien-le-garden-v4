@@ -41,6 +41,15 @@ function authedPost(url, token, body) {
   });
 }
 
+async function createConfirmedBookingWithDeposit({ checkIn, depositAmount }) {
+  const checkOut = new Date(checkIn);
+  checkOut.setUTCDate(checkOut.getUTCDate() + 1);
+  const result = await env.DB.prepare(
+    `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, deposit_amount, created_at) VALUES (?, ?, 'triangle', ?, ?, 'confirmed', 'website', ?, ?)`
+  ).bind('Refund Test Guest', '0900000002', checkIn, checkOut.toISOString().slice(0, 10), depositAmount, new Date().toISOString()).run();
+  return { id: result.meta.last_row_id };
+}
+
 describe('POST /api/bookings/:id/confirm', () => {
   it('confirms a pending booking and assigns the chosen room', async () => {
     const response = await confirmBooking({
@@ -362,6 +371,59 @@ describe('POST /api/bookings/:id/cancel', () => {
       params: { id: '999999' },
     });
     expect(response.status).toBe(404);
+  });
+
+  it('computes 0% refund when no cancellation_policy_tier rows exist', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 200000 });
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.refundPercentApplied).toBe(0);
+    expect(body.refundAmount).toBe(0);
+    const row = await env.DB.prepare(`SELECT refund_percent_applied FROM bookings WHERE id = ?`).bind(booking.id).first();
+    expect(row.refund_percent_applied).toBe(0);
+  });
+
+  it('applies the matching tier at the exact day-boundary', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (7, 100, 'seed', '2026-08-01T00:00:00Z')`).run();
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (0, 0, 'seed', '2026-08-01T00:00:00Z')`).run();
+
+    const checkIn = new Date();
+    checkIn.setUTCDate(checkIn.getUTCDate() + 7);
+    const checkInStr = checkIn.toISOString().slice(0, 10);
+
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: checkInStr, depositAmount: 300000 });
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    const body = await response.json();
+    expect(body.refundPercentApplied).toBe(100);
+    expect(body.refundAmount).toBe(300000);
+  });
+
+  it('falls back to 0% below the smallest configured tier', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (3, 50, 'seed', '2026-08-01T00:00:00Z')`).run();
+
+    const checkIn = new Date();
+    checkIn.setUTCDate(checkIn.getUTCDate() + 1);
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: checkIn.toISOString().slice(0, 10), depositAmount: 100000 });
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    const body = await response.json();
+    expect(body.refundPercentApplied).toBe(0);
+    expect(body.refundAmount).toBe(0);
   });
 });
 
