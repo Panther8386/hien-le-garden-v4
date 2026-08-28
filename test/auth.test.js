@@ -29,7 +29,7 @@ describe('createSession / getSession', () => {
 
     const token = await createSession(env.DB, 1);
     const session = await getSession(env.DB, token);
-    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception' });
+    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', canManageRoomLayout: false });
   });
 
   it('returns null for an unknown token', async () => {

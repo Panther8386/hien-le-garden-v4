@@ -54,6 +54,13 @@ describe('GET /api/audit-log', () => {
     expect(body[0].actionType).toBe('service_void');
   });
 
+  it('accepts each of the three newer action types as a valid filter', async () => {
+    for (const type of ['booking_reject', 'account_password_reset', 'account_delete']) {
+      const response = await getAuditLog({ request: authedRequest(`https://x/api/audit-log?type=${type}`, managerToken), env });
+      expect(response.status).toBe(200);
+    }
+  });
+
   it('rejects an invalid type value (400)', async () => {
     const response = await getAuditLog({ request: authedRequest('https://x/api/audit-log?type=bogus', managerToken), env });
     expect(response.status).toBe(400);

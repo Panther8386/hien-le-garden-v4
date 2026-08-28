@@ -4,7 +4,7 @@ function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-const VALID_ACTION_TYPES = ['deposit_change', 'booking_cancel', 'service_void', 'account_role_change', 'account_permission_change'];
+const VALID_ACTION_TYPES = ['deposit_change', 'booking_cancel', 'booking_reject', 'service_void', 'account_role_change', 'account_permission_change', 'account_password_reset', 'account_delete'];
 
 export async function onRequestGet({ request, env }) {
   const auth = await requireAuth(request, env, ['manager', 'admin']);

@@ -233,6 +233,34 @@ describe('POST /api/bookings/:id/reject', () => {
     expect(response.status).toBe(200);
   });
 
+  it('writes an audit_log row with the guest and reason', async () => {
+    const response = await rejectBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/reject`, managerToken, { reason: 'Hết phòng' }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'booking_reject' AND entity_id = ?`).bind(pendingBookingId).first();
+    expect(row.entity_type).toBe('booking');
+    expect(row.entity_label).toBe('Nguyễn Văn A');
+    expect(row.old_value).toBe('pending');
+    expect(row.new_value).toBe('cancelled — Lý do: Hết phòng');
+    expect(row.actor).toBe('quan_ly_a');
+  });
+
+  it('writes an audit_log row without a reason suffix when none is given', async () => {
+    const response = await rejectBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/reject`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE action_type = 'booking_reject' AND entity_id = ?`).bind(pendingBookingId).first();
+    expect(row.new_value).toBe('cancelled');
+  });
+
   it('rejects rejecting a booking that is not pending', async () => {
     await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
     const response = await rejectBooking({

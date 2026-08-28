@@ -16,16 +16,19 @@
 <body>
   <div class="page">
     <h1>Nhật ký thao tác</h1>
-    <p>Lịch sử đổi tiền cọc, huỷ đặt phòng, huỷ dịch vụ và đổi quyền tài khoản — 50 thao tác gần nhất.</p>
+    <p>Lịch sử đổi tiền cọc, huỷ/từ chối đặt phòng, huỷ dịch vụ và các thao tác tài khoản (đổi quyền, đặt lại mật khẩu, xoá) — 50 thao tác gần nhất.</p>
 
     <label>Lọc theo loại
       <select id="typeFilter">
         <option value="">Tất cả</option>
         <option value="deposit_change">Đổi tiền cọc</option>
         <option value="booking_cancel">Huỷ đặt phòng</option>
+        <option value="booking_reject">Từ chối đặt phòng</option>
         <option value="service_void">Huỷ dịch vụ</option>
         <option value="account_role_change">Đổi vai trò tài khoản</option>
         <option value="account_permission_change">Đổi quyền sắp xếp phòng</option>
+        <option value="account_password_reset">Đặt lại mật khẩu</option>
+        <option value="account_delete">Xoá tài khoản</option>
       </select>
     </label>
 

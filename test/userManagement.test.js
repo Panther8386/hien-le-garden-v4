@@ -57,6 +57,18 @@ describe('DELETE /api/users/:id', () => {
     const response = await deleteUser({ request: authedRequest(`https://x/api/users/${managerBId}`, receptionToken, 'DELETE'), env, params: { id: String(managerBId) } });
     expect(response.status).toBe(403);
   });
+
+  it('writes an audit_log row with the deleted role', async () => {
+    const response = await deleteUser({ request: authedRequest(`https://x/api/users/${receptionId}`, managerAToken, 'DELETE'), env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(204);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_delete' AND entity_id = ?`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBe('reception');
+    expect(row.new_value).toBe('deleted');
+    expect(row.actor).toBe('quan_ly_a');
+  });
 });
 
 describe('PATCH /api/users/:id/role', () => {
@@ -176,6 +188,19 @@ describe('PATCH /api/users/:id/password', () => {
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT password_hash FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
     expect(await verifyPassword('MatKhauMoi123', row.password_hash)).toBe(true);
+  });
+
+  it('writes an audit_log row without storing any password value', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/password`, adminToken, 'PATCH', { password: 'MatKhauMoi123' });
+    const response = await resetPassword({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_password_reset' AND entity_id = ?`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBeNull();
+    expect(row.new_value).toBe('Đã đặt lại mật khẩu');
+    expect(row.actor).toBe('admin_a');
   });
 
   it('rejects a manager (403) -- admin-only, not the usual manager+admin', async () => {

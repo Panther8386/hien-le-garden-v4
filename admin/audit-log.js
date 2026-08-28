@@ -2,9 +2,12 @@
 const ACTION_TYPE_LABELS = {
   deposit_change: 'Đổi tiền cọc',
   booking_cancel: 'Huỷ đặt phòng',
+  booking_reject: 'Từ chối đặt phòng',
   service_void: 'Huỷ dịch vụ',
   account_role_change: 'Đổi vai trò tài khoản',
   account_permission_change: 'Đổi quyền sắp xếp phòng',
+  account_password_reset: 'Đặt lại mật khẩu',
+  account_delete: 'Xoá tài khoản',
 };
 
 function formatVnd(n) {
