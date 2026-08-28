@@ -34,6 +34,7 @@ function showOpsError(message) {
 }
 
 let canManageRoomLayout = false;
+let catalogItems = [];
 
 (async () => {
   const res = await fetch('/api/auth/me');
@@ -44,6 +45,7 @@ let canManageRoomLayout = false;
   const { role, canManageRoomLayout: layoutFlag } = await res.json();
   currentRole = role;
   canManageRoomLayout = !!layoutFlag;
+  catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   if (currentRole === 'observer') {
     document.getElementById('newBookingSection').classList.add('hidden');
     document.getElementById('promoLookupSection').classList.add('hidden');
@@ -72,6 +74,163 @@ async function fetchBookings(query) {
     return [];
   }
   return response.json();
+}
+
+function formatVnd(n) {
+  return `${Number(n).toLocaleString('vi-VN')} đ`;
+}
+
+function renderServicesSection(b, card) {
+  const services = b.services || [];
+  if (services.length === 0 && b.status !== 'confirmed' && b.status !== 'checked_in') return;
+
+  const section = document.createElement('div');
+  section.className = 'services-section';
+
+  services.forEach((item) => {
+    const line = document.createElement('p');
+    line.className = 'service-line';
+    const text = document.createElement('span');
+    text.textContent = `${item.name} ×${item.quantity} — ${formatVnd(item.amount)}`;
+    if (item.status === 'voided') {
+      text.style.textDecoration = 'line-through';
+      text.style.opacity = '0.5';
+    }
+    line.appendChild(text);
+    if (item.status === 'posted' && currentRole !== 'observer') {
+      const voidBtn = document.createElement('button');
+      voidBtn.type = 'button';
+      voidBtn.className = 'btn-secondary';
+      voidBtn.textContent = 'Huỷ';
+      voidBtn.addEventListener('click', async () => {
+        let response;
+        try {
+          response = await fetch(`/api/bookings/${b.id}/services/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        } catch (err) {
+          showOpsError('Có lỗi khi huỷ dịch vụ');
+          return;
+        }
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          showOpsError(errBody.error || 'Có lỗi khi huỷ dịch vụ');
+          return;
+        }
+        showOpsError('');
+        await refreshAll();
+      });
+      line.appendChild(voidBtn);
+    }
+    section.appendChild(line);
+  });
+
+  if (services.length > 0) {
+    const postedTotal = services.filter((s) => s.status === 'posted').reduce((sum, s) => sum + s.amount, 0);
+    const totalLine = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = `Tổng dịch vụ: ${formatVnd(postedTotal)}`;
+    totalLine.appendChild(strong);
+    section.appendChild(totalLine);
+  }
+
+  if ((b.status === 'confirmed' || b.status === 'checked_in') && currentRole !== 'observer') {
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn-secondary';
+    addBtn.textContent = '+ Thêm dịch vụ';
+    addBtn.addEventListener('click', () => openAddServiceForm(b.id, section));
+    section.appendChild(addBtn);
+  }
+
+  card.appendChild(section);
+}
+
+function openAddServiceForm(bookingId, section) {
+  document.querySelectorAll('.add-service-form').forEach((el) => el.remove());
+
+  const form = document.createElement('div');
+  form.className = 'add-service-form';
+
+  const select = document.createElement('select');
+  const placeholderOpt = document.createElement('option');
+  placeholderOpt.value = '';
+  placeholderOpt.textContent = '-- Chọn dịch vụ --';
+  select.appendChild(placeholderOpt);
+  catalogItems.forEach((item) => {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.name;
+    opt.dataset.priceMin = item.priceMin != null ? item.priceMin : '';
+    select.appendChild(opt);
+  });
+
+  const priceInput = document.createElement('input');
+  priceInput.type = 'number';
+  priceInput.min = '0';
+  priceInput.step = '1000';
+  priceInput.placeholder = 'Giá';
+
+  select.addEventListener('change', () => {
+    const selectedOpt = select.options[select.selectedIndex];
+    priceInput.value = selectedOpt.dataset.priceMin || '';
+  });
+
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.min = '1';
+  qtyInput.step = '1';
+  qtyInput.value = '1';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.textContent = 'Thêm';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-secondary';
+  cancelBtn.textContent = 'Huỷ';
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'error';
+
+  confirmBtn.addEventListener('click', async () => {
+    errorEl.textContent = '';
+    const serviceCatalogId = Number(select.value);
+    if (!serviceCatalogId) {
+      errorEl.textContent = 'Vui lòng chọn dịch vụ';
+      return;
+    }
+    const unitPrice = Number(priceInput.value);
+    if (priceInput.value.trim() === '' || !Number.isInteger(unitPrice) || unitPrice < 0) {
+      errorEl.textContent = 'Vui lòng nhập giá hợp lệ';
+      return;
+    }
+    const quantity = Number(qtyInput.value);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      errorEl.textContent = 'Số lượng phải là số nguyên lớn hơn 0';
+      return;
+    }
+    let response;
+    try {
+      response = await fetch(`/api/bookings/${bookingId}/services`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity }),
+      });
+    } catch (err) {
+      errorEl.textContent = 'Có lỗi khi thêm dịch vụ';
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      errorEl.textContent = body.error || 'Có lỗi khi thêm dịch vụ';
+      return;
+    }
+    await refreshAll();
+  });
+  cancelBtn.addEventListener('click', () => form.remove());
+
+  form.append(select, priceInput, qtyInput, confirmBtn, cancelBtn, errorEl);
+  section.appendChild(form);
 }
 
 function renderBookingCard(b) {
@@ -149,6 +308,8 @@ function renderBookingCard(b) {
     depositLine.appendChild(depositBtn);
     card.appendChild(depositLine);
   }
+
+  renderServicesSection(b, card);
 
   const actions = document.createElement('div');
   actions.className = 'booking-actions';
