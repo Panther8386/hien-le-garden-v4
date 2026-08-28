@@ -68,9 +68,17 @@ async function loadReminders() {
   try {
     response = await fetch('/api/reception/reminders');
   } catch (err) {
+    const errLine = document.createElement('p');
+    errLine.textContent = 'Không tải được nhắc việc.';
+    container.appendChild(errLine);
     return;
   }
-  if (!response.ok) return;
+  if (!response.ok) {
+    const errLine = document.createElement('p');
+    errLine.textContent = 'Không tải được nhắc việc.';
+    container.appendChild(errLine);
+    return;
+  }
   const data = await response.json();
 
   const { pendingNoDeposit, arrivingToday, roomsNotCleaned, thresholds } = data;
@@ -84,7 +92,9 @@ async function loadReminders() {
 
   if (pendingNoDeposit.length > 0) {
     const heading = document.createElement('p');
-    heading.innerHTML = `<strong>Chờ cọc quá ${thresholds.pendingDepositHours} giờ (${pendingNoDeposit.length})</strong>`;
+    const strong = document.createElement('strong');
+    strong.textContent = `Chờ cọc quá ${thresholds.pendingDepositHours} giờ (${pendingNoDeposit.length})`;
+    heading.appendChild(strong);
     container.appendChild(heading);
     pendingNoDeposit.forEach((b) => {
       const p = document.createElement('p');
@@ -95,7 +105,9 @@ async function loadReminders() {
 
   if (arrivingToday.length > 0) {
     const heading = document.createElement('p');
-    heading.innerHTML = `<strong>Khách sắp đến hôm nay (${arrivingToday.length})</strong>`;
+    const strong = document.createElement('strong');
+    strong.textContent = `Khách sắp đến hôm nay (${arrivingToday.length})`;
+    heading.appendChild(strong);
     container.appendChild(heading);
     arrivingToday.forEach((b) => {
       const p = document.createElement('p');
@@ -106,7 +118,9 @@ async function loadReminders() {
 
   if (roomsNotCleaned.length > 0) {
     const heading = document.createElement('p');
-    heading.innerHTML = `<strong>Phòng chưa dọn quá ${thresholds.cleaningMinutes} phút (${roomsNotCleaned.length})</strong>`;
+    const strong = document.createElement('strong');
+    strong.textContent = `Phòng chưa dọn quá ${thresholds.cleaningMinutes} phút (${roomsNotCleaned.length})`;
+    heading.appendChild(strong);
     container.appendChild(heading);
     roomsNotCleaned.forEach((r) => {
       const p = document.createElement('p');

@@ -90,6 +90,11 @@ describe('PATCH /api/reminder-settings', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a value above the upper bound (400)', async () => {
+    const response = await patchSettings({ request: authedRequest('https://x/api/reminder-settings', adminToken, 'PATCH', { pendingDepositHours: 9000, cleaningMinutes: 45 }), env });
+    expect(response.status).toBe(400);
+  });
+
   it('rejects unauthenticated requests', async () => {
     const response = await patchSettings({ request: new Request('https://x/api/reminder-settings', { method: 'PATCH' }), env });
     expect(response.status).toBe(401);

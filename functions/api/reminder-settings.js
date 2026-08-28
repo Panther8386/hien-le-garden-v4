@@ -28,8 +28,8 @@ export async function onRequestPatch({ request, env }) {
   }
   const { pendingDepositHours, cleaningMinutes } = body || {};
 
-  if (!Number.isInteger(pendingDepositHours) || pendingDepositHours <= 0 || !Number.isInteger(cleaningMinutes) || cleaningMinutes <= 0) {
-    return jsonError('Số giờ/phút phải là số nguyên dương', 400);
+  if (!Number.isInteger(pendingDepositHours) || pendingDepositHours <= 0 || pendingDepositHours > 8760 || !Number.isInteger(cleaningMinutes) || cleaningMinutes <= 0 || cleaningMinutes > 10080) {
+    return jsonError('Số giờ/phút phải là số nguyên dương và không quá 1 năm (8760 giờ) / 1 tuần (10080 phút)', 400);
   }
 
   const now = new Date().toISOString();
