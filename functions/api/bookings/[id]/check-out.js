@@ -20,7 +20,7 @@ export async function onRequestPost({ request, env, params }) {
     env.DB.prepare(`UPDATE bookings SET status = 'checked_out' WHERE id = ?`).bind(params.id),
   ];
   if (booking.room_id) {
-    statements.push(env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1 WHERE id = ?`).bind(booking.room_id));
+    statements.push(env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ?`).bind(new Date().toISOString(), booking.room_id));
   }
   await env.DB.batch(statements);
 

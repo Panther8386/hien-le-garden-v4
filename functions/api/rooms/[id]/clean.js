@@ -13,6 +13,6 @@ export async function onRequestPost({ request, env, params }) {
     return jsonError('Không tìm thấy phòng', 404);
   }
 
-  await env.DB.prepare(`UPDATE rooms SET needs_cleaning = 0 WHERE id = ?`).bind(params.id).run();
+  await env.DB.prepare(`UPDATE rooms SET needs_cleaning = 0, needs_cleaning_since = NULL WHERE id = ?`).bind(params.id).run();
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

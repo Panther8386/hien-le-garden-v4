@@ -509,6 +509,23 @@ describe('POST /api/bookings/:id/check-out', () => {
     expect(roomRow.needs_cleaning).toBe(1);
   });
 
+  it('records when the room started needing cleaning', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
+    await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
+
+    const before = new Date().toISOString();
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const roomRow = await env.DB.prepare(`SELECT needs_cleaning_since FROM rooms WHERE id = ?`).bind(circleRoomId).first();
+    expect(roomRow.needs_cleaning_since).not.toBeNull();
+    expect(roomRow.needs_cleaning_since >= before).toBe(true);
+  });
+
   it('rejects checking out a booking that is not checked in', async () => {
     const response = await checkOutBooking({
       request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),

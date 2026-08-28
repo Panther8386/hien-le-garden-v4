@@ -145,6 +145,17 @@ describe('POST /api/rooms/:id/clean', () => {
     expect(row.needs_cleaning).toBe(0);
   });
 
+  it('clears needs_cleaning_since alongside the flag', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'bungalow' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = '2026-08-01T00:00:00Z' WHERE id = ?`).bind(room.id).run();
+
+    const response = await cleanRoom({ request: authedRequest(`https://x/api/rooms/${room.id}/clean`, 'POST'), env, params: { id: String(room.id) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT needs_cleaning_since FROM rooms WHERE id = ?`).bind(room.id).first();
+    expect(row.needs_cleaning_since).toBeNull();
+  });
+
   it('rejects unauthenticated requests', async () => {
     const response = await cleanRoom({ request: new Request('https://x/api/rooms/1/clean', { method: 'POST' }), env, params: { id: '1' } });
     expect(response.status).toBe(401);
