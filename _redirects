@@ -21,6 +21,7 @@
 /manager/customers            /admin/customers       200
 /manager/templates            /admin/templates       200
 /manager/config                /admin/manager         200
+/manager/catalog               /admin/catalog          200
 /manager/users                 /admin/users            200
 /manager/change-password      /admin/change-password 200
 
@@ -28,9 +29,11 @@
 /reception/customers          /admin/customers       200
 /reception/templates          /admin/templates       200
 /reception/config              /admin/manager         200
+/reception/catalog             /admin/catalog          200
 /reception/change-password    /admin/change-password 200
 
 /observer                     /admin/reception       200
 /observer/dashboard            /admin/dashboard       200
 /observer/customers            /admin/customers       200
+/observer/catalog              /admin/catalog          200
 /observer/change-password      /admin/change-password 200

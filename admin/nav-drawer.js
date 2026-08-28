@@ -18,6 +18,7 @@ const NAV_GROUPS = [
     label: 'Cấu hình & Quản trị',
     items: [
       { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', roles: ['reception', 'manager', 'admin'] },
+      { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', roles: ['reception', 'manager', 'admin', 'observer'] },
       { page: 'users.html', label: 'Quản lý user', icon: '🔑', roles: ['manager', 'admin'] },
     ],
   },
@@ -32,7 +33,7 @@ function currentPageFile() {
 function buildDrawer(role, username) {
   const page = currentPageFile();
   const prefix = ROLE_URL_PREFIX[role] || '/reception';
-  const pageSlug = { 'dashboard.html': 'dashboard', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'users.html': 'users', 'change-password.html': 'change-password' };
+  const pageSlug = { 'dashboard.html': 'dashboard', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'users.html': 'users', 'change-password.html': 'change-password' };
   function urlFor(pageFile) {
     if (pageFile === 'reception.html') return prefix;
     return `${prefix}/${pageSlug[pageFile]}`;

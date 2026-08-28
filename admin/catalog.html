@@ -1,0 +1,76 @@
+<!-- v4/admin/catalog.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Bảng giá dịch vụ — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Bảng giá dịch vụ</h1>
+
+    <div class="filters" id="catalogTabs">
+      <button type="button" class="tab-btn active" data-category="luu_tru">Lưu Trú</button>
+      <button type="button" class="tab-btn" data-category="fnb_hoat_dong">F&amp;B &amp; Hoạt Động</button>
+      <button type="button" class="tab-btn" data-category="su_kien_team_building">Sự Kiện &amp; Team Building</button>
+    </div>
+
+    <form id="catalogForm" class="hidden">
+      <input type="hidden" name="id" />
+      <input type="hidden" name="category" />
+      <label>Nhóm phụ (tuỳ chọn) <input type="text" name="subgroup" /></label>
+      <label>Tên dịch vụ <input type="text" name="name" required /></label>
+      <label>Kiểu giá
+        <select name="priceType">
+          <option value="range">Khoảng giá (A–B)</option>
+          <option value="fixed">Giá cố định</option>
+          <option value="label">Nhãn tự do</option>
+        </select>
+      </label>
+      <div class="form-row" id="priceRangeFields">
+        <label>Giá A <input type="number" name="priceMin" min="0" step="1000" /></label>
+        <label>Giá B <input type="number" name="priceMax" min="0" step="1000" /></label>
+      </div>
+      <label id="priceFixedField" class="hidden">Giá <input type="number" name="priceFixed" min="0" step="1000" /></label>
+      <label id="priceLabelField" class="hidden">Nhãn giá <input type="text" name="priceLabel" placeholder="VD: Miễn phí" /></label>
+      <label>Đơn vị / Sức chứa <input type="text" name="unitCapacity" /></label>
+      <label>Ghi chú <input type="text" name="note" /></label>
+      <label id="roomTypeField" class="hidden">Liên kết loại phòng
+        <select name="roomTypeKey">
+          <option value="">Không liên kết</option>
+          <option value="triangle">Triangle House</option>
+          <option value="circle">Circle House</option>
+          <option value="ede_cozy">Ê Đê Cozy House</option>
+          <option value="vip">VIP House</option>
+          <option value="bungalow">Bungalow Gia Đình</option>
+          <option value="dormitory">Phòng Tập Thể</option>
+        </select>
+      </label>
+      <button type="submit" id="catalogSubmitBtn">Thêm dịch vụ</button>
+      <button type="button" id="catalogCancelBtn" class="btn-secondary">Huỷ</button>
+      <p id="formError" class="error"></p>
+    </form>
+
+    <button type="button" id="addServiceBtn" class="hidden">+ Thêm dịch vụ</button>
+
+    <p id="listError" class="error"></p>
+    <div class="table-scroll">
+      <table id="catalogTable">
+        <thead><tr><th>Tên</th><th>Giá A</th><th>Giá B</th><th>Đơn vị/Sức chứa</th><th>Ghi chú</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/admin/catalog.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
