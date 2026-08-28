@@ -32,18 +32,11 @@
         <option value="Thuê Theo Giờ"></option>
       </datalist>
       <label>Tên dịch vụ <input type="text" name="name" required /></label>
-      <label>Kiểu giá
-        <select name="priceType">
-          <option value="range">Khoảng giá (A–B)</option>
-          <option value="fixed">Giá cố định</option>
-          <option value="label">Nhãn tự do</option>
-        </select>
-      </label>
+      <label class="checkbox"><input type="checkbox" name="isLabelPrice" /> Dùng nhãn tự do (VD: Miễn phí, Theo giá thị trường)</label>
       <div class="form-row" id="priceRangeFields">
         <label>Giá A <input type="number" name="priceMin" min="0" step="1000" /></label>
-        <label>Giá B <input type="number" name="priceMax" min="0" step="1000" /></label>
+        <label>Giá B (để trống nếu là giá cố định) <input type="number" name="priceMax" min="0" step="1000" /></label>
       </div>
-      <label id="priceFixedField" class="hidden">Giá <input type="number" name="priceFixed" min="0" step="1000" /></label>
       <label id="priceLabelField" class="hidden">Nhãn giá <input type="text" name="priceLabel" placeholder="VD: Miễn phí" /></label>
       <label>Đơn vị / Sức chứa <input type="text" name="unitCapacity" /></label>
       <label>Ghi chú <input type="text" name="note" /></label>

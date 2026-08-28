@@ -102,13 +102,12 @@ document.querySelectorAll('#catalogTabs .tab-btn').forEach((btn) => {
 });
 
 function updatePriceTypeFields() {
-  const priceType = document.querySelector('#catalogForm select[name="priceType"]').value;
-  document.getElementById('priceRangeFields').classList.toggle('hidden', priceType !== 'range');
-  document.getElementById('priceFixedField').classList.toggle('hidden', priceType !== 'fixed');
-  document.getElementById('priceLabelField').classList.toggle('hidden', priceType !== 'label');
+  const isLabel = document.querySelector('#catalogForm input[name="isLabelPrice"]').checked;
+  document.getElementById('priceRangeFields').classList.toggle('hidden', isLabel);
+  document.getElementById('priceLabelField').classList.toggle('hidden', !isLabel);
 }
 
-document.querySelector('#catalogForm select[name="priceType"]').addEventListener('change', updatePriceTypeFields);
+document.querySelector('#catalogForm input[name="isLabelPrice"]').addEventListener('change', updatePriceTypeFields);
 
 function resetForm() {
   const form = document.getElementById('catalogForm');
@@ -136,11 +135,11 @@ function openEditForm(item) {
   form.querySelector('input[name="category"]').value = item.category;
   form.querySelector('input[name="subgroup"]').value = item.subgroup || '';
   form.querySelector('input[name="name"]').value = item.name;
-  form.querySelector('select[name="priceType"]').value = item.priceType;
-  form.querySelector('input[name="priceMin"]').value = item.priceType === 'range' ? item.priceMin : '';
+  const isLabel = item.priceType === 'label';
+  form.querySelector('input[name="isLabelPrice"]').checked = isLabel;
+  form.querySelector('input[name="priceMin"]').value = !isLabel ? item.priceMin : '';
   form.querySelector('input[name="priceMax"]').value = item.priceType === 'range' ? item.priceMax : '';
-  form.querySelector('input[name="priceFixed"]').value = item.priceType === 'fixed' ? item.priceMin : '';
-  form.querySelector('input[name="priceLabel"]').value = item.priceType === 'label' ? item.priceLabel : '';
+  form.querySelector('input[name="priceLabel"]').value = isLabel ? item.priceLabel : '';
   form.querySelector('input[name="unitCapacity"]').value = item.unitCapacity || '';
   form.querySelector('input[name="note"]').value = item.note || '';
   const roomTypeSelect = form.querySelector('select[name="roomTypeKey"]');
@@ -169,23 +168,40 @@ document.getElementById('catalogForm').addEventListener('submit', async (event) 
   errorEl.textContent = '';
 
   const id = data.get('id');
-  const priceType = data.get('priceType');
+  const isLabel = form.querySelector('input[name="isLabelPrice"]').checked;
   const payload = {
     category: data.get('category'),
     subgroup: data.get('subgroup') || null,
     name: data.get('name'),
-    priceType,
     unitCapacity: data.get('unitCapacity') || null,
     note: data.get('note') || null,
     roomTypeKey: data.get('roomTypeKey') || null,
   };
-  if (priceType === 'range') {
-    payload.priceMin = Number(data.get('priceMin'));
-    payload.priceMax = Number(data.get('priceMax'));
-  } else if (priceType === 'fixed') {
-    payload.priceMin = Number(data.get('priceFixed'));
-  } else if (priceType === 'label') {
+
+  if (isLabel) {
+    payload.priceType = 'label';
     payload.priceLabel = data.get('priceLabel');
+  } else {
+    const priceMinRaw = data.get('priceMin');
+    const priceMaxRaw = data.get('priceMax');
+    if (priceMinRaw === '' || priceMinRaw === null) {
+      errorEl.textContent = 'Vui lòng nhập Giá A';
+      return;
+    }
+    const priceMin = Number(priceMinRaw);
+    if (priceMaxRaw !== '' && priceMaxRaw !== null) {
+      const priceMax = Number(priceMaxRaw);
+      if (priceMax <= priceMin) {
+        errorEl.textContent = 'Giá B phải lớn hơn Giá A — để trống Giá B nếu đây là giá cố định';
+        return;
+      }
+      payload.priceType = 'range';
+      payload.priceMin = priceMin;
+      payload.priceMax = priceMax;
+    } else {
+      payload.priceType = 'fixed';
+      payload.priceMin = priceMin;
+    }
   }
 
   const response = await fetch(id ? `/api/catalog/${id}` : '/api/catalog', {
