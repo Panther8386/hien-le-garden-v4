@@ -170,14 +170,7 @@
         <thead>
           <tr><th>Loại Phòng</th><th>Đơn Giá</th><th>Sức Chứa</th><th>Ghi Chú</th></tr>
         </thead>
-        <tbody>
-          <tr><td>Triangle House (Tiêu Chuẩn)</td><td><span class="price">300.000 đ</span></td><td class="capacity">2–3 người</td><td class="note">View vườn, giường đôi</td></tr>
-          <tr><td>Circle House — Superior</td><td><span class="price">600.000 đ</span></td><td class="capacity">2–4 người</td><td class="note">View hồ, tiện nghi cao cấp hơn</td></tr>
-          <tr><td>E Đê Cozy — Deluxe</td><td><span class="price">600.000 đ</span></td><td class="capacity">2–4 người</td><td class="note">Bao gồm bữa sáng</td></tr>
-          <tr><td>VIP House — Premium Garden View</td><td><span class="price">900.000 đ</span></td><td class="capacity">3–5 người</td><td class="note">Sân hiên riêng, view tốt nhất</td></tr>
-          <tr><td>Bungalow Gia Đình</td><td><span class="price">700.000 đ</span></td><td class="capacity">4–6 người</td><td class="note">Phòng rộng, full amenities</td></tr>
-          <tr><td>Phòng Tập Thể</td><td><span class="price">1.200.000 đ</span></td><td class="capacity">4–8 người</td><td class="note">Giá trọn phòng theo đêm, giường tầng</td></tr>
-        </tbody>
+        <tbody id="tbody-overnight"></tbody>
       </table>
 
       <div class="pricing-divider"><span>Thuê Theo Giờ · Hourly Rental</span></div>
@@ -185,11 +178,7 @@
         <thead>
           <tr><th>Gói</th><th>Đơn Giá</th><th>Thời Gian</th><th>Ghi Chú</th></tr>
         </thead>
-        <tbody>
-          <tr><td>Giờ Đầu Tiên</td><td><span class="price">130.000 đ</span></td><td class="capacity">1 giờ</td><td class="note">Áp dụng toàn bộ loại phòng</td></tr>
-          <tr><td>Combo 2 Giờ</td><td><span class="price">200.000 đ</span></td><td class="capacity">2 giờ</td><td class="note">Tiết kiệm hơn giờ lẻ</td></tr>
-          <tr><td>Giờ Phát Sinh Thêm</td><td><span class="price">60.000 đ</span></td><td class="capacity">/ giờ thêm</td><td class="note">Sau combo 2H</td></tr>
-        </tbody>
+        <tbody id="tbody-hourly"></tbody>
       </table>
     </div>
 
@@ -199,16 +188,7 @@
         <thead>
           <tr><th>Dịch Vụ</th><th>Đơn Giá</th><th>Đơn Vị</th><th>Ghi Chú</th></tr>
         </thead>
-        <tbody>
-          <tr><td>Cà phê & Nước uống</td><td><span class="price">30.000–80.000 đ</span></td><td class="capacity">/ phần</td><td class="note">Quán cà phê tại chỗ</td></tr>
-          <tr><td>Ăn uống theo yêu cầu</td><td><span class="price">120.000–300.000 đ</span></td><td class="capacity">/ người / bữa</td><td class="note">Đặt trước 24h</td></tr>
-          <tr><td>Đốt lửa trại (Campfire)</td><td><span class="price">500.000–1.000.000 đ</span></td><td class="capacity">/ buổi nhóm</td><td class="note">Bao gồm củi, setup, 10–50 người</td></tr>
-          <tr><td>Hái trái cây tại vườn</td><td><span class="price">50.000–100.000 đ</span></td><td class="capacity">/ người</td><td class="note">Theo mùa</td></tr>
-          <tr><td>Chụp ảnh / Check-in</td><td><span class="price">200.000–500.000 đ</span></td><td class="capacity">/ buổi</td><td class="note">Sử dụng cảnh quan nông trại</td></tr>
-          <tr><td>Cắm trại qua đêm</td><td><span class="price">200.000–400.000 đ</span></td><td class="capacity">/ đêm / người</td><td class="note">Lều tự mang hoặc thuê</td></tr>
-          <tr><td>Nông nghiệp trải nghiệm</td><td><span class="price">100.000–200.000 đ</span></td><td class="capacity">/ người</td><td class="note">Trồng rau, chăm sóc cây</td></tr>
-          <tr><td>Khu vui chơi trẻ em</td><td><span class="price">Miễn phí</span></td><td class="capacity">—</td><td class="note">Tiện ích kèm theo</td></tr>
-        </tbody>
+        <tbody id="tbody-activities"></tbody>
       </table>
     </div>
 
@@ -218,11 +198,7 @@
         <thead>
           <tr><th>Gói Sự Kiện</th><th>Đơn Giá</th><th>Số Người</th><th>Ghi Chú</th></tr>
         </thead>
-        <tbody>
-          <tr><td>Team Building / Sự kiện nhỏ</td><td><span class="price">3.000.000–5.000.000 đ</span></td><td class="capacity">20–50 người</td><td class="note">Cần đặt trước, tùy chỉnh theo yêu cầu</td></tr>
-          <tr><td>Sự kiện doanh nghiệp lớn</td><td><span class="price">5.000.000–10.000.000 đ</span></td><td class="capacity">50–100 người</td><td class="note">Setup đầy đủ, tùy chỉnh theo công ty</td></tr>
-          <tr><td>Bán nông sản & sản phẩm</td><td><span class="price">Theo giá thị trường</span></td><td class="capacity">—</td><td class="note">Cà phê, rau củ, trái cây tươi</td></tr>
-        </tbody>
+        <tbody id="tbody-events"></tbody>
       </table>
       <div style="margin-top:1.5rem; padding:1.25rem; background:var(--bg-card); border-radius:10px; border-left:3px solid var(--accent-gold);">
         <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.7;">
@@ -262,6 +238,64 @@
         document.getElementById('tab-' + target).classList.add('active');
       });
     });
+  </script>
+
+  <script>
+    function formatCatalogPrice(item) {
+      if (item.priceType === 'label') return item.priceLabel;
+      if (item.priceType === 'fixed') return `${item.priceMin.toLocaleString('vi-VN')} đ`;
+      return `${item.priceMin.toLocaleString('vi-VN')}–${item.priceMax.toLocaleString('vi-VN')} đ`;
+    }
+
+    function renderPricingRow(item) {
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td');
+      tdName.textContent = item.name;
+      const tdPrice = document.createElement('td');
+      const priceSpan = document.createElement('span');
+      priceSpan.className = 'price';
+      priceSpan.textContent = formatCatalogPrice(item);
+      tdPrice.appendChild(priceSpan);
+      const tdCapacity = document.createElement('td');
+      tdCapacity.className = 'capacity';
+      tdCapacity.textContent = item.unitCapacity || '';
+      const tdNote = document.createElement('td');
+      tdNote.className = 'note';
+      tdNote.textContent = item.note || '';
+      tr.append(tdName, tdPrice, tdCapacity, tdNote);
+      return tr;
+    }
+
+    (async () => {
+      let items;
+      try {
+        const res = await fetch('/api/catalog');
+        if (!res.ok) throw new Error('fetch failed');
+        items = await res.json();
+      } catch (err) {
+        document.querySelectorAll('.pricing-table tbody').forEach((tbody) => {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 4;
+          td.textContent = 'Không tải được bảng giá, vui lòng gọi hotline.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        });
+        return;
+      }
+
+      const overnightBody = document.getElementById('tbody-overnight');
+      const hourlyBody = document.getElementById('tbody-hourly');
+      const activitiesBody = document.getElementById('tbody-activities');
+      const eventsBody = document.getElementById('tbody-events');
+
+      items.forEach((item) => {
+        if (item.category === 'luu_tru' && item.subgroup === 'Lưu Trú Theo Đêm') overnightBody.appendChild(renderPricingRow(item));
+        else if (item.category === 'luu_tru' && item.subgroup === 'Thuê Theo Giờ') hourlyBody.appendChild(renderPricingRow(item));
+        else if (item.category === 'fnb_hoat_dong') activitiesBody.appendChild(renderPricingRow(item));
+        else if (item.category === 'su_kien_team_building') eventsBody.appendChild(renderPricingRow(item));
+      });
+    })();
   </script>
 
 </body>
