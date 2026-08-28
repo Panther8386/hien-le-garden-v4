@@ -285,7 +285,12 @@ async function cancelBooking(id) {
     showOpsError(body.error || 'Có lỗi xảy ra');
     return;
   }
-  showOpsError('');
+  const result = await response.json().catch(() => ({}));
+  if (result.refundAmount > 0) {
+    showOpsError(`Đã huỷ đặt phòng. Hoàn cọc đề xuất: ${result.refundPercentApplied}% (~${result.refundAmount.toLocaleString('vi-VN')} đ)`);
+  } else {
+    showOpsError('');
+  }
   await refreshAll();
 }
 
