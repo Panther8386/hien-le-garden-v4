@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as addServiceItem } from '../functions/api/bookings/[id]/services/index.js';
+import { onRequestPatch as voidServiceItem } from '../functions/api/bookings/[id]/services/[itemId].js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, observerToken;
@@ -149,5 +150,67 @@ describe('POST /api/bookings/:id/services', () => {
       params: { id: String(confirmedBookingId) },
     });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/bookings/:id/services/:itemId', () => {
+  async function addPostedItem(bookingId = confirmedBookingId) {
+    const result = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, ?, 'Cà phê', 30000, 1, 30000, 'posted', 'le_tan_svc', '2026-08-01T00:00:00Z')`
+    ).bind(bookingId, activeCatalogId).run();
+    return result.meta.last_row_id;
+  }
+
+  it('lets reception void a posted item', async () => {
+    const itemId = await addPostedItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT status, voided_by FROM booking_service_items WHERE id = ?`).bind(itemId).first();
+    expect(row.status).toBe('voided');
+    expect(row.voided_by).toBe('le_tan_svc');
+  });
+
+  it('404s when the item does not belong to the booking in the URL', async () => {
+    const itemId = await addPostedItem(confirmedBookingId);
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${pendingBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(pendingBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects double-voiding (400)', async () => {
+    const itemId = await addPostedItem();
+    await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}), env, params: { id: String(confirmedBookingId), itemId: String(itemId) } });
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects an observer (403)', async () => {
+    const itemId = await addPostedItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, observerToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a nonexistent item id', async () => {
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/999999`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: '999999' },
+    });
+    expect(response.status).toBe(404);
   });
 });
