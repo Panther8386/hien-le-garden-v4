@@ -4403,7 +4403,9 @@
         if (!item || item.priceType !== 'fixed') return;
         const tag = card.querySelector('.room-price-tag');
         if (!tag) return;
-        tag.textContent = `${Math.round(item.priceMin / 1000)}k/đêm`;
+        tag.textContent = item.priceMin >= 1_000_000
+          ? `${(item.priceMin / 1_000_000).toFixed(1)}M/đêm`
+          : `${Math.round(item.priceMin / 1000)}k/đêm`;
       });
 
       const kb = window.__aiConciergeKB;
