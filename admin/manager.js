@@ -111,6 +111,25 @@ async function loadNotifySettings() {
   statusEl.textContent = data.connected ? '✅ Đã kết nối' : 'Chưa kết nối';
 }
 
+async function loadReminderSettings() {
+  const errorEl = document.getElementById('reminderSettingsError');
+  let response;
+  try {
+    response = await fetch('/api/reminder-settings');
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tải ngưỡng nhắc việc';
+    return;
+  }
+  if (!response.ok) {
+    errorEl.textContent = 'Có lỗi khi tải ngưỡng nhắc việc';
+    return;
+  }
+  const data = await response.json();
+  const form = document.getElementById('reminderSettingsForm');
+  form.querySelector('input[name="pendingDepositHours"]').value = data.pendingDepositHours;
+  form.querySelector('input[name="cleaningMinutes"]').value = data.cleaningMinutes;
+}
+
 document.getElementById('policyForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
@@ -160,6 +179,30 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
   await loadGiftInventory();
 });
 
+document.getElementById('reminderSettingsForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const errorEl = document.getElementById('reminderSettingsError');
+  errorEl.textContent = '';
+
+  const response = await fetch('/api/reminder-settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pendingDepositHours: Number(data.get('pendingDepositHours')),
+      cleaningMinutes: Number(data.get('cleaningMinutes')),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json();
+    errorEl.textContent = body.error || 'Có lỗi khi lưu ngưỡng nhắc việc';
+    return;
+  }
+
+  await loadReminderSettings();
+});
+
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
@@ -175,6 +218,11 @@ document.getElementById('giftForm').addEventListener('submit', async (event) => 
     document.getElementById('giftInventorySection').classList.remove('hidden');
     document.getElementById('notifySettingsSection').classList.remove('hidden');
     loadNotifySettings();
+  }
+
+  if (currentRole === 'admin') {
+    document.getElementById('reminderSettingsSection').classList.remove('hidden');
+    loadReminderSettings();
   }
 
   loadPolicies();

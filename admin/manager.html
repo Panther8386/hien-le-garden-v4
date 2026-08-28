@@ -51,6 +51,16 @@
       <p><code>/start staff_booking_notify</code></p>
       <p>Gửi từ nhóm/chat nào thì mọi yêu cầu đặt phòng mới sẽ được thông báo vào đó.</p>
     </div>
+
+    <div id="reminderSettingsSection" class="hidden">
+      <h2>Ngưỡng nhắc việc</h2>
+      <form id="reminderSettingsForm">
+        <label>Booking chờ quá (giờ) chưa có cọc <input type="number" name="pendingDepositHours" min="1" required /></label>
+        <label>Phòng chưa dọn quá (phút) sau checkout <input type="number" name="cleaningMinutes" min="1" required /></label>
+        <button type="submit">Lưu ngưỡng</button>
+        <p id="reminderSettingsError" class="error"></p>
+      </form>
+    </div>
   </div>
 
   <script src="/admin/manager.js"></script>
