@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as getCatalog, onRequestPost as postCatalog } from '../functions/api/catalog/index.js';
+import { onRequestPatch as patchCatalog, onRequestDelete as deleteCatalog } from '../functions/api/catalog/[id].js';
 import { createSession } from '../lib/auth.js';
 
 let managerId, receptionId, adminId, observerId, managerToken, receptionToken, adminToken, observerToken;
@@ -135,5 +136,67 @@ describe('POST /api/catalog', () => {
       env,
     });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/catalog/:id', () => {
+  it('lets an admin edit a row and switch price_type, clearing the old fields', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE name = 'Triangle House Test'`).first();
+    const response = await patchCatalog({
+      request: authedRequest(`https://x/api/catalog/${existing.id}`, adminToken, 'PATCH', { priceType: 'label', priceLabel: 'Liên hệ' }),
+      env,
+      params: { id: String(existing.id) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT price_type, price_label, price_min FROM service_catalog WHERE id = ?`).bind(existing.id).first();
+    expect(row.price_type).toBe('label');
+    expect(row.price_label).toBe('Liên hệ');
+    expect(row.price_min).toBeNull();
+  });
+
+  it('allows re-saving the same row without tripping its own roomTypeKey uniqueness check', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE room_type_key = 'triangle'`).first();
+    const response = await patchCatalog({
+      request: authedRequest(`https://x/api/catalog/${existing.id}`, adminToken, 'PATCH', { note: 'updated note' }),
+      env,
+      params: { id: String(existing.id) },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects manager (403)', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE name = 'Triangle House Test'`).first();
+    const response = await patchCatalog({
+      request: authedRequest(`https://x/api/catalog/${existing.id}`, managerToken, 'PATCH', { note: 'x' }),
+      env,
+      params: { id: String(existing.id) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a missing id', async () => {
+    const response = await patchCatalog({ request: authedRequest('https://x/api/catalog/999999', adminToken, 'PATCH', { note: 'x' }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/catalog/:id', () => {
+  it('lets an admin delete a row', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE name = 'Triangle House Test'`).first();
+    const response = await deleteCatalog({ request: authedRequest(`https://x/api/catalog/${existing.id}`, adminToken, 'DELETE'), env, params: { id: String(existing.id) } });
+    expect(response.status).toBe(204);
+    const row = await env.DB.prepare(`SELECT id FROM service_catalog WHERE id = ?`).bind(existing.id).first();
+    expect(row).toBeNull();
+  });
+
+  it('rejects reception (403)', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE name = 'Triangle House Test'`).first();
+    const response = await deleteCatalog({ request: authedRequest(`https://x/api/catalog/${existing.id}`, receptionToken, 'DELETE'), env, params: { id: String(existing.id) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a missing id', async () => {
+    const response = await deleteCatalog({ request: authedRequest('https://x/api/catalog/999999', adminToken, 'DELETE'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
   });
 });
