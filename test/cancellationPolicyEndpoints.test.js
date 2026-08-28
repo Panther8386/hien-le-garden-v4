@@ -46,9 +46,11 @@ describe('GET /api/cancellation-policy', () => {
     expect(body.map((t) => t.minDaysBeforeCheckin)).toEqual([7, 0]);
   });
 
-  it('rejects observer (403) -- matches the promo_policy GET convention', async () => {
+  it("lets observer view tiers (matches the catalog GET precedent, not promo_policy's)", async () => {
     const response = await getTiers({ request: authedRequest('https://x/api/cancellation-policy', observerToken, 'GET'), env });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.map((t) => t.minDaysBeforeCheckin)).toEqual([7, 0]);
   });
 
   it('rejects no session (401)', async () => {

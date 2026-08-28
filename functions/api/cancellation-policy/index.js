@@ -9,7 +9,7 @@ export async function onRequestGet({ request, env }) {
   const isPublic = url.searchParams.get('public') === '1';
 
   if (!isPublic) {
-    const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+    const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
     if (auth instanceof Response) return auth;
   }
 
