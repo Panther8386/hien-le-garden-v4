@@ -2766,7 +2766,7 @@
       </div>
       <div class="rooms-grid">
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="triangle">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-triangle-house.webp" type="image/webp">
@@ -2786,7 +2786,7 @@
           </div>
         </div>
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="circle">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-circle-house.webp" type="image/webp">
@@ -2806,7 +2806,7 @@
           </div>
         </div>
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="ede_cozy">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-ede-cozy.webp" type="image/webp">
@@ -2826,7 +2826,7 @@
           </div>
         </div>
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="vip">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-vip-house.webp" type="image/webp">
@@ -2846,7 +2846,7 @@
           </div>
         </div>
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="bungalow">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-bungalow.webp" type="image/webp">
@@ -2866,7 +2866,7 @@
           </div>
         </div>
 
-        <div class="room-card fade-in">
+        <div class="room-card fade-in" data-room-type="dormitory">
           <div class="room-image">
             <picture>
               <source srcset="./images/room-dormitory.webp" type="image/webp">
@@ -4154,7 +4154,10 @@
     // ============================================================
     // AI CONCIERGE — Knowledge-based FAQ chatbot
     // ============================================================
-    (function initAIConcierge() {
+    // Deferred to DOMContentLoaded: this script block runs before
+    // #aiConciergeBtn/#aiConciergePanel are parsed later in the document,
+    // so querying them synchronously here would always return null.
+    document.addEventListener('DOMContentLoaded', function initAIConcierge() {
       const btn    = document.getElementById('aiConciergeBtn');
       const panel  = document.getElementById('aiConciergePanel');
       const close  = document.getElementById('aiCloseBtn');
@@ -4165,7 +4168,7 @@
 
       const KB = [
         {
-          keys: ['giá', 'bao nhiêu', 'phí', 'tiền', 'cost', 'price', 'rate'],
+          keys: ['giá', 'bao nhiêu', 'phí', 'cost', 'price', 'rate'],
           answer: '🏡 Giá phòng tại Hiền Lê Garden:\n• Triangle House: **300.000đ/đêm**\n• Circle House: **600.000đ/đêm**\n• Ê Đê Cozy: **600.000đ/đêm**\n• VIP House: **900.000đ/đêm**\n• Bungalow GĐ: **700.000đ/đêm**\n• Phòng tập thể: **1.200.000đ/đêm**\n\nGiá có thể thay đổi vào mùa lễ tết. Nhắn Zalo để được báo giá chính xác nhất! 😊'
         },
         {
@@ -4175,6 +4178,10 @@
         {
           keys: ['check-in', 'check in', 'checkin', 'nhận phòng', 'giờ vào', 'mấy giờ'],
           answer: '⏰ **Check-in:** từ **14:00**\n⏰ **Check-out:** trước **12:00**\n\nNếu bạn đến sớm hoặc muốn ở muộn, hãy nhắn Zalo để mình sắp xếp, có thể hỗ trợ tùy điều kiện thực tế!'
+        },
+        {
+          keys: ['hoàn tiền', 'hủy', 'cancel', 'refund'],
+          answer: '📋 Chính sách hủy phòng:\n\n• Hủy trước **3 ngày**: hoàn tiền cọc **100%**\n• Hủy trước **1 ngày**: hoàn tiền cọc **50%**\n• Hủy trong ngày: không hoàn cọc\n\nVới trường hợp đặc biệt, vui lòng liên hệ Zalo để được hỗ trợ!'
         },
         {
           keys: ['phòng', 'room', 'loại', 'triangle', 'circle', 'vip', 'bungalow', 'tập thể', 'ê đê'],
@@ -4201,14 +4208,12 @@
           answer: '🍽️ Hiền Lê Garden phục vụ:\n\n• **Cà phê vườn** buổi sáng (cà phê tươi nguyên chất)\n• **BBQ & lửa trại** các tối cuối tuần\n• **Cơm gia đình** theo đặt trước (thực đơn Tây Nguyên)\n\nNhà hàng và quán ăn Gia Nghĩa cách khoảng 5-10 phút xe.'
         },
         {
-          keys: ['hoàn tiền', 'hủy', 'cancel', 'refund'],
-          answer: '📋 Chính sách hủy phòng:\n\n• Hủy trước **3 ngày**: hoàn tiền cọc **100%**\n• Hủy trước **1 ngày**: hoàn tiền cọc **50%**\n• Hủy trong ngày: không hoàn cọc\n\nVới trường hợp đặc biệt, vui lòng liên hệ Zalo để được hỗ trợ!'
-        },
-        {
           keys: ['thú cưng', 'chó', 'mèo', 'pet', 'động vật'],
           answer: '🐾 Hiện tại Hiền Lê Garden **chưa cho phép đem thú cưng** vào khu vực lưu trú vì có nhiều khách nghỉ dưỡng khác nhau. Mong bạn thông cảm! Nếu có nhu cầu đặc biệt, hãy liên hệ Zalo để mình trao đổi thêm.'
         }
       ];
+
+      window.__aiConciergeKB = KB;
 
       const QUICK_CHIPS = ['Giá phòng?', 'BBQ cuối tuần?', 'Check-in mấy giờ?', 'Còn phòng không?'];
       let isOpen = false;
@@ -4285,7 +4290,7 @@
       close.addEventListener('click', closePanel);
       send.addEventListener('click', sendMsg);
       input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
-    })();
+    });
 
 
     // ============================================================
@@ -4357,6 +4362,76 @@
       });
     });
 
+  </script>
+
+  <script>
+    // Registered after the AI Concierge script's own DOMContentLoaded
+    // listener above, so it fires after — guaranteeing window.__aiConciergeKB
+    // (set inside that listener) is already populated by the time this runs.
+    document.addEventListener('DOMContentLoaded', async () => {
+      const ROOM_TYPE_KEYS = ['triangle', 'circle', 'ede_cozy', 'vip', 'bungalow', 'dormitory'];
+      const ROOM_TYPE_FAQ_LABELS = { triangle: 'Triangle House', circle: 'Circle House', ede_cozy: 'Ê Đê Cozy', vip: 'VIP House', bungalow: 'Bungalow GĐ', dormitory: 'Phòng tập thể' };
+
+      let catalogItems = [];
+      let policyTiers = [];
+      try {
+        const [catalogRes, policyRes] = await Promise.all([
+          fetch('/api/catalog'),
+          fetch('/api/cancellation-policy?public=1'),
+        ]);
+        if (catalogRes.ok) catalogItems = await catalogRes.json();
+        if (policyRes.ok) policyTiers = await policyRes.json();
+      } catch (err) {
+        return;
+      }
+
+      const roomTypeSelect = document.getElementById('roomType');
+      if (roomTypeSelect) {
+        ROOM_TYPE_KEYS.forEach((key) => {
+          const item = catalogItems.find((i) => i.roomTypeKey === key && i.isActive);
+          if (!item || item.priceType !== 'fixed') return;
+          const option = roomTypeSelect.querySelector(`option[value="${key}"]`);
+          if (!option) return;
+          const baseLabel = option.textContent.split(' — ')[0];
+          option.textContent = `${baseLabel} — ${item.priceMin.toLocaleString('vi-VN')}đ/đêm`;
+        });
+      }
+
+      document.querySelectorAll('.room-card[data-room-type]').forEach((card) => {
+        const key = card.dataset.roomType;
+        const item = catalogItems.find((i) => i.roomTypeKey === key && i.isActive);
+        if (!item || item.priceType !== 'fixed') return;
+        const tag = card.querySelector('.room-price-tag');
+        if (!tag) return;
+        tag.textContent = `${Math.round(item.priceMin / 1000)}k/đêm`;
+      });
+
+      const kb = window.__aiConciergeKB;
+      if (!kb) return;
+
+      const giaEntry = kb.find((k) => k.keys.includes('giá'));
+      if (giaEntry && catalogItems.length > 0) {
+        const lines = ROOM_TYPE_KEYS.map((key) => {
+          const item = catalogItems.find((i) => i.roomTypeKey === key && i.isActive);
+          if (!item || item.priceType !== 'fixed') return null;
+          return `• ${ROOM_TYPE_FAQ_LABELS[key]}: **${item.priceMin.toLocaleString('vi-VN')}đ/đêm**`;
+        }).filter(Boolean);
+        if (lines.length > 0) {
+          giaEntry.answer = `🏡 Giá phòng tại Hiền Lê Garden:\n${lines.join('\n')}\n\nGiá có thể thay đổi vào mùa lễ tết. Nhắn Zalo để được báo giá chính xác nhất! 😊`;
+        }
+      }
+
+      const refundEntry = kb.find((k) => k.keys.includes('hoàn tiền'));
+      if (refundEntry) {
+        if (policyTiers.length > 0) {
+          const sorted = [...policyTiers].sort((a, b) => b.minDaysBeforeCheckin - a.minDaysBeforeCheckin);
+          const lines = sorted.map((t) => `• Hủy trước **${t.minDaysBeforeCheckin} ngày**: hoàn tiền cọc **${t.refundPercent}%**`);
+          refundEntry.answer = `📋 Chính sách hủy phòng:\n\n${lines.join('\n')}\n\nVới trường hợp đặc biệt, vui lòng liên hệ Zalo để được hỗ trợ!`;
+        } else {
+          refundEntry.answer = '📋 Chính sách hủy phòng đang được cập nhật. Vui lòng liên hệ Zalo để biết chi tiết mới nhất về hoàn cọc!';
+        }
+      }
+    });
   </script>
 
   <!-- WEATHER WIDGET -->
