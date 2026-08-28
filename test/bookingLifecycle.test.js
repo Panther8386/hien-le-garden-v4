@@ -323,6 +323,41 @@ describe('POST /api/bookings/:id/cancel', () => {
     expect(row.cancel_reason).toBe('Khách đổi lịch');
   });
 
+  it('writes an audit_log row with the refund summary and reason', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (0, 50, 'seed', '2026-08-01T00:00:00Z')`).run();
+    await env.DB.prepare(`UPDATE bookings SET deposit_amount = 100000 WHERE id = ?`).bind(pendingBookingId).run();
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken, { reason: 'Khách đổi lịch' }),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'booking_cancel' AND entity_id = ?`).bind(pendingBookingId).first();
+    expect(row.entity_type).toBe('booking');
+    expect(row.entity_label).toBe('Nguyễn Văn A');
+    expect(row.old_value).toBe('confirmed');
+    expect(row.new_value).toBe('cancelled — hoàn 50% (50000 đ) — Lý do: Khách đổi lịch');
+    expect(row.actor).toBe('quan_ly_a');
+  });
+
+  it('writes an audit_log row without a reason suffix when none is given', async () => {
+    await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken),
+      env,
+      params: { id: String(pendingBookingId) },
+    });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE action_type = 'booking_cancel' AND entity_id = ?`).bind(pendingBookingId).first();
+    expect(row.new_value).not.toContain('Lý do');
+  });
+
   it('lets a reception account cancel too', async () => {
     await confirmBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/confirm`, managerToken, { rooms: [{ roomType: 'circle', roomId: circleRoomId }] }), env, params: { id: String(pendingBookingId) } });
 

@@ -25,7 +25,7 @@ export async function onRequestPost({ request, env, params }) {
   body = body || {};
   const { reason } = body;
 
-  const booking = await env.DB.prepare(`SELECT id, status, check_in, deposit_amount FROM bookings WHERE id = ?`).bind(params.id).first();
+  const booking = await env.DB.prepare(`SELECT id, status, check_in, deposit_amount, guest_name FROM bookings WHERE id = ?`).bind(params.id).first();
   if (!booking) {
     return jsonError('Không tìm thấy đặt phòng', 404);
   }
@@ -40,9 +40,19 @@ export async function onRequestPost({ request, env, params }) {
   const refundPercentApplied = tier ? tier.refund_percent : 0;
   const refundAmount = Math.round((booking.deposit_amount || 0) * refundPercentApplied / 100);
 
-  await env.DB.prepare(
-    `UPDATE bookings SET status = 'cancelled', cancel_reason = ?, refund_percent_applied = ? WHERE id = ?`
-  ).bind(reason || null, refundPercentApplied, params.id).run();
+  let newValue = `cancelled — hoàn ${refundPercentApplied}% (${refundAmount} đ)`;
+  if (reason) newValue += ` — Lý do: ${reason}`;
+  const now = new Date().toISOString();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE bookings SET status = 'cancelled', cancel_reason = ?, refund_percent_applied = ? WHERE id = ?`
+    ).bind(reason || null, refundPercentApplied, params.id),
+    env.DB.prepare(
+      `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
+       VALUES ('booking_cancel', 'booking', ?, ?, 'confirmed', ?, ?, ?)`
+    ).bind(booking.id, booking.guest_name, newValue, auth.username, now),
+  ]);
 
   return new Response(
     JSON.stringify({ ok: true, refundPercentApplied, refundAmount }),
