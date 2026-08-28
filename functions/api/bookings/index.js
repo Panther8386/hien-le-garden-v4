@@ -132,13 +132,13 @@ export async function onRequestGet({ request, env }) {
     r.services = [];
   });
   if (results.length > 0) {
-    const ids = results.map((r) => r.id);
-    const placeholders = ids.map(() => '?').join(', ');
     const { results: serviceRows } = await env.DB.prepare(
       `SELECT id, booking_id AS bookingId, name, unit_price AS unitPrice, quantity, amount, status,
               created_by AS createdBy, created_at AS createdAt, voided_by AS voidedBy, voided_at AS voidedAt
-       FROM booking_service_items WHERE booking_id IN (${placeholders}) ORDER BY created_at ASC`
-    ).bind(...ids).all();
+       FROM booking_service_items
+       WHERE booking_id IN (SELECT id FROM bookings ${where})
+       ORDER BY created_at ASC, id ASC`
+    ).bind(...params).all();
 
     const byBooking = {};
     serviceRows.forEach((row) => {
