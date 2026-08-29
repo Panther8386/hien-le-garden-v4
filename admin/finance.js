@@ -262,8 +262,14 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
   if (typeof refreshFinanceSummary === 'function') refreshFinanceSummary();
 });
 
-document.querySelectorAll('#financeFilters input, #financeFilters select').forEach((el) => {
+document.querySelectorAll('#financeFilters input:not(#filterKeyword), #financeFilters select').forEach((el) => {
   el.addEventListener('change', () => loadTransactions());
+});
+
+let keywordDebounceTimer;
+document.getElementById('filterKeyword').addEventListener('input', () => {
+  clearTimeout(keywordDebounceTimer);
+  keywordDebounceTimer = setTimeout(() => loadTransactions(), 350);
 });
 
 function currentMonthValue() {
