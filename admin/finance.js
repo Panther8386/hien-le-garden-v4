@@ -361,7 +361,9 @@ async function refreshFinanceSummary() {
     return;
   }
   if (!summaryResponse.ok || !openingResponse.ok) {
-    errorEl.textContent = 'Có lỗi khi tải số liệu cân đối';
+    const failedResponse = !summaryResponse.ok ? summaryResponse : openingResponse;
+    const body = await failedResponse.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi tải số liệu cân đối';
     return;
   }
 
