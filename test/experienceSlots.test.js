@@ -13,6 +13,8 @@ beforeEach(async () => {
   await env.DB.exec('DELETE FROM sessions');
   await env.DB.exec('DELETE FROM service_catalog');
   await env.DB.exec('DELETE FROM service_slot_template');
+  await env.DB.exec('DELETE FROM booking_service_items');
+  await env.DB.exec('DELETE FROM bookings');
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_es', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
@@ -32,6 +34,11 @@ beforeEach(async () => {
     `INSERT INTO service_catalog (category, name, price_type, price_min, display_order, is_active, is_scheduled, updated_at) VALUES ('fnb_hoat_dong', 'Cà phê', 'fixed', 30000, 2, 1, 0, '2026-08-01T00:00:00Z')`
   ).run();
   plainCatalogId = plain.meta.last_row_id;
+
+  // Create a booking for booking_service_items tests
+  await env.DB.prepare(
+    `INSERT INTO bookings (id, guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES (1, 'Test Guest', '0900000001', 'circle', '2026-08-29', '2026-08-30', 'pending', 'website', '2026-08-01T00:00:00Z')`
+  ).run();
 });
 
 function authedRequest(url, token, method = 'GET', body) {
@@ -212,5 +219,75 @@ describe('PATCH /api/catalog/:id/slot-templates/:templateId', () => {
       params: { id: String(plainCatalogId), templateId: String(templateId) },
     });
     expect(response.status).toBe(404);
+  });
+});
+
+import { onRequestGet as getAvailability } from '../functions/api/catalog/[id]/slot-availability.js';
+
+describe('GET /api/catalog/:id/slot-availability', () => {
+  async function createTemplate({ label, daysOfWeek, startTime, capacity }) {
+    const result = await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, '2026-08-01T00:00:00Z')`
+    ).bind(scheduledCatalogId, label, daysOfWeek, startTime, capacity).run();
+    return result.meta.last_row_id;
+  }
+
+  it('returns only templates matching the requested date\'s weekday', async () => {
+    // 2026-08-29 is a Saturday (weekday 6)
+    await createTemplate({ label: 'Suất tối T7', daysOfWeek: '6', startTime: '19:00', capacity: 30 });
+    await createTemplate({ label: 'Suất sáng T2', daysOfWeek: '1', startTime: '08:00', capacity: 10 });
+
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=2026-08-29`, { headers: { Cookie: `session=${receptionToken}` } }), env, params: { id: String(scheduledCatalogId) } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.length).toBe(1);
+    expect(body[0].label).toBe('Suất tối T7');
+    expect(body[0].remaining).toBe(30);
+  });
+
+  it('subtracts posted bookings for that exact (template, date) pair', async () => {
+    const templateId = await createTemplate({ label: 'Suất tối', daysOfWeek: '6', startTime: '19:00', capacity: 30 });
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, slot_template_id, experience_date, created_by, created_at)
+       VALUES (1, ?, 'Đốt lửa trại', 500000, 12, 6000000, 'posted', ?, '2026-08-29', 'le_tan_es', '2026-08-01T00:00:00Z')`
+    ).bind(scheduledCatalogId, templateId).run();
+
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=2026-08-29`, { headers: { Cookie: `session=${receptionToken}` } }), env, params: { id: String(scheduledCatalogId) } });
+    const body = await response.json();
+    expect(body[0].booked).toBe(12);
+    expect(body[0].remaining).toBe(18);
+  });
+
+  it('does not let a booking on a different date affect remaining', async () => {
+    const templateId = await createTemplate({ label: 'Suất tối', daysOfWeek: '6', startTime: '19:00', capacity: 30 });
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, slot_template_id, experience_date, created_by, created_at)
+       VALUES (1, ?, 'Đốt lửa trại', 500000, 12, 6000000, 'posted', ?, '2026-09-05', 'le_tan_es', '2026-08-01T00:00:00Z')`
+    ).bind(scheduledCatalogId, templateId).run();
+
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=2026-08-29`, { headers: { Cookie: `session=${receptionToken}` } }), env, params: { id: String(scheduledCatalogId) } });
+    const body = await response.json();
+    expect(body[0].booked).toBe(0);
+    expect(body[0].remaining).toBe(30);
+  });
+
+  it('excludes an inactive template', async () => {
+    await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Cũ', '6', '19:00', 30, 0, '2026-08-01T00:00:00Z')`
+    ).bind(scheduledCatalogId).run();
+
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=2026-08-29`, { headers: { Cookie: `session=${receptionToken}` } }), env, params: { id: String(scheduledCatalogId) } });
+    const body = await response.json();
+    expect(body).toEqual([]);
+  });
+
+  it('rejects a malformed date (400)', async () => {
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=29-08-2026`, { headers: { Cookie: `session=${receptionToken}` } }), env, params: { id: String(scheduledCatalogId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await getAvailability({ request: new Request(`https://x/api/catalog/${scheduledCatalogId}/slot-availability?date=2026-08-29`), env, params: { id: String(scheduledCatalogId) } });
+    expect(response.status).toBe(401);
   });
 });
