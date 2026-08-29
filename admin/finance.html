@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Sổ thu chi — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Sổ thu chi</h1>
+    <p id="financeError" class="error"></p>
+
+    <div id="addTransactionSection" class="hidden">
+      <h2>Thêm giao dịch</h2>
+      <form id="financeForm">
+        <div class="form-row">
+          <label>Loại
+            <select name="type" required>
+              <option value="income">Thu</option>
+              <option value="expense" selected>Chi</option>
+            </select>
+          </label>
+          <label>Danh mục
+            <select name="category" required></select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Số tiền (đ) <input type="number" name="amount" min="1" step="1000" required /></label>
+          <label>Ngày <input type="date" name="transactionDate" required /></label>
+        </div>
+        <label>Ghi chú <input type="text" name="note" /></label>
+        <label>Trạng thái
+          <select name="status">
+            <option value="draft" selected>Nháp</option>
+            <option value="confirmed">Đã xác nhận</option>
+            <option value="paid">Đã thanh toán</option>
+          </select>
+        </label>
+        <button type="submit">Ghi giao dịch</button>
+        <button type="button" id="financeCancelEditBtn" class="btn-secondary hidden">Huỷ sửa</button>
+        <p id="financeFormError" class="error"></p>
+      </form>
+    </div>
+
+    <h2>Cân đối</h2>
+    <label>Chọn tháng <input type="month" id="financeMonthInput" /></label>
+    <div class="stat-grid" id="financeStats"></div>
+    <div id="openingBalanceEditor" class="hidden"></div>
+
+    <h2>Biểu đồ</h2>
+    <div class="filters" id="chartGranularity">
+      <button type="button" class="tab-btn" data-granularity="day">Ngày</button>
+      <button type="button" class="tab-btn active" data-granularity="week">Tuần</button>
+      <button type="button" class="tab-btn" data-granularity="month">Tháng</button>
+    </div>
+    <div id="financeChart"></div>
+
+    <h2>Giao dịch</h2>
+    <div class="filters" id="financeFilters">
+      <input type="date" id="filterFrom" />
+      <input type="date" id="filterTo" />
+      <select id="filterType">
+        <option value="">Tất cả loại</option>
+        <option value="income">Thu</option>
+        <option value="expense">Chi</option>
+      </select>
+      <select id="filterCategory"></select>
+      <select id="filterStatus">
+        <option value="">Tất cả trạng thái</option>
+        <option value="draft">Nháp</option>
+        <option value="confirmed">Đã xác nhận</option>
+        <option value="paid">Đã thanh toán</option>
+      </select>
+      <input type="text" id="filterKeyword" placeholder="Tìm ghi chú..." />
+    </div>
+
+    <p id="listError" class="error"></p>
+    <div class="table-scroll" id="financeTableWrap">
+      <table id="financeTable">
+        <thead><tr><th>Ngày</th><th>Loại</th><th>Danh mục</th><th>Số tiền</th><th>Trạng thái</th><th>Ghi chú</th><th>Người tạo</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="booking-list" id="financeCardList"></div>
+  </div>
+
+  <script src="/admin/finance.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>

@@ -18,6 +18,7 @@
 
 /manager                      /admin/reception       200
 /manager/dashboard            /admin/dashboard       200
+/manager/finance               /admin/finance          200
 /manager/customers            /admin/customers       200
 /manager/templates            /admin/templates       200
 /manager/config                /admin/manager         200
@@ -37,6 +38,7 @@
 
 /observer                     /admin/reception       200
 /observer/dashboard            /admin/dashboard       200
+/observer/finance               /admin/finance          200
 /observer/customers            /admin/customers       200
 /observer/catalog              /admin/catalog          200
 /observer/cancellation-policy   /admin/cancellation-policy   200
