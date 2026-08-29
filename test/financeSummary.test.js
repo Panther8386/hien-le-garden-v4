@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as getSummary } from '../functions/api/finance/summary.js';
+import { onRequestGet as getOpeningBalance, onRequestPatch as setOpeningBalance } from '../functions/api/finance/opening-balance.js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken, observerToken;
+let managerToken, receptionToken, observerToken, adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -17,12 +18,16 @@ beforeEach(async () => {
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   observerToken = await createSession(env.DB, o.meta.last_row_id);
+
+  const a = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_sum', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
+  adminToken = await createSession(env.DB, a.meta.last_row_id);
 });
 
-function authedRequest(url, token, method) {
+function authedRequest(url, token, method, body) {
   const headers = {};
   if (token) headers.Cookie = `session=${token}`;
-  return new Request(url, { method, headers });
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  return new Request(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
 }
 
 async function insertTx({ type, category, amount, date, status = 'confirmed', voided = false }) {
@@ -138,5 +143,87 @@ describe('GET /api/finance/summary', () => {
     const body = await response.json();
     expect(body.openingBalance).toBe(-300000);
     expect(body.closingBalance).toBe(-300000);
+  });
+
+  it('handles the December→January year rollover correctly (nextMonth edge case)', async () => {
+    await env.DB.prepare(`INSERT INTO finance_opening_balance (period, opening_balance, set_by, set_at) VALUES ('2026-12', 1000000, 'quan_ly_sum', '2026-12-01T00:00:00Z')`).run();
+    await insertTx({ type: 'income', category: 'ban_hang', amount: 500000, date: '2026-12-20' });
+    await insertTx({ type: 'expense', category: 'vat_tu', amount: 100000, date: '2027-01-05' }); // must NOT count toward December's own totals — this is exactly what exercises the year-rollover boundary
+
+    const response = await getSummary({ request: authedRequest('https://x/api/finance/summary?month=2026-12', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.openingBalanceSource).toBe('manual');
+    expect(body.openingBalance).toBe(1000000);
+    expect(body.totalIncome).toBe(500000);
+    expect(body.totalExpense).toBe(0);
+    expect(body.closingBalance).toBe(1500000);
+  });
+});
+
+describe('GET/PATCH /api/finance/opening-balance', () => {
+  it('GET rejects reception (403)', async () => {
+    const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-08', receptionToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('GET returns nulls when nothing was ever set for the exact period', async () => {
+    const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-08', managerToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ period: '2026-08', openingBalance: null, setBy: null, setAt: null });
+  });
+
+  it('GET rejects a malformed period (400)', async () => {
+    const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-8', managerToken, 'GET'), env });
+    expect(response.status).toBe(400);
+  });
+
+  it('PATCH rejects reception (403)', async () => {
+    const response = await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', receptionToken, 'PATCH', { period: '2026-08', openingBalance: 1000 }), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('PATCH rejects observer (403)', async () => {
+    const response = await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', observerToken, 'PATCH', { period: '2026-08', openingBalance: 1000 }), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('PATCH rejects a malformed period (400)', async () => {
+    const response = await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', managerToken, 'PATCH', { period: 'August', openingBalance: 1000 }), env });
+    expect(response.status).toBe(400);
+  });
+
+  it('PATCH rejects a non-integer openingBalance (400)', async () => {
+    const response = await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', managerToken, 'PATCH', { period: '2026-08', openingBalance: 12.5 }), env });
+    expect(response.status).toBe(400);
+  });
+
+  it('PATCH accepts a negative openingBalance', async () => {
+    const response = await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', managerToken, 'PATCH', { period: '2026-08', openingBalance: -500 }), env });
+    expect(response.status).toBe(200);
+  });
+
+  it('PATCH inserts a new row (never UPDATEs); GET reads the latest by id for that exact period', async () => {
+    await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', managerToken, 'PATCH', { period: '2026-08', openingBalance: 1000 }), env });
+    await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', adminToken, 'PATCH', { period: '2026-08', openingBalance: 2000 }), env });
+
+    const countRow = await env.DB.prepare(`SELECT COUNT(*) AS c FROM finance_opening_balance WHERE period = '2026-08'`).first();
+    expect(countRow.c).toBe(2);
+
+    const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-08', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.openingBalance).toBe(2000);
+    expect(body.setBy).toBe('admin_sum');
+  });
+
+  it('PATCH writes an audit_log row', async () => {
+    await setOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance', managerToken, 'PATCH', { period: '2026-09', openingBalance: 777000 }), env });
+    const auditRow = await env.DB.prepare(
+      `SELECT * FROM audit_log WHERE entity_type = 'finance_opening_balance' AND action_type = 'finance_opening_balance_set'`
+    ).first();
+    expect(auditRow).not.toBeNull();
+    expect(auditRow.entity_label).toBe('2026-09');
+    expect(auditRow.new_value).toBe('777000');
+    expect(auditRow.old_value).toBeNull();
   });
 });
