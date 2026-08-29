@@ -100,12 +100,12 @@
     .error { color: #ff8a8a; font-size: 0.85rem; min-height: 1.2em; margin-top: 0.75rem; }
 
     #confirmation strong { color: var(--accent-gold); font-family: var(--font-serif); font-size: 1.5rem; }
+    .contact-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+    #zaloLink, #telegramLink:not([hidden]) { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+    #zaloLink { background: #0068FF; color: #fff; }
     /* :not([hidden]) — an explicit display here would otherwise outrank the
        browser's [hidden] { display: none } rule. */
-    #telegramLink:not([hidden]) {
-      display: inline-block; margin-top: 1rem; background: #0068FF; color: #fff;
-      padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.9rem;
-    }
+    #telegramLink:not([hidden]) { background: #0068FF; color: #fff; }
 
     .sub-footer { background: #060f09; border-top: 1px solid var(--border-subtle); padding: 2rem; text-align: center; }
     .sub-footer p { font-size: 0.8rem; color: var(--text-muted); }
@@ -189,7 +189,10 @@
         <p>Mã ưu đãi của bạn: <strong id="promoCode"></strong></p>
         <p id="promoDetails" style="margin-top:0.5rem; color:var(--text-secondary);"></p>
         <p id="giftLine" hidden style="margin-top:0.75rem; color:var(--text-secondary);">Mang mã này đến quầy lễ tân — nếu quà lưu niệm vẫn còn, bạn sẽ được nhận thêm nhé!</p>
-        <a id="telegramLink" href="#" hidden>Nhận mã qua Telegram</a>
+        <div class="contact-actions">
+          <a id="zaloLink" href="https://zalo.me/0968987311" target="_blank" rel="noopener noreferrer">💬 Nhắn Zalo</a>
+          <a id="telegramLink" href="#" hidden>Nhận mã qua Telegram</a>
+        </div>
       </div>
     </div>
 
