@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listTransactions, onRequestPost as createTransaction } from '../functions/api/finance/transactions/index.js';
+import { onRequestPatch as patchTransaction } from '../functions/api/finance/transactions/[id].js';
+import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -207,5 +209,133 @@ describe('GET /api/finance/transactions', () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?q=rau', managerToken, 'GET'), env });
     const body = await response.json();
     expect(body.map((t) => t.note)).toEqual(['Bán rau']);
+  });
+});
+
+describe('PATCH /api/finance/transactions/:id', () => {
+  let txId;
+  beforeEach(async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('expense', 'vat_tu', 100000, 'Vật tư gốc', '2026-08-01', 'draft', 'quan_ly_fin', '2026-08-01T00:00:00Z')`
+    ).run();
+    txId = result.meta.last_row_id;
+  });
+
+  it('rejects reception (403)', async () => {
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, receptionToken, 'PATCH', { amount: 150000 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, observerToken, 'PATCH', { amount: 150000 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent id', async () => {
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/999999`, managerToken, 'PATCH', { amount: 150000 }),
+      env,
+      params: { id: '999999' },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('partially updates only the given fields, keeping the rest, and stamps updated_by/updated_at', async () => {
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { amount: 250000, status: 'confirmed' }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(txId).first();
+    expect(row.amount).toBe(250000);
+    expect(row.status).toBe('confirmed');
+    expect(row.category).toBe('vat_tu');
+    expect(row.note).toBe('Vật tư gốc');
+    expect(row.updated_by).toBe('quan_ly_fin');
+    expect(row.updated_at).not.toBeNull();
+  });
+
+  it('rejects an invalid amount on update (400)', async () => {
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { amount: -5 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('writes an audit_log row with before/after summaries', async () => {
+    await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, adminToken, 'PATCH', { amount: 300000 }),
+      env,
+      params: { id: String(txId) },
+    });
+    const auditRow = await env.DB.prepare(
+      `SELECT * FROM audit_log WHERE entity_type = 'finance_transaction' AND entity_id = ? AND action_type = 'finance_transaction_update'`
+    ).bind(txId).first();
+    expect(auditRow).not.toBeNull();
+    expect(auditRow.old_value).toContain('100.000');
+    expect(auditRow.new_value).toContain('300.000');
+    expect(auditRow.actor).toBe('admin_fin');
+  });
+
+  it('400s when trying to edit an already-voided transaction', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET voided_by = ?, voided_at = ? WHERE id = ?`).bind('admin_fin', '2026-08-02T00:00:00Z', txId).run();
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { amount: 1 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('PATCH /api/finance/transactions/:id/void', () => {
+  let txId;
+  beforeEach(async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'ban_hang', 400000, 'Bán chuối', '2026-08-05', 'confirmed', 'quan_ly_fin', '2026-08-05T00:00:00Z')`
+    ).run();
+    txId = result.meta.last_row_id;
+  });
+
+  it('rejects reception (403)', async () => {
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, receptionToken, 'PATCH', {}), env, params: { id: String(txId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent id', async () => {
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/999999/void`, managerToken, 'PATCH', {}), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('voids a transaction, stamping voided_by/voided_at, and writes an audit_log row', async () => {
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, adminToken, 'PATCH', {}), env, params: { id: String(txId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(txId).first();
+    expect(row.voided_by).toBe('admin_fin');
+    expect(row.voided_at).not.toBeNull();
+    expect(row.status).toBe('confirmed');
+
+    const auditRow = await env.DB.prepare(
+      `SELECT * FROM audit_log WHERE entity_type = 'finance_transaction' AND entity_id = ? AND action_type = 'finance_transaction_void'`
+    ).bind(txId).first();
+    expect(auditRow).not.toBeNull();
+    expect(auditRow.new_value).toBeNull();
+  });
+
+  it('400s when voiding an already-voided transaction', async () => {
+    await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, managerToken, 'PATCH', {}), env, params: { id: String(txId) } });
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, managerToken, 'PATCH', {}), env, params: { id: String(txId) } });
+    expect(response.status).toBe(400);
   });
 });
