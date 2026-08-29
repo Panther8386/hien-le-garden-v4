@@ -7,6 +7,7 @@ import { createSession } from '../lib/auth.js';
 let managerToken, receptionToken, observerToken;
 let confirmedBookingId, pendingBookingId, checkedOutBookingId;
 let activeCatalogId, inactiveCatalogId;
+let scheduledCatalogId, scheduledWithTermsCatalogId, slotTemplateId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -46,6 +47,26 @@ beforeEach(async () => {
     `INSERT INTO service_catalog (category, name, price_type, price_min, display_order, is_active, updated_at) VALUES ('fnb_hoat_dong', 'Món ngừng bán', 'fixed', 10000, 2, 0, '2026-08-01T00:00:00Z')`
   ).run();
   inactiveCatalogId = inactiveCatalog.meta.last_row_id;
+
+  await env.DB.exec('DELETE FROM service_slot_template');
+  await env.DB.exec('DELETE FROM experience_booking_settings');
+  await env.DB.prepare(`INSERT INTO experience_booking_settings (suggestion_window_days, max_suggestions, updated_at) VALUES (14, 5, '2026-08-01T00:00:00Z')`).run();
+
+  const scheduledCatalog = await env.DB.prepare(
+    `INSERT INTO service_catalog (category, name, price_type, price_min, display_order, is_active, is_scheduled, updated_at) VALUES ('fnb_hoat_dong', 'Đốt lửa trại', 'fixed', 500000, 3, 1, 1, '2026-08-01T00:00:00Z')`
+  ).run();
+  scheduledCatalogId = scheduledCatalog.meta.last_row_id;
+
+  const scheduledWithTermsCatalog = await env.DB.prepare(
+    `INSERT INTO service_catalog (category, name, price_type, price_min, display_order, is_active, is_scheduled, terms_and_conditions, updated_at) VALUES ('fnb_hoat_dong', 'Cắm trại qua đêm', 'fixed', 300000, 4, 1, 1, 'Trẻ em dưới 12 tuổi cần người lớn đi kèm.', '2026-08-01T00:00:00Z')`
+  ).run();
+  scheduledWithTermsCatalogId = scheduledWithTermsCatalog.meta.last_row_id;
+
+  // Saturday-only slot, capacity 30
+  const templateResult = await env.DB.prepare(
+    `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất tối', '6', '19:00', 30, 1, '2026-08-01T00:00:00Z')`
+  ).bind(scheduledCatalogId).run();
+  slotTemplateId = templateResult.meta.last_row_id;
 });
 
 function authedRequest(url, token, method, body) {
@@ -205,6 +226,132 @@ describe('POST /api/bookings/:id/services', () => {
       params: { id: String(confirmedBookingId) },
     });
     expect(response.status).toBe(403);
+  });
+
+  it('rejects a scheduled item without experienceDate/slotTemplateId (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 5 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a date whose weekday does not match the slot template (400)', async () => {
+    // 2026-08-31 is a Monday, the template only applies on Saturday
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 5, experienceDate: '2026-08-31', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('registers a scheduled item within capacity and snapshots the slot label/time', async () => {
+    // 2026-08-29 is a Saturday
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 10, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT * FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.experience_date).toBe('2026-08-29');
+    expect(row.slot_template_id).toBe(slotTemplateId);
+    expect(row.experience_slot_label).toBe('Suất tối');
+    expect(row.experience_start_time).toBe('19:00');
+  });
+
+  it('rejects a request exceeding remaining capacity (409) with alternatives', async () => {
+    // fill 25 of 30 capacity first
+    await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 25, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    // add another Saturday template a week later with room, so a valid alternative exists
+    await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất tối', '6', '19:00', 30, 1, '2026-08-01T00:00:00Z')`
+    ).bind(scheduledCatalogId).run();
+
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 10, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.alternatives.length).toBeGreaterThan(0);
+    expect(body.alternatives.every((a) => a.remaining >= 10)).toBe(true);
+  });
+
+  it('frees capacity when the registration is voided, allowing a subsequent request to succeed', async () => {
+    const first = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 30, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(first.status).toBe(201);
+    const firstBody = await first.json();
+
+    const blocked = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 5, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(blocked.status).toBe(409);
+
+    await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${firstBody.id}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(firstBody.id) },
+    });
+
+    const afterVoid = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 5, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(afterVoid.status).toBe(201);
+  });
+
+  it('rejects a scheduled item with configured terms when termsAccepted is missing (400)', async () => {
+    const template = await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất đêm', '6', '20:00', 10, 1, '2026-08-01T00:00:00Z')`
+    ).bind(scheduledWithTermsCatalogId).run();
+
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledWithTermsCatalogId, unitPrice: 300000, quantity: 2, experienceDate: '2026-08-29', slotTemplateId: template.meta.last_row_id }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('accepts a scheduled item with configured terms when termsAccepted is true, stamping terms_accepted_at', async () => {
+    const template = await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất đêm', '6', '20:00', 10, 1, '2026-08-01T00:00:00Z')`
+    ).bind(scheduledWithTermsCatalogId).run();
+
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledWithTermsCatalogId, unitPrice: 300000, quantity: 2, experienceDate: '2026-08-29', slotTemplateId: template.meta.last_row_id, termsAccepted: true }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT terms_accepted_at FROM booking_service_items WHERE booking_id = ? AND service_catalog_id = ?`).bind(confirmedBookingId, scheduledWithTermsCatalogId).first();
+    expect(row.terms_accepted_at).not.toBeNull();
+  });
+
+  it('succeeds without termsAccepted for a scheduled item with no configured terms, leaving terms_accepted_at NULL', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: scheduledCatalogId, unitPrice: 500000, quantity: 2, experienceDate: '2026-08-29', slotTemplateId }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT terms_accepted_at FROM booking_service_items WHERE booking_id = ? AND service_catalog_id = ?`).bind(confirmedBookingId, scheduledCatalogId).first();
+    expect(row.terms_accepted_at).toBeNull();
   });
 });
 
