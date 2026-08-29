@@ -15,9 +15,54 @@ const DOW_LABELS = { 0: 'CN', 1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T
   currentRole = role;
   if (currentRole === 'admin') {
     document.getElementById('addServiceBtn').classList.remove('hidden');
+    document.getElementById('experienceSettingsSection').classList.remove('hidden');
+    loadExperienceSettings();
   }
   await loadCatalog();
 })();
+
+async function loadExperienceSettings() {
+  const errorEl = document.getElementById('experienceSettingsError');
+  let response;
+  try {
+    response = await fetch('/api/experience-booking-settings');
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tải cấu hình gợi ý khung giờ';
+    return;
+  }
+  if (!response.ok) {
+    errorEl.textContent = 'Có lỗi khi tải cấu hình gợi ý khung giờ';
+    return;
+  }
+  const data = await response.json();
+  const form = document.getElementById('experienceSettingsForm');
+  form.querySelector('input[name="suggestionWindowDays"]').value = data.suggestionWindowDays;
+  form.querySelector('input[name="maxSuggestions"]').value = data.maxSuggestions;
+}
+
+document.getElementById('experienceSettingsForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const errorEl = document.getElementById('experienceSettingsError');
+  errorEl.textContent = '';
+
+  const response = await fetch('/api/experience-booking-settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      suggestionWindowDays: Number(data.get('suggestionWindowDays')),
+      maxSuggestions: Number(data.get('maxSuggestions')),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json();
+    errorEl.textContent = body.error || 'Có lỗi khi lưu cấu hình';
+    return;
+  }
+
+  await loadExperienceSettings();
+});
 
 async function loadCatalog() {
   const listError = document.getElementById('listError');

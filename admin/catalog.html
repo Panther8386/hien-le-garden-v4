@@ -17,6 +17,16 @@
   <div class="page page-wide">
     <h1>Bảng giá dịch vụ</h1>
 
+    <div id="experienceSettingsSection" class="hidden">
+      <h2>Cấu hình gợi ý khung giờ</h2>
+      <form id="experienceSettingsForm">
+        <label>Số ngày tìm gợi ý (khi hết chỗ) <input type="number" name="suggestionWindowDays" min="1" max="365" required /></label>
+        <label>Số gợi ý tối đa hiển thị <input type="number" name="maxSuggestions" min="1" max="50" required /></label>
+        <button type="submit">Lưu cấu hình</button>
+        <p id="experienceSettingsError" class="error"></p>
+      </form>
+    </div>
+
     <div class="filters" id="catalogTabs">
       <button type="button" class="tab-btn active" data-category="luu_tru">Lưu Trú</button>
       <button type="button" class="tab-btn" data-category="fnb_hoat_dong">F&amp;B &amp; Hoạt Động</button>
