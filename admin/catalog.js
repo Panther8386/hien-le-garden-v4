@@ -2,6 +2,8 @@
 let currentRole = null;
 let catalogItems = [];
 let activeCategory = 'luu_tru';
+let editingCatalogItem = null;
+const DOW_LABELS = { 0: 'CN', 1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T7' };
 
 (async () => {
   const res = await fetch('/api/auth/me');
@@ -128,6 +130,8 @@ function resetForm() {
 }
 
 document.getElementById('addServiceBtn').addEventListener('click', () => {
+  editingCatalogItem = null;
+  document.getElementById('slotTemplatesSection').classList.add('hidden');
   resetForm();
   document.getElementById('catalogForm').classList.remove('hidden');
 });
@@ -137,6 +141,7 @@ document.getElementById('catalogCancelBtn').addEventListener('click', () => {
 });
 
 function openEditForm(item) {
+  editingCatalogItem = item;
   const form = document.getElementById('catalogForm');
   form.classList.remove('hidden');
   form.querySelector('input[name="id"]').value = item.id;
@@ -158,6 +163,15 @@ function openEditForm(item) {
   document.getElementById('catalogSubmitBtn').textContent = 'Lưu thay đổi';
   updatePriceTypeFields();
   updateScheduledFields();
+
+  const slotSection = document.getElementById('slotTemplatesSection');
+  if (currentRole === 'admin' && item.isScheduled) {
+    slotSection.classList.remove('hidden');
+    resetSlotTemplateForm();
+    loadSlotTemplates(item.id);
+  } else {
+    slotSection.classList.add('hidden');
+  }
 }
 
 async function deleteItem(id) {
@@ -170,6 +184,134 @@ async function deleteItem(id) {
   }
   await loadCatalog();
 }
+
+async function loadSlotTemplates(catalogId) {
+  const errorEl = document.getElementById('slotTemplatesError');
+  errorEl.textContent = '';
+  const response = await fetch(`/api/catalog/${catalogId}/slot-templates`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi tải khung giờ';
+    return;
+  }
+  const templates = await response.json();
+  renderSlotTemplatesTable(templates);
+}
+
+function renderSlotTemplatesTable(templates) {
+  const tbody = document.querySelector('#slotTemplatesTable tbody');
+  tbody.innerHTML = '';
+  templates.forEach((t) => {
+    const tr = document.createElement('tr');
+    if (!t.isActive) tr.style.opacity = '0.5';
+
+    const tdLabel = document.createElement('td');
+    tdLabel.textContent = t.label || '';
+    const tdDays = document.createElement('td');
+    tdDays.textContent = t.daysOfWeek.split(',').map(Number).sort().map((d) => DOW_LABELS[d]).join(', ');
+    const tdTime = document.createElement('td');
+    tdTime.textContent = t.startTime;
+    const tdCapacity = document.createElement('td');
+    tdCapacity.textContent = t.capacity;
+    const tdStatus = document.createElement('td');
+    tdStatus.textContent = t.isActive ? 'Đang áp dụng' : 'Đã tắt';
+
+    const tdActions = document.createElement('td');
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = 'Sửa';
+    editBtn.addEventListener('click', () => openSlotTemplateEditForm(t));
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'btn-secondary';
+    toggleBtn.textContent = t.isActive ? 'Tắt' : 'Bật lại';
+    toggleBtn.addEventListener('click', () => toggleSlotTemplateActive(t));
+    tdActions.append(editBtn, toggleBtn);
+
+    tr.append(tdLabel, tdDays, tdTime, tdCapacity, tdStatus, tdActions);
+    tbody.appendChild(tr);
+  });
+}
+
+async function toggleSlotTemplateActive(template) {
+  const errorEl = document.getElementById('slotTemplatesError');
+  errorEl.textContent = '';
+  const response = await fetch(`/api/catalog/${editingCatalogItem.id}/slot-templates/${template.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isActive: !template.isActive }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi cập nhật khung giờ';
+    return;
+  }
+  await loadSlotTemplates(editingCatalogItem.id);
+}
+
+function resetSlotTemplateForm() {
+  const form = document.getElementById('slotTemplateForm');
+  form.reset();
+  form.querySelector('input[name="id"]').value = '';
+  document.getElementById('slotTemplateSubmitBtn').textContent = 'Thêm khung giờ';
+}
+
+function openSlotTemplateEditForm(template) {
+  const form = document.getElementById('slotTemplateForm');
+  form.querySelector('input[name="id"]').value = template.id;
+  form.querySelector('input[name="label"]').value = template.label || '';
+  const days = new Set(template.daysOfWeek.split(',').map(Number));
+  form.querySelectorAll('input[name="dow"]').forEach((cb) => {
+    cb.checked = days.has(Number(cb.value));
+  });
+  form.querySelector('input[name="startTime"]').value = template.startTime;
+  form.querySelector('input[name="capacity"]').value = template.capacity;
+  document.getElementById('slotTemplateSubmitBtn').textContent = 'Lưu thay đổi';
+}
+
+document.getElementById('addSlotTemplateBtn').addEventListener('click', () => {
+  resetSlotTemplateForm();
+});
+
+document.getElementById('slotTemplateCancelBtn').addEventListener('click', (event) => {
+  event.preventDefault();
+  resetSlotTemplateForm();
+});
+
+document.getElementById('slotTemplateForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const data = new FormData(form);
+  const errorEl = document.getElementById('slotTemplatesError');
+  errorEl.textContent = '';
+
+  const id = data.get('id');
+  const daysOfWeek = data.getAll('dow').map(Number);
+  const payload = {
+    label: data.get('label') || null,
+    daysOfWeek,
+    startTime: data.get('startTime'),
+    capacity: Number(data.get('capacity')),
+  };
+
+  const response = await fetch(
+    id ? `/api/catalog/${editingCatalogItem.id}/slot-templates/${id}` : `/api/catalog/${editingCatalogItem.id}/slot-templates`,
+    {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi lưu khung giờ';
+    return;
+  }
+
+  resetSlotTemplateForm();
+  await loadSlotTemplates(editingCatalogItem.id);
+});
 
 document.getElementById('catalogForm').addEventListener('submit', async (event) => {
   event.preventDefault();

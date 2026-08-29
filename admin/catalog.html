@@ -60,6 +60,36 @@
       <p id="formError" class="error"></p>
     </form>
 
+    <div id="slotTemplatesSection" class="hidden">
+      <h3>Khung giờ &amp; sức chứa</h3>
+      <p id="slotTemplatesError" class="error"></p>
+      <div class="table-scroll">
+        <table id="slotTemplatesTable">
+          <thead><tr><th>Nhãn</th><th>Ngày trong tuần</th><th>Giờ bắt đầu</th><th>Sức chứa</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <form id="slotTemplateForm">
+        <input type="hidden" name="id" />
+        <label>Nhãn (tuỳ chọn) <input type="text" name="label" placeholder="VD: Suất tối" /></label>
+        <fieldset>
+          <legend>Ngày trong tuần</legend>
+          <label class="checkbox"><input type="checkbox" name="dow" value="1" /> T2</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="2" /> T3</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="3" /> T4</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="4" /> T5</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="5" /> T6</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="6" /> T7</label>
+          <label class="checkbox"><input type="checkbox" name="dow" value="0" /> CN</label>
+        </fieldset>
+        <label>Giờ bắt đầu <input type="time" name="startTime" required /></label>
+        <label>Sức chứa (số khách) <input type="number" name="capacity" min="1" required /></label>
+        <button type="submit" id="slotTemplateSubmitBtn">Thêm khung giờ</button>
+        <button type="button" id="slotTemplateCancelBtn" class="btn-secondary">Huỷ</button>
+      </form>
+      <button type="button" id="addSlotTemplateBtn">+ Thêm khung giờ</button>
+    </div>
+
     <button type="button" id="addServiceBtn" class="hidden">+ Thêm dịch vụ</button>
 
     <p id="listError" class="error"></p>
