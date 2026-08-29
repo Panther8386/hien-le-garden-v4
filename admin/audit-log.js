@@ -8,6 +8,10 @@ const ACTION_TYPE_LABELS = {
   account_permission_change: 'Đổi quyền sắp xếp phòng',
   account_password_reset: 'Đặt lại mật khẩu',
   account_delete: 'Xoá tài khoản',
+  finance_transaction_create: 'Tạo giao dịch thu chi',
+  finance_transaction_update: 'Sửa giao dịch thu chi',
+  finance_transaction_void: 'Huỷ giao dịch thu chi',
+  finance_opening_balance_set: 'Đặt số dư đầu kỳ',
 };
 
 function formatVnd(n) {

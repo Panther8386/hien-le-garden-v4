@@ -72,9 +72,8 @@ let currentTransactions = [];
 function transactionRowHtml(t) {
   const typeLabel = t.type === 'income' ? 'Thu' : 'Chi';
   const statusClass = t.status === 'draft' ? 'status-draft' : t.status === 'confirmed' ? 'status-fin-confirmed' : 'status-paid';
-  const voidedStyle = t.voidedAt ? ' style="text-decoration: line-through; opacity: 0.5;"' : '';
   const canEdit = (currentRole === 'manager' || currentRole === 'admin') && !t.voidedAt;
-  return { typeLabel, statusClass, voidedStyle, canEdit };
+  return { typeLabel, statusClass, canEdit };
 }
 
 function renderTransactions(list) {
@@ -84,22 +83,44 @@ function renderTransactions(list) {
   tbody.innerHTML = '';
   cardList.innerHTML = '';
 
+  function applyVoidedStyle(el, voided) {
+    if (voided) {
+      el.style.textDecoration = 'line-through';
+      el.style.opacity = '0.5';
+    }
+  }
+
   list.forEach((t) => {
-    const { typeLabel, statusClass, voidedStyle, canEdit } = transactionRowHtml(t);
+    const { typeLabel, statusClass, canEdit } = transactionRowHtml(t);
 
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td${voidedStyle}>${t.transactionDate}</td>
-      <td${voidedStyle}>${typeLabel}</td>
-      <td${voidedStyle}>${CATEGORY_LABELS[t.category] || t.category}</td>
-      <td${voidedStyle}>${formatVnd(t.amount)}</td>
-      <td><span class="status-badge ${statusClass}">${STATUS_LABELS[t.status]}</span></td>
-      <td${voidedStyle}>${t.note || ''}</td>
-      <td${voidedStyle}>${t.createdBy}</td>
-      <td></td>
-    `;
+    const tdDate = document.createElement('td');
+    tdDate.textContent = t.transactionDate;
+    applyVoidedStyle(tdDate, t.voidedAt);
+    const tdType = document.createElement('td');
+    tdType.textContent = typeLabel;
+    applyVoidedStyle(tdType, t.voidedAt);
+    const tdCategory = document.createElement('td');
+    tdCategory.textContent = CATEGORY_LABELS[t.category] || t.category;
+    applyVoidedStyle(tdCategory, t.voidedAt);
+    const tdAmount = document.createElement('td');
+    tdAmount.textContent = formatVnd(t.amount);
+    applyVoidedStyle(tdAmount, t.voidedAt);
+    const tdStatus = document.createElement('td');
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge ${statusClass}`;
+    statusBadge.textContent = STATUS_LABELS[t.status];
+    applyVoidedStyle(statusBadge, t.voidedAt);
+    tdStatus.appendChild(statusBadge);
+    const tdNote = document.createElement('td');
+    tdNote.textContent = t.note || '';
+    applyVoidedStyle(tdNote, t.voidedAt);
+    const tdCreatedBy = document.createElement('td');
+    tdCreatedBy.textContent = t.createdBy;
+    applyVoidedStyle(tdCreatedBy, t.voidedAt);
+    const tdActions = document.createElement('td');
+    tr.append(tdDate, tdType, tdCategory, tdAmount, tdStatus, tdNote, tdCreatedBy, tdActions);
     if (canEdit) {
-      const actionsCell = tr.lastElementChild;
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.textContent = 'Sửa';
@@ -109,18 +130,32 @@ function renderTransactions(list) {
       voidBtn.className = 'btn-secondary';
       voidBtn.textContent = 'Huỷ';
       voidBtn.addEventListener('click', () => voidTransaction(t.id));
-      actionsCell.append(editBtn, voidBtn);
+      tdActions.append(editBtn, voidBtn);
     }
     tbody.appendChild(tr);
 
     const card = document.createElement('div');
     card.className = 'booking-card';
-    card.innerHTML = `
-      <p${voidedStyle}><strong>${t.transactionDate}</strong> — ${typeLabel} · ${CATEGORY_LABELS[t.category] || t.category}</p>
-      <p${voidedStyle}>${formatVnd(t.amount)} <span class="status-badge ${statusClass}">${STATUS_LABELS[t.status]}</span></p>
-      <p${voidedStyle}>${t.note || ''}</p>
-      <p${voidedStyle} style="opacity: 0.7; font-size: 0.85rem;">${t.createdBy}</p>
-    `;
+    const pHeader = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = t.transactionDate;
+    pHeader.append(strong, ` — ${typeLabel} · ${CATEGORY_LABELS[t.category] || t.category}`);
+    applyVoidedStyle(pHeader, t.voidedAt);
+    const pAmount = document.createElement('p');
+    const amountBadge = document.createElement('span');
+    amountBadge.className = `status-badge ${statusClass}`;
+    amountBadge.textContent = STATUS_LABELS[t.status];
+    pAmount.append(`${formatVnd(t.amount)} `, amountBadge);
+    applyVoidedStyle(pAmount, t.voidedAt);
+    const pNote = document.createElement('p');
+    pNote.textContent = t.note || '';
+    applyVoidedStyle(pNote, t.voidedAt);
+    const pCreatedBy = document.createElement('p');
+    pCreatedBy.textContent = t.createdBy;
+    pCreatedBy.style.opacity = '0.7';
+    pCreatedBy.style.fontSize = '0.85rem';
+    applyVoidedStyle(pCreatedBy, t.voidedAt);
+    card.append(pHeader, pAmount, pNote, pCreatedBy);
     if (canEdit) {
       const cardActions = document.createElement('div');
       cardActions.className = 'booking-actions';
@@ -236,7 +271,7 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
     category: form.querySelector('[name="category"]').value,
     amount,
     transactionDate,
-    note: form.querySelector('[name="note"]').value || undefined,
+    note: form.querySelector('[name="note"]').value,
     status: form.querySelector('[name="status"]').value,
   };
 
@@ -280,8 +315,10 @@ function currentMonthValue() {
 function renderStatCards(summary) {
   const container = document.getElementById('financeStats');
   container.innerHTML = '';
+  const sourceLabels = { manual: 'nhập tay', carried_forward: 'kế thừa kỳ trước', default_zero: 'mặc định' };
+  const sourceLabel = sourceLabels[summary.openingBalanceSource];
   const cards = [
-    { label: 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) },
+    { label: sourceLabel ? `Số dư đầu kỳ (${sourceLabel})` : 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) },
     { label: 'Tổng thu', value: formatVnd(summary.totalIncome) },
     { label: 'Tổng chi', value: formatVnd(summary.totalExpense) },
     { label: 'Lợi nhuận tạm tính', value: formatVnd(summary.netChange) },
