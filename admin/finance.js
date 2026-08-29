@@ -63,6 +63,8 @@ function showFinanceError(message) {
 
   resetFinanceForm();
   await loadTransactions();
+  document.getElementById('financeMonthInput').value = currentMonthValue();
+  await refreshFinanceSummary();
 })();
 
 let currentTransactions = [];
@@ -263,3 +265,103 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
 document.querySelectorAll('#financeFilters input, #financeFilters select').forEach((el) => {
   el.addEventListener('change', () => loadTransactions());
 });
+
+function currentMonthValue() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
+}
+
+function renderStatCards(summary) {
+  const container = document.getElementById('financeStats');
+  container.innerHTML = '';
+  const cards = [
+    { label: 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) },
+    { label: 'Tổng thu', value: formatVnd(summary.totalIncome) },
+    { label: 'Tổng chi', value: formatVnd(summary.totalExpense) },
+    { label: 'Lợi nhuận tạm tính', value: formatVnd(summary.netChange) },
+    { label: 'Số dư cuối kỳ', value: formatVnd(summary.closingBalance) },
+  ];
+  cards.forEach((c) => {
+    const div = document.createElement('div');
+    div.className = 'stat-card';
+    const value = document.createElement('div');
+    value.className = 'stat-value';
+    value.textContent = c.value;
+    const label = document.createElement('div');
+    label.className = 'stat-label';
+    label.textContent = c.label;
+    div.append(value, label);
+    container.appendChild(div);
+  });
+}
+
+function renderOpeningBalanceEditor(period, currentValue) {
+  const container = document.getElementById('openingBalanceEditor');
+  container.innerHTML = '';
+  if (currentRole !== 'manager' && currentRole !== 'admin') return;
+
+  const label = document.createElement('label');
+  label.textContent = 'Sửa số dư đầu kỳ cho tháng này ';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = '1000';
+  input.value = currentValue != null ? currentValue : '';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.textContent = 'Lưu';
+  const errorEl = document.createElement('p');
+  errorEl.className = 'error';
+
+  saveBtn.addEventListener('click', async () => {
+    errorEl.textContent = '';
+    const value = Number(input.value);
+    if (input.value.trim() === '' || !Number.isInteger(value)) {
+      errorEl.textContent = 'Số dư đầu kỳ phải là số nguyên';
+      return;
+    }
+    const response = await fetch('/api/finance/opening-balance', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period, openingBalance: value }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      errorEl.textContent = body.error || 'Có lỗi khi lưu số dư đầu kỳ';
+      return;
+    }
+    await refreshFinanceSummary();
+  });
+
+  label.appendChild(input);
+  container.append(label, saveBtn, errorEl);
+}
+
+async function refreshFinanceSummary() {
+  const monthInput = document.getElementById('financeMonthInput');
+  const month = monthInput.value || currentMonthValue();
+  monthInput.value = month;
+
+  const errorEl = document.getElementById('financeError');
+  errorEl.textContent = '';
+
+  let summaryResponse, openingResponse;
+  try {
+    [summaryResponse, openingResponse] = await Promise.all([
+      fetch(`/api/finance/summary?month=${month}`),
+      fetch(`/api/finance/opening-balance?period=${month}`),
+    ]);
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tải số liệu cân đối';
+    return;
+  }
+  if (!summaryResponse.ok || !openingResponse.ok) {
+    errorEl.textContent = 'Có lỗi khi tải số liệu cân đối';
+    return;
+  }
+
+  const summary = await summaryResponse.json();
+  const opening = await openingResponse.json();
+  renderStatCards(summary);
+  renderOpeningBalanceEditor(month, opening.openingBalance);
+}
+
+document.getElementById('financeMonthInput').addEventListener('change', refreshFinanceSummary);
