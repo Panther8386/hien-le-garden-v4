@@ -232,6 +232,8 @@ function openAddServiceForm(bookingId, section) {
     opt.value = item.id;
     opt.textContent = item.name;
     opt.dataset.priceMin = item.priceMin != null ? item.priceMin : '';
+    opt.dataset.isScheduled = item.isScheduled ? '1' : '';
+    opt.dataset.termsAndConditions = item.termsAndConditions || '';
     select.appendChild(opt);
   });
 
@@ -241,16 +243,99 @@ function openAddServiceForm(bookingId, section) {
   priceInput.step = '1000';
   priceInput.placeholder = 'Giá';
 
-  select.addEventListener('change', () => {
-    const selectedOpt = select.options[select.selectedIndex];
-    priceInput.value = selectedOpt.dataset.priceMin || '';
-  });
-
+  const qtyLabel = document.createElement('span');
+  qtyLabel.textContent = 'Số lượng:';
   const qtyInput = document.createElement('input');
   qtyInput.type = 'number';
   qtyInput.min = '1';
   qtyInput.step = '1';
   qtyInput.value = '1';
+
+  const experienceDateInput = document.createElement('input');
+  experienceDateInput.type = 'date';
+  experienceDateInput.style.display = 'none';
+
+  const slotTemplateSelect = document.createElement('select');
+  slotTemplateSelect.style.display = 'none';
+  const slotPlaceholderOpt = document.createElement('option');
+  slotPlaceholderOpt.value = '';
+  slotPlaceholderOpt.textContent = '-- Chọn ngày trước --';
+  slotTemplateSelect.appendChild(slotPlaceholderOpt);
+
+  const termsDisplay = document.createElement('blockquote');
+  termsDisplay.style.display = 'none';
+
+  const termsLabel = document.createElement('label');
+  termsLabel.className = 'checkbox-label';
+  termsLabel.style.display = 'none';
+  const termsAcceptedCheckbox = document.createElement('input');
+  termsAcceptedCheckbox.type = 'checkbox';
+  termsLabel.append(termsAcceptedCheckbox, ' Đã giải thích & khách đồng ý điều khoản trên');
+
+  async function refreshSlotAvailability() {
+    const catalogId = select.value;
+    const date = experienceDateInput.value;
+    slotTemplateSelect.innerHTML = '';
+    if (!catalogId || !date) {
+      slotTemplateSelect.appendChild(slotPlaceholderOpt.cloneNode(true));
+      return;
+    }
+    let response;
+    try {
+      response = await fetch(`/api/catalog/${catalogId}/slot-availability?date=${encodeURIComponent(date)}`);
+    } catch (err) {
+      return;
+    }
+    if (!response.ok) return;
+    const slots = await response.json();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '-- Chọn khung giờ --';
+    slotTemplateSelect.appendChild(placeholder);
+    slots.forEach((slot) => {
+      const opt = document.createElement('option');
+      opt.value = slot.id;
+      if (slot.remaining <= 0) {
+        opt.textContent = `${slot.startTime} — Hết chỗ`;
+        opt.disabled = true;
+      } else {
+        opt.textContent = `${slot.startTime} — còn ${slot.remaining}/${slot.capacity} chỗ`;
+      }
+      slotTemplateSelect.appendChild(opt);
+    });
+  }
+
+  select.addEventListener('change', () => {
+    const selectedOpt = select.options[select.selectedIndex];
+    priceInput.value = selectedOpt.dataset.priceMin || '';
+    const isScheduled = selectedOpt.dataset.isScheduled === '1';
+    experienceDateInput.style.display = isScheduled ? '' : 'none';
+    slotTemplateSelect.style.display = isScheduled ? '' : 'none';
+    qtyLabel.textContent = isScheduled ? 'Số khách:' : 'Số lượng:';
+    if (isScheduled) {
+      refreshSlotAvailability();
+    } else {
+      termsDisplay.style.display = 'none';
+      termsLabel.style.display = 'none';
+      termsAcceptedCheckbox.checked = false;
+    }
+  });
+
+  experienceDateInput.addEventListener('change', refreshSlotAvailability);
+
+  slotTemplateSelect.addEventListener('change', () => {
+    const selectedOpt = select.options[select.selectedIndex];
+    const terms = selectedOpt.dataset.termsAndConditions;
+    if (slotTemplateSelect.value && terms) {
+      termsDisplay.textContent = terms;
+      termsDisplay.style.display = '';
+      termsLabel.style.display = '';
+    } else {
+      termsDisplay.style.display = 'none';
+      termsLabel.style.display = 'none';
+      termsAcceptedCheckbox.checked = false;
+    }
+  });
 
   const paidLabel = document.createElement('label');
   paidLabel.className = 'checkbox-label';
@@ -282,8 +367,37 @@ function openAddServiceForm(bookingId, section) {
   const errorEl = document.createElement('p');
   errorEl.className = 'error';
 
+  const alternativesEl = document.createElement('div');
+
+  function renderAlternatives(alternatives) {
+    alternativesEl.innerHTML = '';
+    if (!Array.isArray(alternatives) || alternatives.length === 0) return;
+    const heading = document.createElement('p');
+    heading.textContent = 'Gợi ý khung giờ khác:';
+    alternativesEl.appendChild(heading);
+    alternatives.forEach((alt) => {
+      const line = document.createElement('p');
+      const [y, m, d] = alt.date.split('-');
+      line.textContent = `· ${d}/${m} — ${alt.startTime} (còn ${alt.remaining} chỗ) `;
+      const chooseBtn = document.createElement('button');
+      chooseBtn.type = 'button';
+      chooseBtn.className = 'btn-secondary';
+      chooseBtn.textContent = 'chọn';
+      chooseBtn.addEventListener('click', async () => {
+        experienceDateInput.value = alt.date;
+        await refreshSlotAvailability();
+        slotTemplateSelect.value = String(alt.slotTemplateId);
+        slotTemplateSelect.dispatchEvent(new Event('change'));
+        alternativesEl.innerHTML = '';
+      });
+      line.appendChild(chooseBtn);
+      alternativesEl.appendChild(line);
+    });
+  }
+
   confirmBtn.addEventListener('click', async () => {
     errorEl.textContent = '';
+    alternativesEl.innerHTML = '';
     const serviceCatalogId = Number(select.value);
     if (!serviceCatalogId) {
       errorEl.textContent = 'Vui lòng chọn dịch vụ';
@@ -299,6 +413,26 @@ function openAddServiceForm(bookingId, section) {
       errorEl.textContent = 'Số lượng phải là số nguyên lớn hơn 0';
       return;
     }
+
+    const selectedOpt = select.options[select.selectedIndex];
+    const isScheduled = selectedOpt.dataset.isScheduled === '1';
+    let experienceDate, slotTemplateId, termsAccepted;
+    if (isScheduled) {
+      if (!experienceDateInput.value || !slotTemplateSelect.value) {
+        errorEl.textContent = 'Vui lòng chọn ngày và khung giờ';
+        return;
+      }
+      experienceDate = experienceDateInput.value;
+      slotTemplateId = Number(slotTemplateSelect.value);
+      if (termsLabel.style.display !== 'none') {
+        if (!termsAcceptedCheckbox.checked) {
+          errorEl.textContent = 'Vui lòng xác nhận đã thông báo điều khoản dịch vụ cho khách';
+          return;
+        }
+        termsAccepted = true;
+      }
+    }
+
     const paid = paidCheckbox.checked;
     const paymentMethod = paid ? (methodCheckbox.checked ? 'cash' : 'transfer') : undefined;
     let response;
@@ -306,7 +440,7 @@ function openAddServiceForm(bookingId, section) {
       response = await fetch(`/api/bookings/${bookingId}/services`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity, paid, paymentMethod }),
+        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity, paid, paymentMethod, experienceDate, slotTemplateId, termsAccepted }),
       });
     } catch (err) {
       errorEl.textContent = 'Có lỗi khi thêm dịch vụ';
@@ -315,13 +449,14 @@ function openAddServiceForm(bookingId, section) {
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       errorEl.textContent = body.error || 'Có lỗi khi thêm dịch vụ';
+      renderAlternatives(body.alternatives);
       return;
     }
     await refreshAll();
   });
   cancelBtn.addEventListener('click', () => form.remove());
 
-  form.append(select, priceInput, qtyInput, paidLabel, methodLabel, confirmBtn, cancelBtn, errorEl);
+  form.append(select, priceInput, qtyLabel, qtyInput, experienceDateInput, slotTemplateSelect, termsDisplay, termsLabel, paidLabel, methodLabel, confirmBtn, cancelBtn, errorEl, alternativesEl);
   section.appendChild(form);
 }
 
