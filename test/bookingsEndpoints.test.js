@@ -244,6 +244,52 @@ describe('GET /api/bookings', () => {
     expect(arrivingResult.services).toHaveLength(1);
     expect(arrivingResult.services[0]).toMatchObject({ name: 'Cà phê', unitPrice: 30000, quantity: 1, amount: 30000, status: 'posted' });
   });
+
+  it('includes experience-slot snapshot fields on scheduled service items, null on non-scheduled ones', async () => {
+    await env.DB.exec('DELETE FROM booking_service_items');
+    await env.DB.exec('DELETE FROM service_slot_template');
+    await env.DB.exec('DELETE FROM service_catalog');
+    const arrivingRow = await env.DB.prepare(`SELECT id FROM bookings WHERE guest_name = 'Arriving Today'`).first();
+
+    // slot_template_id is a foreign key to service_slot_template(id), so a real row is needed here
+    // (a bare literal id like 42 would trip the FK constraint since D1 enforces it).
+    const catalogResult = await env.DB.prepare(
+      `INSERT INTO service_catalog (category, name, price_type, price_min, display_order, is_active, is_scheduled, updated_at) VALUES ('fnb_hoat_dong', 'Đốt lửa trại', 'fixed', 500000, 1, 1, 1, '2026-08-01T00:00:00Z')`
+    ).run();
+    const catalogId = catalogResult.meta.last_row_id;
+    const slotResult = await env.DB.prepare(
+      `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất tối', '6', '19:00', 30, 1, '2026-08-01T00:00:00Z')`
+    ).bind(catalogId).run();
+    const slotTemplateId = slotResult.meta.last_row_id;
+
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, experience_date, slot_template_id, experience_slot_label, experience_start_time, terms_accepted_at)
+       VALUES (?, 'Đốt lửa trại', 500000, 10, 5000000, 'posted', 'le_tan_a', '2026-08-01T00:00:00Z', '2026-08-29', ?, 'Suất tối', '19:00', '2026-08-01T00:05:00Z')`
+    ).bind(arrivingRow.id, slotTemplateId).run();
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'le_tan_a', '2026-08-01T00:00:00Z')`
+    ).bind(arrivingRow.id).run();
+
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
+    const body = await response.json();
+    const arrivingResult = body.find((b) => b.id === arrivingRow.id);
+
+    const scheduled = arrivingResult.services.find((s) => s.name === 'Đốt lửa trại');
+    expect(scheduled).toMatchObject({
+      experienceDate: '2026-08-29',
+      slotTemplateId,
+      experienceSlotLabel: 'Suất tối',
+      experienceStartTime: '19:00',
+    });
+    expect(scheduled.termsAcceptedAt).toBe('2026-08-01T00:05:00Z');
+
+    const nonScheduled = arrivingResult.services.find((s) => s.name === 'Cà phê');
+    expect(nonScheduled.experienceDate).toBeNull();
+    expect(nonScheduled.slotTemplateId).toBeNull();
+    expect(nonScheduled.experienceSlotLabel).toBeNull();
+    expect(nonScheduled.experienceStartTime).toBeNull();
+    expect(nonScheduled.termsAcceptedAt).toBeNull();
+  });
 });
 
 describe('PATCH /api/bookings/:id/deposit', () => {

@@ -45,6 +45,11 @@ async function findAlternativeSlots(env, catalogId, fromDate, requiredQuantity) 
         candidates.push({ date: dateStr, slotTemplateId: template.id, label: template.label, startTime: template.startTime, remaining });
       }
     }
+
+    // Safe to stop scanning further (later) dates once we already have enough candidates:
+    // this loop is strictly date-ascending and the final sort/slice below is by date first,
+    // so no later-dated day could ever displace an already-collected earlier-dated candidate.
+    if (candidates.length >= maxSuggestions) break;
   }
 
   candidates.sort((a, b) => (a.date === b.date ? a.startTime.localeCompare(b.startTime) : a.date.localeCompare(b.date)));

@@ -163,7 +163,13 @@ function renderServicesSection(b, card) {
     const paymentSuffix = item.paymentStatus === 'paid'
       ? ` · Đã thanh toán (${item.paymentMethod === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'})`
       : ' · Chưa thanh toán';
-    text.textContent = `${item.name} ×${item.quantity} — ${formatVnd(item.amount)}${paymentSuffix}`;
+    let slotSuffix = '';
+    if (item.experienceDate) {
+      const [y, m, d] = item.experienceDate.split('-');
+      slotSuffix = ` · ${d}/${m} ${item.experienceStartTime || ''}`.trimEnd();
+      if (item.experienceSlotLabel) slotSuffix += ` (${item.experienceSlotLabel})`;
+    }
+    text.textContent = `${item.name} ×${item.quantity} — ${formatVnd(item.amount)}${slotSuffix}${paymentSuffix}`;
     if (item.status === 'voided') {
       text.style.textDecoration = 'line-through';
       text.style.opacity = '0.5';

@@ -135,7 +135,10 @@ export async function onRequestGet({ request, env }) {
     const { results: serviceRows } = await env.DB.prepare(
       `SELECT id, booking_id AS bookingId, name, unit_price AS unitPrice, quantity, amount, status,
               payment_status AS paymentStatus, payment_method AS paymentMethod,
-              created_by AS createdBy, created_at AS createdAt, voided_by AS voidedBy, voided_at AS voidedAt
+              created_by AS createdBy, created_at AS createdAt, voided_by AS voidedBy, voided_at AS voidedAt,
+              experience_date AS experienceDate, slot_template_id AS slotTemplateId,
+              experience_slot_label AS experienceSlotLabel, experience_start_time AS experienceStartTime,
+              terms_accepted_at AS termsAcceptedAt
        FROM booking_service_items
        WHERE booking_id IN (SELECT id FROM bookings ${where})
        ORDER BY created_at ASC, id ASC`
