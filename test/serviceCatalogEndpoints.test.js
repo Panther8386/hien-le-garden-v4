@@ -200,3 +200,36 @@ describe('DELETE /api/catalog/:id', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('isScheduled / termsAndConditions', () => {
+  it('round-trips isScheduled and termsAndConditions through POST and GET', async () => {
+    const createResponse = await postCatalog({
+      request: authedRequest('https://x/api/catalog', adminToken, 'POST', {
+        category: 'fnb_hoat_dong', name: 'Đốt lửa trại', priceType: 'fixed', priceMin: 500000,
+        isScheduled: true, termsAndConditions: 'Trẻ em dưới 12 tuổi cần người lớn đi kèm.',
+      }),
+      env,
+    });
+    expect(createResponse.status).toBe(201);
+
+    const listResponse = await getCatalog({ request: authedRequest('https://x/api/catalog?all=1', adminToken, 'GET'), env });
+    const items = await listResponse.json();
+    const created = items.find((i) => i.name === 'Đốt lửa trại');
+    expect(created.isScheduled).toBe(true);
+    expect(created.termsAndConditions).toBe('Trẻ em dưới 12 tuổi cần người lớn đi kèm.');
+  });
+
+  it('defaults isScheduled to false and termsAndConditions to null when omitted', async () => {
+    const createResponse = await postCatalog({
+      request: authedRequest('https://x/api/catalog', adminToken, 'POST', { category: 'fnb_hoat_dong', name: 'Cà phê', priceType: 'fixed', priceMin: 30000 }),
+      env,
+    });
+    expect(createResponse.status).toBe(201);
+
+    const listResponse = await getCatalog({ request: authedRequest('https://x/api/catalog?all=1', adminToken, 'GET'), env });
+    const items = await listResponse.json();
+    const created = items.find((i) => i.name === 'Cà phê');
+    expect(created.isScheduled).toBe(false);
+    expect(created.termsAndConditions).toBeNull();
+  });
+});

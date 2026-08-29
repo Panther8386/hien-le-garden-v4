@@ -33,6 +33,10 @@
       </datalist>
       <label>Tên dịch vụ <input type="text" name="name" required /></label>
       <label class="checkbox"><input type="checkbox" name="isLabelPrice" /> Dùng nhãn tự do (VD: Miễn phí, Theo giá thị trường)</label>
+      <label class="checkbox"><input type="checkbox" name="isScheduled" /> Có khung giờ + sức chứa (trải nghiệm)</label>
+      <label id="termsField" class="hidden">Điều khoản &amp; điều kiện sử dụng dịch vụ (hiển thị cho lễ tân khi đăng ký)
+        <textarea name="termsAndConditions" rows="4" placeholder="VD: Trẻ em dưới 12 tuổi cần người lớn đi kèm. Không hoàn phí nếu huỷ trong ngày..."></textarea>
+      </label>
       <div class="form-row" id="priceRangeFields">
         <label>Giá A <input type="number" name="priceMin" min="0" step="1000" /></label>
         <label>Giá B (để trống nếu là giá cố định) <input type="number" name="priceMax" min="0" step="1000" /></label>

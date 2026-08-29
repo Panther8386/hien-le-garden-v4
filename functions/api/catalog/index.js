@@ -10,7 +10,7 @@ const VALID_PRICE_TYPES = ['range', 'fixed', 'label'];
 const VALID_ROOM_TYPE_KEYS = Object.keys(ROOM_TYPES);
 
 function validateCatalogFields(body) {
-  const { category, name, priceType, priceMin, priceMax, priceLabel, roomTypeKey, subgroup, unitCapacity, note } = body;
+  const { category, name, priceType, priceMin, priceMax, priceLabel, roomTypeKey, subgroup, unitCapacity, note, termsAndConditions } = body;
 
   if (!VALID_CATEGORIES.includes(category)) return 'Hạng mục không hợp lệ';
   if (typeof name !== 'string' || name.trim() === '') return 'Tên dịch vụ không được để trống';
@@ -30,6 +30,7 @@ function validateCatalogFields(body) {
   if (subgroup != null && typeof subgroup !== 'string') return 'Nhóm phụ không hợp lệ';
   if (unitCapacity != null && typeof unitCapacity !== 'string') return 'Đơn vị/Sức chứa không hợp lệ';
   if (note != null && typeof note !== 'string') return 'Ghi chú không hợp lệ';
+  if (termsAndConditions != null && typeof termsAndConditions !== 'string') return 'Điều khoản & điều kiện không hợp lệ';
   return null;
 }
 
@@ -44,14 +45,14 @@ export async function onRequestGet({ request, env }) {
 
   const baseSelect = `SELECT id, category, subgroup, name, price_type AS priceType, price_min AS priceMin, price_max AS priceMax,
               price_label AS priceLabel, unit_capacity AS unitCapacity, note, room_type_key AS roomTypeKey,
-              display_order AS displayOrder, is_active AS isActive
+              display_order AS displayOrder, is_active AS isActive, is_scheduled AS isScheduled, terms_and_conditions AS termsAndConditions
        FROM service_catalog`;
   const query = wantsAll
     ? `${baseSelect} ORDER BY category, subgroup, display_order`
     : `${baseSelect} WHERE is_active = 1 ORDER BY category, subgroup, display_order`;
 
   const { results } = await env.DB.prepare(query).all();
-  const coerced = results.map((row) => ({ ...row, isActive: !!row.isActive }));
+  const coerced = results.map((row) => ({ ...row, isActive: !!row.isActive, isScheduled: !!row.isScheduled }));
 
   return new Response(JSON.stringify(coerced), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
@@ -70,7 +71,7 @@ export async function onRequestPost({ request, env }) {
   const validationError = validateCatalogFields(body);
   if (validationError) return jsonError(validationError, 400);
 
-  const { category, subgroup, name, priceType, priceMin, priceMax, priceLabel, unitCapacity, note, roomTypeKey, displayOrder } = body;
+  const { category, subgroup, name, priceType, priceMin, priceMax, priceLabel, unitCapacity, note, roomTypeKey, displayOrder, isScheduled, termsAndConditions } = body;
 
   if (roomTypeKey) {
     const conflict = await env.DB.prepare(`SELECT id FROM service_catalog WHERE room_type_key = ? AND is_active = 1`).bind(roomTypeKey).first();
@@ -82,8 +83,8 @@ export async function onRequestPost({ request, env }) {
   const finalPriceLabel = priceType === 'label' ? priceLabel : null;
 
   await env.DB.prepare(
-    `INSERT INTO service_catalog (category, subgroup, name, price_type, price_min, price_max, price_label, unit_capacity, note, room_type_key, display_order, is_active, updated_by, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    `INSERT INTO service_catalog (category, subgroup, name, price_type, price_min, price_max, price_label, unit_capacity, note, room_type_key, display_order, is_active, is_scheduled, terms_and_conditions, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
   )
     .bind(
       category,
@@ -97,6 +98,8 @@ export async function onRequestPost({ request, env }) {
       note || null,
       roomTypeKey || null,
       Number.isInteger(displayOrder) ? displayOrder : 0,
+      isScheduled ? 1 : 0,
+      termsAndConditions || null,
       auth.username,
       new Date().toISOString()
     )

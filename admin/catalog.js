@@ -109,6 +109,13 @@ function updatePriceTypeFields() {
 
 document.querySelector('#catalogForm input[name="isLabelPrice"]').addEventListener('change', updatePriceTypeFields);
 
+function updateScheduledFields() {
+  const isScheduled = document.querySelector('#catalogForm input[name="isScheduled"]').checked;
+  document.getElementById('termsField').classList.toggle('hidden', !isScheduled);
+}
+
+document.querySelector('#catalogForm input[name="isScheduled"]').addEventListener('change', updateScheduledFields);
+
 function resetForm() {
   const form = document.getElementById('catalogForm');
   form.reset();
@@ -117,6 +124,7 @@ function resetForm() {
   document.getElementById('roomTypeField').classList.toggle('hidden', activeCategory !== 'luu_tru');
   document.getElementById('catalogSubmitBtn').textContent = 'Thêm dịch vụ';
   updatePriceTypeFields();
+  updateScheduledFields();
 }
 
 document.getElementById('addServiceBtn').addEventListener('click', () => {
@@ -142,11 +150,14 @@ function openEditForm(item) {
   form.querySelector('input[name="priceLabel"]').value = isLabel ? item.priceLabel : '';
   form.querySelector('input[name="unitCapacity"]').value = item.unitCapacity || '';
   form.querySelector('input[name="note"]').value = item.note || '';
+  form.querySelector('input[name="isScheduled"]').checked = item.isScheduled;
+  form.querySelector('textarea[name="termsAndConditions"]').value = item.termsAndConditions || '';
   const roomTypeSelect = form.querySelector('select[name="roomTypeKey"]');
   if (roomTypeSelect) roomTypeSelect.value = item.roomTypeKey || '';
   document.getElementById('roomTypeField').classList.toggle('hidden', item.category !== 'luu_tru');
   document.getElementById('catalogSubmitBtn').textContent = 'Lưu thay đổi';
   updatePriceTypeFields();
+  updateScheduledFields();
 }
 
 async function deleteItem(id) {
@@ -176,6 +187,8 @@ document.getElementById('catalogForm').addEventListener('submit', async (event) 
     unitCapacity: data.get('unitCapacity') || null,
     note: data.get('note') || null,
     roomTypeKey: data.get('roomTypeKey') || null,
+    isScheduled: form.querySelector('input[name="isScheduled"]').checked,
+    termsAndConditions: data.get('termsAndConditions') || null,
   };
 
   if (isLabel) {
