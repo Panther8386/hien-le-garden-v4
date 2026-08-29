@@ -138,6 +138,7 @@ function renderTransactions(list) {
     }
     cardList.appendChild(card);
   });
+  renderChart(currentGranularity);
 }
 
 function currentFilters() {
@@ -371,3 +372,87 @@ async function refreshFinanceSummary() {
 }
 
 document.getElementById('financeMonthInput').addEventListener('change', refreshFinanceSummary);
+
+let currentGranularity = 'week';
+
+function isoWeekMonday(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const day = date.getUTCDay(); // 0=Sun..6=Sat
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + diffToMonday);
+  return date.toISOString().slice(0, 10);
+}
+
+function bucketKey(dateStr, granularity) {
+  if (granularity === 'day') return dateStr;
+  if (granularity === 'month') return dateStr.slice(0, 7);
+  return isoWeekMonday(dateStr);
+}
+
+function bucketLabel(key, granularity) {
+  if (granularity === 'month') {
+    const [y, m] = key.split('-');
+    return `${m}/${y}`;
+  }
+  const [, m, d] = key.split('-');
+  return `${d}/${m}`;
+}
+
+function buildBuckets(transactions, granularity) {
+  const map = new Map();
+  transactions
+    .filter((t) => !t.voidedAt && (t.status === 'confirmed' || t.status === 'paid'))
+    .forEach((t) => {
+      const key = bucketKey(t.transactionDate, granularity);
+      if (!map.has(key)) map.set(key, { key, income: 0, expense: 0 });
+      const bucket = map.get(key);
+      if (t.type === 'income') bucket.income += t.amount;
+      else bucket.expense += t.amount;
+    });
+  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function renderChart(granularity) {
+  currentGranularity = granularity || currentGranularity;
+  const container = document.getElementById('financeChart');
+  const buckets = buildBuckets(currentTransactions, currentGranularity);
+
+  if (buckets.length === 0) {
+    container.innerHTML = '<p style="opacity: 0.6;">Không có dữ liệu để vẽ biểu đồ.</p>';
+    return;
+  }
+
+  const width = Math.max(320, buckets.length * 70);
+  const height = 220;
+  const chartTop = 10;
+  const chartBottom = 180;
+  const chartHeight = chartBottom - chartTop;
+  const maxValue = Math.max(1, ...buckets.map((b) => Math.max(b.income, b.expense)));
+  const barGroupWidth = width / buckets.length;
+  const barWidth = Math.min(24, barGroupWidth / 3);
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Biểu đồ thu chi theo ${currentGranularity === 'day' ? 'ngày' : currentGranularity === 'week' ? 'tuần' : 'tháng'}" style="width: 100%; height: auto; max-width: 100%;">`;
+  svg += `<line x1="0" y1="${chartBottom}" x2="${width}" y2="${chartBottom}" stroke="currentColor" stroke-opacity="0.3" />`;
+
+  buckets.forEach((b, i) => {
+    const groupCenter = i * barGroupWidth + barGroupWidth / 2;
+    const incomeHeight = (b.income / maxValue) * chartHeight;
+    const expenseHeight = (b.expense / maxValue) * chartHeight;
+
+    svg += `<rect x="${groupCenter - barWidth - 2}" y="${chartBottom - incomeHeight}" width="${barWidth}" height="${incomeHeight}" fill="#C9A84C" />`;
+    svg += `<rect x="${groupCenter + 2}" y="${chartBottom - expenseHeight}" width="${barWidth}" height="${expenseHeight}" fill="#ff8a8a" />`;
+    svg += `<text x="${groupCenter}" y="${chartBottom + 16}" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.8">${bucketLabel(b.key, currentGranularity)}</text>`;
+  });
+
+  svg += `</svg>`;
+  container.innerHTML = `<div class="table-scroll">${svg}</div><p style="font-size: 0.85rem; opacity: 0.7;"><span style="color: #C9A84C;">■</span> Thu &nbsp; <span style="color: #ff8a8a;">■</span> Chi</p>`;
+}
+
+document.querySelectorAll('#chartGranularity .tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#chartGranularity .tab-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderChart(btn.dataset.granularity);
+  });
+});
