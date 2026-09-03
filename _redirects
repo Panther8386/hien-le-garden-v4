@@ -19,6 +19,7 @@
 /manager                      /admin/reception       200
 /manager/dashboard            /admin/dashboard       200
 /manager/finance               /admin/finance          200
+/manager/finance-categories     /admin/finance-categories   200
 /manager/customers            /admin/customers       200
 /manager/templates            /admin/templates       200
 /manager/config                /admin/manager         200

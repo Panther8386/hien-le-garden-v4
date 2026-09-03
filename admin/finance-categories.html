@@ -1,0 +1,51 @@
+<!-- v4/admin/finance-categories.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Danh mục Sổ thu chi — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Danh mục Sổ thu chi</h1>
+    <p id="pageError" class="error"></p>
+
+    <h2>Thu</h2>
+    <div class="table-scroll">
+      <table id="incomeTable">
+        <thead><tr><th>Tên danh mục</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <form id="incomeAddForm" class="hidden">
+      <label>Tên danh mục Thu mới <input type="text" name="label" required /></label>
+      <button type="submit">+ Thêm danh mục</button>
+      <p id="incomeAddError" class="error"></p>
+    </form>
+
+    <h2>Chi</h2>
+    <div class="table-scroll">
+      <table id="expenseTable">
+        <thead><tr><th>Tên danh mục</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <form id="expenseAddForm" class="hidden">
+      <label>Tên danh mục Chi mới <input type="text" name="label" required /></label>
+      <button type="submit">+ Thêm danh mục</button>
+      <p id="expenseAddError" class="error"></p>
+    </form>
+  </div>
+
+  <script src="/admin/finance-categories.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
