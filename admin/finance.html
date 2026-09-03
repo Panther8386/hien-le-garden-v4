@@ -16,9 +16,15 @@
   <div class="page page-wide">
     <h1>Sổ thu chi</h1>
     <p id="financeError" class="error"></p>
+    <p id="financeStorageWarning" class="warning-banner hidden"></p>
 
     <div id="addTransactionSection" class="hidden">
       <h2>Thêm giao dịch</h2>
+      <div class="filters" id="defaultTypeToggle">
+        <span style="align-self: center;">Mặc định khi mở form:</span>
+        <button type="button" class="tab-btn" data-default-type="income">Thu</button>
+        <button type="button" class="tab-btn" data-default-type="expense">Chi</button>
+      </div>
       <form id="financeForm">
         <div class="form-row">
           <label>Loại
@@ -43,6 +49,10 @@
             <option value="paid">Đã thanh toán</option>
           </select>
         </label>
+        <label>Hoá đơn/chứng từ (ảnh hoặc PDF, tối đa 10MB)
+          <input type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" />
+        </label>
+        <p id="financeAttachmentInfo"></p>
         <button type="submit">Ghi giao dịch</button>
         <button type="button" id="financeCancelEditBtn" class="btn-secondary hidden">Huỷ sửa</button>
         <p id="financeFormError" class="error"></p>
@@ -84,7 +94,7 @@
     <p id="listError" class="error"></p>
     <div class="table-scroll" id="financeTableWrap">
       <table id="financeTable">
-        <thead><tr><th>Ngày</th><th>Loại</th><th>Danh mục</th><th>Số tiền</th><th>Trạng thái</th><th>Ghi chú</th><th>Người tạo</th><th></th></tr></thead>
+        <thead><tr><th>Ngày</th><th>Loại</th><th>Danh mục</th><th>Số tiền</th><th>Trạng thái</th><th>Ghi chú</th><th>Người tạo</th><th>Chứng từ</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
