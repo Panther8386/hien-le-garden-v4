@@ -1,24 +1,22 @@
 // v4/admin/finance.js
 let currentRole = null;
 
-const CATEGORY_META = {
-  cay_giong: { label: 'Cây giống', type: 'expense' },
-  vat_tu: { label: 'Vật tư', type: 'expense' },
-  nhan_cong: { label: 'Nhân công', type: 'expense' },
-  van_chuyen: { label: 'Vận chuyển', type: 'expense' },
-  bao_tri: { label: 'Bảo trì', type: 'expense' },
-  thuc_pham: { label: 'Thực phẩm', type: 'expense' },
-  am_thuc_lien_ket: { label: 'Ẩm thực liên kết', type: 'expense' },
-  khac: { label: 'Chi phí khác', type: 'expense' },
-  ban_hang: { label: 'Bán hàng', type: 'income' },
-  dich_vu: { label: 'Lưu trú Hiền Lê', type: 'income' },
-  bep_hien_le: { label: 'Bếp Hiền Lê', type: 'income' },
-  hien_le_drinks: { label: 'Hiền Lê Drinks', type: 'income' },
-  hh_am_thuc_lien_ket: { label: 'HH Ẩm thực liên kết', type: 'income' },
-};
+let categoryMeta = {};
+
+async function loadCategoryMeta() {
+  try {
+    const response = await fetch('/api/finance/categories');
+    if (!response.ok) return;
+    const rows = await response.json();
+    categoryMeta = Object.fromEntries(rows.map((c) => [c.slug, { label: c.label, type: c.type, isActive: c.isActive }]));
+  } catch (err) {
+    // Leave categoryMeta empty on failure — category selects render empty rather
+    // than throw, and categoryLabel() falls back to the raw slug for any row.
+  }
+}
 
 function categoryLabel(slug) {
-  return CATEGORY_META[slug] ? CATEGORY_META[slug].label : slug;
+  return categoryMeta[slug] ? categoryMeta[slug].label : slug;
 }
 
 const STATUS_LABELS = { draft: 'Nháp', confirmed: 'Đã xác nhận', paid: 'Đã thanh toán' };
@@ -35,9 +33,11 @@ function populateCategorySelect(select, { includeAllOption = false, type } = {})
     allOpt.textContent = 'Tất cả danh mục';
     select.appendChild(allOpt);
   }
-  const entries = Object.entries(CATEGORY_META).filter(([, meta]) => !type || meta.type === type);
+  const entries = Object.entries(categoryMeta).filter(([, meta]) => !type || meta.type === type);
   if (!type) {
-    // Filter bar's "all categories" case: group by type for readability.
+    // Filter bar's "all categories" case: group by type for readability. Includes
+    // inactive categories on purpose — filtering the transaction list by a since-hidden
+    // category (to find its old rows) must keep working.
     [['income', 'Thu'], ['expense', 'Chi']].forEach(([groupType, groupLabel]) => {
       const group = document.createElement('optgroup');
       group.label = groupLabel;
@@ -51,7 +51,7 @@ function populateCategorySelect(select, { includeAllOption = false, type } = {})
     });
     return;
   }
-  entries.forEach(([slug, meta]) => {
+  entries.filter(([, meta]) => meta.isActive).forEach(([slug, meta]) => {
     const opt = document.createElement('option');
     opt.value = slug;
     opt.textContent = meta.label;
@@ -133,6 +133,8 @@ function showFinanceError(message) {
   }
   const { role } = await res.json();
   currentRole = role;
+
+  await loadCategoryMeta();
 
   setDefaultTypePreference(defaultTypePreference());
   populateCategorySelect(document.getElementById('filterCategory'), { includeAllOption: true });
@@ -338,11 +340,13 @@ function openEditTransaction(t) {
   const form = document.getElementById('financeForm');
   form.querySelector('[name="type"]').value = t.type;
   const select = form.querySelector('[name="category"]');
-  // Legacy rows may hold a category that doesn't belong to their own type (no pairing
-  // enforcement existed before this branch). A type-filtered select would silently drop
-  // such a value, leaving the select unselected and blocking submit. Fall back to the
-  // unfiltered, grouped-by-type option list so the legacy value stays selectable.
-  const isLegacyMismatch = !CATEGORY_META[t.category] || CATEGORY_META[t.category].type !== t.type;
+  // Legacy rows may hold a category that doesn't belong to their own type, or whose
+  // category has since been deactivated by an admin — either way, a type-filtered
+  // (active-only) select would silently drop such a value, leaving the select
+  // unselected and blocking submit. Fall back to the unfiltered, grouped-by-type
+  // option list (which includes inactive categories) so the value stays selectable.
+  const meta = categoryMeta[t.category];
+  const isLegacyMismatch = !meta || meta.type !== t.type || !meta.isActive;
   populateCategorySelect(select, isLegacyMismatch ? {} : { type: t.type });
   form.querySelector('[name="category"]').value = t.category;
   form.querySelector('[name="amount"]').value = t.amount;
