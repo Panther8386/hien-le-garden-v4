@@ -34,7 +34,15 @@ export async function onRequestPatch({ request, env, params }) {
 
   if (!VALID_TYPES.includes(type)) return jsonError('Loại giao dịch không hợp lệ', 400);
   if (!VALID_CATEGORIES.includes(category)) return jsonError('Danh mục không hợp lệ', 400);
-  if (!categoryMatchesType(category, type)) return jsonError('Danh mục không phù hợp với loại giao dịch đã chọn', 400);
+  // Legacy rows may already carry a type/category pairing the current CATEGORY_META
+  // table rejects (no such enforcement existed before this branch). Per spec, existing
+  // rows keep whatever pairing they were saved with — only enforce the pairing check
+  // when the resolved pair is actually a new choice (type and/or category changed),
+  // not when an edit to some other field resolves back to the row's own existing pair.
+  const pairingChanged = type !== existing.type || category !== existing.category;
+  if (pairingChanged && !categoryMatchesType(category, type)) {
+    return jsonError('Danh mục không phù hợp với loại giao dịch đã chọn', 400);
+  }
   if (!Number.isInteger(amount) || amount <= 0) return jsonError('Số tiền phải là số nguyên dương', 400);
   if (typeof transactionDate !== 'string' || !DATE_FORMAT.test(transactionDate)) return jsonError('Ngày không hợp lệ', 400);
   if (!VALID_STATUSES.includes(status)) return jsonError('Trạng thái không hợp lệ', 400);

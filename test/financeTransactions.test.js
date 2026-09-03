@@ -342,6 +342,45 @@ describe('PATCH /api/finance/transactions/:id', () => {
     expect(response.status).toBe(400);
   });
 
+  it('grandfathers a legacy type/category mismatch when the pairing is left unchanged (200)', async () => {
+    // Simulates one of the 22 real production rows with type='income', category='khac' —
+    // a pairing the current CATEGORY_META table rejects, but which predates pairing
+    // enforcement. Editing only amount, leaving type/category untouched, must succeed:
+    // the resolved pair is identical to the row's existing pair, so it's not a new choice.
+    const legacyResult = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'khac', 500000, 'Thu nhập cũ', '2026-07-01', 'draft', 'quan_ly_fin', '2026-07-01T00:00:00Z')`
+    ).run();
+    const legacyTxId = legacyResult.meta.last_row_id;
+
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${legacyTxId}`, managerToken, 'PATCH', { amount: 550000 }),
+      env,
+      params: { id: String(legacyTxId) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(legacyTxId).first();
+    expect(row.amount).toBe(550000);
+    expect(row.type).toBe('income');
+    expect(row.category).toBe('khac');
+  });
+
+  it('still rejects a genuinely new mismatched pairing on a legacy row (400)', async () => {
+    const legacyResult = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'khac', 500000, 'Thu nhập cũ', '2026-07-01', 'draft', 'quan_ly_fin', '2026-07-01T00:00:00Z')`
+    ).run();
+    const legacyTxId = legacyResult.meta.last_row_id;
+
+    // Changing category to vat_tu (expense-only) while type stays income is a genuine
+    // new choice of pairing, distinct from the row's existing (income, khac) pair —
+    // the mismatch check must still fully apply.
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${legacyTxId}`, managerToken, 'PATCH', { category: 'vat_tu' }),
+      env,
+      params: { id: String(legacyTxId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
   it('writes an audit_log row with before/after summaries', async () => {
     await patchTransaction({
       request: authedRequest(`https://x/api/finance/transactions/${txId}`, adminToken, 'PATCH', { amount: 300000 }),

@@ -337,7 +337,13 @@ async function voidTransaction(id) {
 function openEditTransaction(t) {
   const form = document.getElementById('financeForm');
   form.querySelector('[name="type"]').value = t.type;
-  populateCategorySelect(form.querySelector('[name="category"]'), { type: t.type });
+  const select = form.querySelector('[name="category"]');
+  // Legacy rows may hold a category that doesn't belong to their own type (no pairing
+  // enforcement existed before this branch). A type-filtered select would silently drop
+  // such a value, leaving the select unselected and blocking submit. Fall back to the
+  // unfiltered, grouped-by-type option list so the legacy value stays selectable.
+  const isLegacyMismatch = !CATEGORY_META[t.category] || CATEGORY_META[t.category].type !== t.type;
+  populateCategorySelect(select, isLegacyMismatch ? {} : { type: t.type });
   form.querySelector('[name="category"]').value = t.category;
   form.querySelector('[name="amount"]').value = t.amount;
   form.querySelector('[name="transactionDate"]').value = t.transactionDate;
