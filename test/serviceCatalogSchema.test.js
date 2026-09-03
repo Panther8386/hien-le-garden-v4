@@ -27,7 +27,7 @@ describe('service_catalog seed data', () => {
     const { results } = await env.DB.prepare(`SELECT subgroup, COUNT(*) AS n FROM service_catalog WHERE category = 'luu_tru' GROUP BY subgroup`).all();
     const counts = Object.fromEntries(results.map((r) => [r.subgroup, r.n]));
     expect(counts['Lưu Trú Theo Đêm']).toBe(6);
-    expect(counts['Thuê Theo Giờ']).toBe(3);
+    expect(counts['Giờ Xanh Hiền Lê']).toBe(3);
   });
 });
 

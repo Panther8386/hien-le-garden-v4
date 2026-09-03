@@ -173,7 +173,7 @@
         <tbody id="tbody-overnight"></tbody>
       </table>
 
-      <div class="pricing-divider"><span>Thuê Theo Giờ · Hourly Rental</span></div>
+      <div class="pricing-divider"><span>Giờ Xanh Hiền Lê · Hourly Rental</span></div>
       <table class="pricing-table">
         <thead>
           <tr><th>Gói</th><th>Đơn Giá</th><th>Thời Gian</th><th>Ghi Chú</th></tr>
@@ -291,7 +291,7 @@
 
       items.forEach((item) => {
         if (item.category === 'luu_tru' && item.subgroup === 'Lưu Trú Theo Đêm') overnightBody.appendChild(renderPricingRow(item));
-        else if (item.category === 'luu_tru' && item.subgroup === 'Thuê Theo Giờ') hourlyBody.appendChild(renderPricingRow(item));
+        else if (item.category === 'luu_tru' && item.subgroup === 'Giờ Xanh Hiền Lê') hourlyBody.appendChild(renderPricingRow(item));
         else if (item.category === 'luu_tru') {
           console.warn(`service_catalog row "${item.name}" (id ${item.id}) has an unrecognized subgroup "${item.subgroup}" — rendering into the overnight table as a fallback.`);
           overnightBody.appendChild(renderPricingRow(item));
