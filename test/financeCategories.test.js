@@ -175,7 +175,7 @@ describe('PATCH /api/finance/categories/:id', () => {
     });
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT label, is_active FROM finance_categories WHERE id = ?`).bind(categoryId).first();
-    expect(row.label).toBe('Khác');
+    expect(row.label).toBe('Chi phí khác');
     expect(row.is_active).toBe(1);
   });
 });
