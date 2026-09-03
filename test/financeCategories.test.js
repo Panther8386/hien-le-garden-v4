@@ -166,4 +166,16 @@ describe('PATCH /api/finance/categories/:id', () => {
     const response = await patchCategory({ request: authedRequest(`https://x/api/finance/categories/${categoryId}`, adminToken, 'PATCH', { label: '  ' }), env, params: { id: String(categoryId) } });
     expect(response.status).toBe(400);
   });
+
+  it('does not crash on a literal null body (falls through to existing values)', async () => {
+    const response = await patchCategory({
+      request: new Request(`https://x/api/finance/categories/${categoryId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: `session=${adminToken}` }, body: 'null' }),
+      env,
+      params: { id: String(categoryId) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT label, is_active FROM finance_categories WHERE id = ?`).bind(categoryId).first();
+    expect(row.label).toBe('Khác');
+    expect(row.is_active).toBe(1);
+  });
 });

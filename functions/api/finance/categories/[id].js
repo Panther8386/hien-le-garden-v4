@@ -18,8 +18,9 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
 
-  const label = body.label !== undefined ? body.label : existing.label;
-  const isActive = body.isActive !== undefined ? body.isActive : !!existing.is_active;
+  const safeBody = body || {};
+  const label = safeBody.label !== undefined ? safeBody.label : existing.label;
+  const isActive = safeBody.isActive !== undefined ? safeBody.isActive : !!existing.is_active;
   // `type` and `slug` are intentionally never read from the request body — a
   // category's type and slug are immutable after creation. Silently ignoring rather
   // than erroring keeps a stray extra field in an otherwise-valid request from failing.
