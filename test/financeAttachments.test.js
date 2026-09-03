@@ -199,4 +199,30 @@ describe('GET /api/finance/transactions/:id/attachment', () => {
     const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(expenseTxId) } });
     expect(response.status).toBe(404);
   });
+
+  it('produces a safe, well-formed Content-Disposition for a filename with diacritics and a quote character', async () => {
+    const trickyName = 'hoá đơn "tháng 9".pdf';
+    const uploadResponse = await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, managerToken, pdfFile(trickyName)), env, params: { id: String(expenseTxId) } });
+    const uploadBody = await uploadResponse.json();
+    // The raw quote character in trickyName does not necessarily survive the multipart/form-data
+    // round trip verbatim (per the FormData/File spec, a bare `"` in a filename is itself
+    // percent-escaped by the multipart encoder) — so assert against whatever filename the server
+    // actually stored, not against trickyName's original bytes.
+    const storedName = uploadBody.receiptFilename;
+    expect(storedName).toContain('hoá đơn');
+
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, managerToken, 'GET'), env, params: { id: String(expenseTxId) } });
+    expect(response.status).toBe(200);
+
+    const disposition = response.headers.get('Content-Disposition');
+    expect(disposition).not.toBeNull();
+    expect(disposition.startsWith('inline; filename="')).toBe(true);
+    // The quoted fallback filename must not contain a raw quote character (no header injection),
+    // and the UTF-8 extended form must round-trip to exactly the stored filename for browsers
+    // that support it.
+    const quotedMatch = disposition.match(/^inline; filename="([^"]*)"; filename\*=UTF-8''(.+)$/);
+    expect(quotedMatch).not.toBeNull();
+    expect(quotedMatch[1]).not.toContain('"');
+    expect(decodeURIComponent(quotedMatch[2])).toBe(storedName);
+  });
 });
