@@ -1,16 +1,25 @@
 // v4/admin/finance.js
 let currentRole = null;
 
-const CATEGORY_LABELS = {
-  cay_giong: 'Cây giống',
-  vat_tu: 'Vật tư',
-  nhan_cong: 'Nhân công',
-  van_chuyen: 'Vận chuyển',
-  bao_tri: 'Bảo trì',
-  ban_hang: 'Bán hàng',
-  dich_vu: 'Dịch vụ',
-  khac: 'Chi phí khác',
+const CATEGORY_META = {
+  cay_giong: { label: 'Cây giống', type: 'expense' },
+  vat_tu: { label: 'Vật tư', type: 'expense' },
+  nhan_cong: { label: 'Nhân công', type: 'expense' },
+  van_chuyen: { label: 'Vận chuyển', type: 'expense' },
+  bao_tri: { label: 'Bảo trì', type: 'expense' },
+  thuc_pham: { label: 'Thực phẩm', type: 'expense' },
+  am_thuc_lien_ket: { label: 'Ẩm thực liên kết', type: 'expense' },
+  khac: { label: 'Chi phí khác', type: 'expense' },
+  ban_hang: { label: 'Bán hàng', type: 'income' },
+  dich_vu: { label: 'Lưu trú Hiền Lê', type: 'income' },
+  bep_hien_le: { label: 'Bếp Hiền Lê', type: 'income' },
+  hien_le_drinks: { label: 'Hiền Lê Drinks', type: 'income' },
+  hh_am_thuc_lien_ket: { label: 'HH Ẩm thực liên kết', type: 'income' },
 };
+
+function categoryLabel(slug) {
+  return CATEGORY_META[slug] ? CATEGORY_META[slug].label : slug;
+}
 
 const STATUS_LABELS = { draft: 'Nháp', confirmed: 'Đã xác nhận', paid: 'Đã thanh toán' };
 
@@ -18,7 +27,7 @@ function formatVnd(amount) {
   return amount.toLocaleString('vi-VN') + 'đ';
 }
 
-function populateCategorySelect(select, includeAllOption) {
+function populateCategorySelect(select, { includeAllOption = false, type } = {}) {
   select.innerHTML = '';
   if (includeAllOption) {
     const allOpt = document.createElement('option');
@@ -26,13 +35,85 @@ function populateCategorySelect(select, includeAllOption) {
     allOpt.textContent = 'Tất cả danh mục';
     select.appendChild(allOpt);
   }
-  Object.entries(CATEGORY_LABELS).forEach(([value, label]) => {
+  const entries = Object.entries(CATEGORY_META).filter(([, meta]) => !type || meta.type === type);
+  if (!type) {
+    // Filter bar's "all categories" case: group by type for readability.
+    [['income', 'Thu'], ['expense', 'Chi']].forEach(([groupType, groupLabel]) => {
+      const group = document.createElement('optgroup');
+      group.label = groupLabel;
+      entries.filter(([, meta]) => meta.type === groupType).forEach(([slug, meta]) => {
+        const opt = document.createElement('option');
+        opt.value = slug;
+        opt.textContent = meta.label;
+        group.appendChild(opt);
+      });
+      select.appendChild(group);
+    });
+    return;
+  }
+  entries.forEach(([slug, meta]) => {
     const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
+    opt.value = slug;
+    opt.textContent = meta.label;
     select.appendChild(opt);
   });
 }
+
+function renderAttachmentEditor(t) {
+  const container = document.getElementById('financeAttachmentInfo');
+  container.innerHTML = '';
+  if (!t || !t.receiptKey) return;
+  const link = document.createElement('a');
+  link.href = `/api/finance/transactions/${t.id}/attachment`;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = `📎 ${t.receiptFilename || 'Chứng từ hiện tại'}`;
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn-secondary';
+  removeBtn.textContent = 'Gỡ chứng từ';
+  removeBtn.addEventListener('click', async () => {
+    const errorEl = document.getElementById('financeFormError');
+    errorEl.textContent = '';
+    const response = await fetch(`/api/finance/transactions/${t.id}/attachment`, { method: 'DELETE' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      errorEl.textContent = body.error || 'Có lỗi khi gỡ chứng từ';
+      return;
+    }
+    container.innerHTML = '';
+    await loadTransactions();
+  });
+  container.append(link, ' ', removeBtn);
+}
+
+function defaultTypePreference() {
+  try {
+    return localStorage.getItem('financeDefaultType') || 'expense';
+  } catch (err) {
+    return 'expense';
+  }
+}
+
+function setDefaultTypePreference(type) {
+  try {
+    localStorage.setItem('financeDefaultType', type);
+  } catch (err) {
+    // localStorage unavailable (private browsing, blocked storage) — the toggle
+    // still updates the button state below, it just won't persist across reloads.
+  }
+  document.querySelectorAll('#defaultTypeToggle .tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.defaultType === type);
+  });
+}
+
+document.querySelectorAll('#defaultTypeToggle .tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setDefaultTypePreference(btn.dataset.defaultType));
+});
+
+document.querySelector('#financeForm select[name="type"]').addEventListener('change', (event) => {
+  populateCategorySelect(document.querySelector('#financeForm select[name="category"]'), { type: event.target.value });
+});
 
 function showFinanceError(message) {
   document.getElementById('financeError').textContent = message || '';
@@ -53,8 +134,8 @@ function showFinanceError(message) {
   const { role } = await res.json();
   currentRole = role;
 
-  populateCategorySelect(document.querySelector('#financeForm select[name="category"]'), false);
-  populateCategorySelect(document.getElementById('filterCategory'), true);
+  setDefaultTypePreference(defaultTypePreference());
+  populateCategorySelect(document.getElementById('filterCategory'), { includeAllOption: true });
 
   if (currentRole === 'manager' || currentRole === 'admin') {
     document.getElementById('addTransactionSection').classList.remove('hidden');
@@ -108,7 +189,7 @@ function renderTransactions(list) {
     tdType.textContent = typeLabel;
     applyVoidedStyle(tdType, t.voidedAt);
     const tdCategory = document.createElement('td');
-    tdCategory.textContent = CATEGORY_LABELS[t.category] || t.category;
+    tdCategory.textContent = categoryLabel(t.category);
     applyVoidedStyle(tdCategory, t.voidedAt);
     const tdAmount = document.createElement('td');
     tdAmount.textContent = formatVnd(t.amount);
@@ -146,7 +227,7 @@ function renderTransactions(list) {
     const pHeader = document.createElement('p');
     const strong = document.createElement('strong');
     strong.textContent = t.transactionDate;
-    pHeader.append(strong, ` — ${typeLabel} · ${CATEGORY_LABELS[t.category] || t.category}`);
+    pHeader.append(strong, ` — ${typeLabel} · ${categoryLabel(t.category)}`);
     applyVoidedStyle(pHeader, t.voidedAt);
     const pAmount = document.createElement('p');
     const amountBadge = document.createElement('span');
@@ -232,6 +313,7 @@ async function voidTransaction(id) {
 function openEditTransaction(t) {
   const form = document.getElementById('financeForm');
   form.querySelector('[name="type"]').value = t.type;
+  populateCategorySelect(form.querySelector('[name="category"]'), { type: t.type });
   form.querySelector('[name="category"]').value = t.category;
   form.querySelector('[name="amount"]').value = t.amount;
   form.querySelector('[name="transactionDate"]').value = t.transactionDate;
@@ -240,15 +322,20 @@ function openEditTransaction(t) {
   form.dataset.editingId = t.id;
   document.querySelector('#financeForm button[type="submit"]').textContent = 'Lưu thay đổi';
   document.getElementById('financeCancelEditBtn').classList.remove('hidden');
+  renderAttachmentEditor(t);
 }
 
 function resetFinanceForm() {
   const form = document.getElementById('financeForm');
   form.reset();
   delete form.dataset.editingId;
+  const defaultType = defaultTypePreference();
+  form.querySelector('[name="type"]').value = defaultType;
+  populateCategorySelect(form.querySelector('[name="category"]'), { type: defaultType });
   form.querySelector('[name="transactionDate"]').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
   document.querySelector('#financeForm button[type="submit"]').textContent = 'Ghi giao dịch';
   document.getElementById('financeCancelEditBtn').classList.add('hidden');
+  renderAttachmentEditor(null);
 }
 
 document.getElementById('financeCancelEditBtn').addEventListener('click', () => {
