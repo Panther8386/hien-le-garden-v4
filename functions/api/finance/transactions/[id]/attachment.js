@@ -106,5 +106,10 @@ export async function onRequestGet({ request, env, params }) {
   headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
   const displayName = existing.receipt_filename || 'chung-tu';
   headers.set('Content-Disposition', `inline; filename="${sanitizeFilename(displayName)}"; filename*=UTF-8''${encodeURIComponent(displayName)}`);
+  // Hardening: this endpoint streams arbitrary user-uploaded bytes inline, with a
+  // client-declared Content-Type never validated against actual file content, on the
+  // app's own origin next to an HttpOnly session cookie.
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Cache-Control', 'private, no-store');
   return new Response(object.body, { status: 200, headers });
 }
