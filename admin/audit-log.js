@@ -12,6 +12,8 @@ const ACTION_TYPE_LABELS = {
   finance_transaction_update: 'Sửa giao dịch thu chi',
   finance_transaction_void: 'Huỷ giao dịch thu chi',
   finance_opening_balance_set: 'Đặt số dư đầu kỳ',
+  finance_category_create: 'Tạo danh mục thu chi',
+  finance_category_update: 'Sửa danh mục thu chi',
 };
 
 function formatVnd(n) {
