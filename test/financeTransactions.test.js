@@ -135,6 +135,40 @@ describe('POST /api/finance/transactions', () => {
     const row = await env.DB.prepare(`SELECT status FROM finance_transactions WHERE id = ?`).bind(body.id).first();
     expect(row.status).toBe('paid');
   });
+
+  it('rejects a type/category mismatch (400)', async () => {
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'income', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('accepts a new category (thuc_pham) paired with the correct type (expense)', async () => {
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'expense', category: 'thuc_pham', amount: 150000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('rejects a new category (hh_am_thuc_lien_ket, income) paired with the wrong type (400)', async () => {
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'expense', category: 'hh_am_thuc_lien_ket', amount: 150000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('writes the renamed "Lưu trú Hiền Lê" label into the audit_log entry for a dich_vu transaction', async () => {
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'income', category: 'dich_vu', amount: 700000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    const body = await response.json();
+    const auditRow = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE entity_type = 'finance_transaction' AND entity_id = ?`).bind(body.id).first();
+    expect(auditRow.new_value).toContain('Lưu trú Hiền Lê');
+  });
 });
 
 describe('GET /api/finance/transactions', () => {
@@ -225,6 +259,15 @@ describe('GET /api/finance/transactions', () => {
     const body = await response.json();
     expect(body.map((t) => t.note)).toEqual(['Bán rau']);
   });
+
+  it('includes null receipt fields for a transaction with no attachment', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    const row = body.find((t) => t.note === 'Bán rau');
+    expect(row.receiptKey).toBeNull();
+    expect(row.receiptFilename).toBeNull();
+    expect(row.receiptUploadedAt).toBeNull();
+  });
 });
 
 describe('PATCH /api/finance/transactions/:id', () => {
@@ -282,6 +325,17 @@ describe('PATCH /api/finance/transactions/:id', () => {
   it('rejects an invalid amount on update (400)', async () => {
     const response = await patchTransaction({
       request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { amount: -5 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a type/category mismatch on update, including when only type changes and category is left stale (400)', async () => {
+    // txId starts as expense/vat_tu (see beforeEach) — flipping only type to income
+    // must be validated against vat_tu, which is expense-only.
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { type: 'income' }),
       env,
       params: { id: String(txId) },
     });

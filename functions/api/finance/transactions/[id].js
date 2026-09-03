@@ -1,13 +1,12 @@
-// functions/api/finance/transactions/[id].js
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { summarize } from './index.js';
+import { VALID_CATEGORIES, categoryMatchesType } from '../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 const VALID_TYPES = ['income', 'expense'];
-const VALID_CATEGORIES = ['cay_giong', 'vat_tu', 'nhan_cong', 'van_chuyen', 'bao_tri', 'ban_hang', 'dich_vu', 'khac'];
 const VALID_STATUSES = ['draft', 'confirmed', 'paid'];
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -35,6 +34,7 @@ export async function onRequestPatch({ request, env, params }) {
 
   if (!VALID_TYPES.includes(type)) return jsonError('Loại giao dịch không hợp lệ', 400);
   if (!VALID_CATEGORIES.includes(category)) return jsonError('Danh mục không hợp lệ', 400);
+  if (!categoryMatchesType(category, type)) return jsonError('Danh mục không phù hợp với loại giao dịch đã chọn', 400);
   if (!Number.isInteger(amount) || amount <= 0) return jsonError('Số tiền phải là số nguyên dương', 400);
   if (typeof transactionDate !== 'string' || !DATE_FORMAT.test(transactionDate)) return jsonError('Ngày không hợp lệ', 400);
   if (!VALID_STATUSES.includes(status)) return jsonError('Trạng thái không hợp lệ', 400);
