@@ -206,8 +206,21 @@ function renderTransactions(list) {
     const tdCreatedBy = document.createElement('td');
     tdCreatedBy.textContent = t.createdBy;
     applyVoidedStyle(tdCreatedBy, t.voidedAt);
+    const tdAttachment = document.createElement('td');
+    if (t.receiptKey) {
+      const link = document.createElement('a');
+      link.href = `/api/finance/transactions/${t.id}/attachment`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      const badge = document.createElement('span');
+      badge.className = 'status-badge status-attachment';
+      badge.textContent = '📎';
+      link.appendChild(badge);
+      tdAttachment.appendChild(link);
+    }
+    applyVoidedStyle(tdAttachment, t.voidedAt);
     const tdActions = document.createElement('td');
-    tr.append(tdDate, tdType, tdCategory, tdAmount, tdStatus, tdNote, tdCreatedBy, tdActions);
+    tr.append(tdDate, tdType, tdCategory, tdAmount, tdStatus, tdNote, tdCreatedBy, tdAttachment, tdActions);
     if (canEdit) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
@@ -244,6 +257,16 @@ function renderTransactions(list) {
     pCreatedBy.style.fontSize = '0.85rem';
     applyVoidedStyle(pCreatedBy, t.voidedAt);
     card.append(pHeader, pAmount, pNote, pCreatedBy);
+    if (t.receiptKey) {
+      const pAttachment = document.createElement('p');
+      const link = document.createElement('a');
+      link.href = `/api/finance/transactions/${t.id}/attachment`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = '📎 Chứng từ';
+      pAttachment.appendChild(link);
+      card.appendChild(pAttachment);
+    }
     if (canEdit) {
       const cardActions = document.createElement('div');
       cardActions.className = 'booking-actions';
@@ -385,6 +408,23 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi ghi giao dịch';
     return;
+  }
+
+  const body = await response.json();
+  const transactionId = editingId || body.id;
+  const fileInput = form.querySelector('[name="receipt"]');
+  const file = fileInput.files[0];
+  if (file) {
+    const uploadForm = new FormData();
+    uploadForm.append('file', file);
+    try {
+      const uploadResponse = await fetch(`/api/finance/transactions/${transactionId}/attachment`, { method: 'POST', body: uploadForm });
+      if (!uploadResponse.ok) {
+        errorEl.textContent = 'Đã lưu giao dịch nhưng tải chứng từ lên thất bại — có thể thử lại bằng nút Sửa';
+      }
+    } catch (err) {
+      errorEl.textContent = 'Đã lưu giao dịch nhưng tải chứng từ lên thất bại — có thể thử lại bằng nút Sửa';
+    }
   }
 
   resetFinanceForm();
