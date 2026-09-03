@@ -153,6 +153,7 @@ function showFinanceError(message) {
   await loadTransactions();
   document.getElementById('financeMonthInput').value = currentMonthValue();
   await refreshFinanceSummary();
+  await refreshStorageWarning();
 })();
 
 let currentTransactions = [];
@@ -553,6 +554,26 @@ async function refreshFinanceSummary() {
   const opening = openingResponse ? await openingResponse.json() : { openingBalance: null };
   renderStatCards(summary);
   renderOpeningBalanceEditor(month, opening.openingBalance);
+}
+
+async function refreshStorageWarning() {
+  if (currentRole !== 'manager' && currentRole !== 'admin') return;
+  const banner = document.getElementById('financeStorageWarning');
+  let response;
+  try {
+    response = await fetch('/api/finance/receipts-usage');
+  } catch (err) {
+    return; // Non-critical — a failed usage check should never block the page.
+  }
+  if (!response.ok) return;
+  const { totalBytes, overThreshold } = await response.json();
+  if (overThreshold) {
+    const gb = (totalBytes / (1024 ** 3)).toFixed(1);
+    banner.textContent = `⚠️ Dung lượng chứng từ đính kèm đã đạt ${gb}GB, vượt ngưỡng cảnh báo 9GB/tháng — cân nhắc xoá bớt file cũ hoặc nâng cấp gói lưu trữ R2.`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 }
 
 document.getElementById('financeMonthInput').addEventListener('change', refreshFinanceSummary);
