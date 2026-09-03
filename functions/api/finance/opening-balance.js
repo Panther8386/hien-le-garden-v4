@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const PERIOD_FORMAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);

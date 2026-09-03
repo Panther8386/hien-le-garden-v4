@@ -48,9 +48,27 @@ describe('GET /api/finance/summary', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets observer read', async () => {
+  it('lets observer read, but strips every expense-derived field from the response', async () => {
+    await insertTx({ type: 'income', category: 'ban_hang', amount: 1000000, date: '2026-08-10' });
+    await insertTx({ type: 'expense', category: 'vat_tu', amount: 300000, date: '2026-08-15' });
+
     const response = await getSummary({ request: authedRequest('https://x/api/finance/summary?month=2026-08', observerToken, 'GET'), env });
     expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ month: '2026-08', totalIncome: 1000000 });
+    expect(body).not.toHaveProperty('totalExpense');
+    expect(body).not.toHaveProperty('netChange');
+    expect(body).not.toHaveProperty('closingBalance');
+    expect(body).not.toHaveProperty('openingBalance');
+    expect(body).not.toHaveProperty('openingBalanceSource');
+  });
+
+  it('manager and admin still get the full response shape (no regression)', async () => {
+    const response = await getSummary({ request: authedRequest('https://x/api/finance/summary?month=2026-08', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body).toHaveProperty('openingBalance');
+    expect(body).toHaveProperty('totalExpense');
+    expect(body).toHaveProperty('closingBalance');
   });
 
   it('rejects a malformed month (400)', async () => {
@@ -163,6 +181,11 @@ describe('GET /api/finance/summary', () => {
 describe('GET/PATCH /api/finance/opening-balance', () => {
   it('GET rejects reception (403)', async () => {
     const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-08', receptionToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('GET rejects observer (403) — opening balance is expense-derived data, off-limits to this role', async () => {
+    const response = await getOpeningBalance({ request: authedRequest('https://x/api/finance/opening-balance?period=2026-08', observerToken, 'GET'), env });
     expect(response.status).toBe(403);
   });
 

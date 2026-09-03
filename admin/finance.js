@@ -61,6 +61,13 @@ function showFinanceError(message) {
     document.getElementById('openingBalanceEditor').classList.remove('hidden');
   }
 
+  if (currentRole === 'observer') {
+    // The server already refuses to return any expense row/field to this role — this
+    // just keeps the filter UI from offering a choice that can only ever come back empty.
+    const expenseOption = document.querySelector('#filterType option[value="expense"]');
+    if (expenseOption) expenseOption.remove();
+  }
+
   resetFinanceForm();
   await loadTransactions();
   document.getElementById('financeMonthInput').value = currentMonthValue();
@@ -317,13 +324,18 @@ function renderStatCards(summary) {
   container.innerHTML = '';
   const sourceLabels = { manual: 'nhập tay', carried_forward: 'kế thừa kỳ trước', default_zero: 'mặc định' };
   const sourceLabel = sourceLabels[summary.openingBalanceSource];
-  const cards = [
-    { label: sourceLabel ? `Số dư đầu kỳ (${sourceLabel})` : 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) },
-    { label: 'Tổng thu', value: formatVnd(summary.totalIncome) },
-    { label: 'Tổng chi', value: formatVnd(summary.totalExpense) },
-    { label: 'Lợi nhuận tạm tính', value: formatVnd(summary.netChange) },
-    { label: 'Số dư cuối kỳ', value: formatVnd(summary.closingBalance) },
-  ];
+  // Card list is driven entirely by which fields the API actually returned, not by
+  // currentRole — the observer role gets a summary response with only {month,
+  // totalIncome} (every expense-derived field stripped server-side), so this
+  // naturally renders just the one card with no role-specific branching needed here.
+  const cards = [];
+  if (summary.openingBalance !== undefined) {
+    cards.push({ label: sourceLabel ? `Số dư đầu kỳ (${sourceLabel})` : 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) });
+  }
+  if (summary.totalIncome !== undefined) cards.push({ label: 'Tổng thu', value: formatVnd(summary.totalIncome) });
+  if (summary.totalExpense !== undefined) cards.push({ label: 'Tổng chi', value: formatVnd(summary.totalExpense) });
+  if (summary.netChange !== undefined) cards.push({ label: 'Lợi nhuận tạm tính', value: formatVnd(summary.netChange) });
+  if (summary.closingBalance !== undefined) cards.push({ label: 'Số dư cuối kỳ', value: formatVnd(summary.closingBalance) });
   cards.forEach((c) => {
     const div = document.createElement('div');
     div.className = 'stat-card';
@@ -387,17 +399,23 @@ async function refreshFinanceSummary() {
   const errorEl = document.getElementById('financeError');
   errorEl.textContent = '';
 
+  // Observer's GET /api/finance/opening-balance now 403s outright (that data is
+  // expense-derived, off-limits to this role) — skip fetching it entirely rather
+  // than treat the expected 403 as an error. renderOpeningBalanceEditor already
+  // renders nothing for a non-manager/admin role, so passing null is harmless.
+  const isPrivileged = currentRole === 'manager' || currentRole === 'admin';
+
   let summaryResponse, openingResponse;
   try {
     [summaryResponse, openingResponse] = await Promise.all([
       fetch(`/api/finance/summary?month=${month}`),
-      fetch(`/api/finance/opening-balance?period=${month}`),
+      isPrivileged ? fetch(`/api/finance/opening-balance?period=${month}`) : Promise.resolve(null),
     ]);
   } catch (err) {
     errorEl.textContent = 'Có lỗi khi tải số liệu cân đối';
     return;
   }
-  if (!summaryResponse.ok || !openingResponse.ok) {
+  if (!summaryResponse.ok || (openingResponse && !openingResponse.ok)) {
     const failedResponse = !summaryResponse.ok ? summaryResponse : openingResponse;
     const body = await failedResponse.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi tải số liệu cân đối';
@@ -405,7 +423,7 @@ async function refreshFinanceSummary() {
   }
 
   const summary = await summaryResponse.json();
-  const opening = await openingResponse.json();
+  const opening = openingResponse ? await openingResponse.json() : { openingBalance: null };
   renderStatCards(summary);
   renderOpeningBalanceEditor(month, opening.openingBalance);
 }

@@ -63,6 +63,10 @@ export async function onRequestGet({ request, env }) {
   if (category) { clauses.push('category = ?'); params.push(category); }
   if (status) { clauses.push('status = ?'); params.push(status); }
   if (q) { clauses.push('note LIKE ? COLLATE NOCASE'); params.push(`%${q}%`); }
+  // Observer permission restriction: expense data is off-limits to this role entirely.
+  // Enforced server-side (not just hidden in the UI) so a direct API call or a
+  // ?type=expense query param can never surface expense rows to an observer.
+  if (auth.role === 'observer') { clauses.push(`type = 'income'`); }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
   const { results } = await env.DB.prepare(
