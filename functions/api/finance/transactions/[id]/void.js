@@ -1,6 +1,7 @@
 // functions/api/finance/transactions/[id]/void.js
 import { requireAuth } from '../../../../../lib/requireAuth.js';
 import { summarize } from '../index.js';
+import { loadCategoryMeta } from '../../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -15,7 +16,8 @@ export async function onRequestPatch({ request, env, params }) {
   if (existing.voided_at) return jsonError('Giao dịch này đã được huỷ trước đó', 400);
 
   const now = new Date().toISOString();
-  const summary = summarize(existing);
+  const categoryMeta = await loadCategoryMeta(env);
+  const summary = summarize(existing, categoryMeta);
 
   await env.DB.batch([
     env.DB.prepare(`UPDATE finance_transactions SET voided_by = ?, voided_at = ? WHERE id = ?`).bind(auth.username, now, params.id),

@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
-import { VALID_CATEGORIES, CATEGORY_LABELS, categoryMatchesType } from '../../../../lib/financeCategories.js';
+import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -9,9 +9,10 @@ const VALID_TYPES = ['income', 'expense'];
 const VALID_STATUSES = ['draft', 'confirmed', 'paid'];
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
-export function summarize(row) {
+export function summarize(row, categoryMeta) {
   const typeLabel = row.type === 'income' ? 'Thu' : 'Chi';
-  return `${typeLabel} · ${CATEGORY_LABELS[row.category] || row.category} · ${Number(row.amount).toLocaleString('vi-VN')}đ`;
+  const label = (categoryMeta && categoryMeta[row.category] && categoryMeta[row.category].label) || row.category;
+  return `${typeLabel} · ${label} · ${Number(row.amount).toLocaleString('vi-VN')}đ`;
 }
 
 function coerceRow(r) {
@@ -80,16 +81,19 @@ export async function onRequestPost({ request, env }) {
   }
   const { type, category, amount, note, transactionDate, status } = body || {};
 
+  const categoryMeta = await loadCategoryMeta(env);
+
   if (!VALID_TYPES.includes(type)) return jsonError('Loại giao dịch không hợp lệ', 400);
-  if (!VALID_CATEGORIES.includes(category)) return jsonError('Danh mục không hợp lệ', 400);
-  if (!categoryMatchesType(category, type)) return jsonError('Danh mục không phù hợp với loại giao dịch đã chọn', 400);
+  if (!categoryMeta[category]) return jsonError('Danh mục không hợp lệ', 400);
+  if (!categoryMeta[category].isActive) return jsonError('Danh mục không hợp lệ', 400);
+  if (!categoryMatchesType(categoryMeta, category, type)) return jsonError('Danh mục không phù hợp với loại giao dịch đã chọn', 400);
   if (!Number.isInteger(amount) || amount <= 0) return jsonError('Số tiền phải là số nguyên dương', 400);
   if (typeof transactionDate !== 'string' || !DATE_FORMAT.test(transactionDate)) return jsonError('Ngày không hợp lệ', 400);
   const resolvedStatus = status !== undefined ? status : 'draft';
   if (!VALID_STATUSES.includes(resolvedStatus)) return jsonError('Trạng thái không hợp lệ', 400);
 
   const now = new Date().toISOString();
-  const summary = summarize({ type, category, amount });
+  const summary = summarize({ type, category, amount }, categoryMeta);
 
   const insert = env.DB.prepare(
     `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)

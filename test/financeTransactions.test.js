@@ -169,6 +169,25 @@ describe('POST /api/finance/transactions', () => {
     const auditRow = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE entity_type = 'finance_transaction' AND entity_id = ?`).bind(body.id).first();
     expect(auditRow.new_value).toContain('Lưu trú Hiền Lê');
   });
+
+  it('writes the renamed "Dịch vụ khác" label into the audit_log entry for a ban_hang transaction', async () => {
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'income', category: 'ban_hang', amount: 100000, transactionDate: '2026-09-03' }),
+      env,
+    });
+    const body = await response.json();
+    const auditRow = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE entity_type = 'finance_transaction' AND entity_id = ?`).bind(body.id).first();
+    expect(auditRow.new_value).toContain('Dịch vụ khác');
+  });
+
+  it('rejects create with an inactive category, even though the category itself is otherwise valid (400)', async () => {
+    await env.DB.prepare(`UPDATE finance_categories SET is_active = 0 WHERE slug = 'khac'`).run();
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'expense', category: 'khac', amount: 100000, transactionDate: '2026-09-03' }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
 });
 
 describe('GET /api/finance/transactions', () => {
@@ -377,6 +396,27 @@ describe('PATCH /api/finance/transactions/:id', () => {
       request: authedRequest(`https://x/api/finance/transactions/${legacyTxId}`, managerToken, 'PATCH', { category: 'vat_tu' }),
       env,
       params: { id: String(legacyTxId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('lets an edit succeed on a transaction whose category has since been deactivated, as long as the pairing itself is unchanged', async () => {
+    // txId (from this block's beforeEach) starts as expense/vat_tu.
+    await env.DB.prepare(`UPDATE finance_categories SET is_active = 0 WHERE slug = 'vat_tu'`).run();
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { amount: 999000 }),
+      env,
+      params: { id: String(txId) },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects changing to a now-inactive category, even one of the same type (400)', async () => {
+    await env.DB.prepare(`UPDATE finance_categories SET is_active = 0 WHERE slug = 'nhan_cong'`).run();
+    const response = await patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, managerToken, 'PATCH', { category: 'nhan_cong' }),
+      env,
+      params: { id: String(txId) },
     });
     expect(response.status).toBe(400);
   });
