@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listOrders, onRequestPost as createOrder } from '../functions/api/dine-in-orders/index.js';
 import { onRequestGet as getOrder } from '../functions/api/dine-in-orders/[id]/index.js';
+import { onRequestPost as addItem } from '../functions/api/dine-in-orders/[id]/items/index.js';
+import { onRequestPatch as voidItem } from '../functions/api/dine-in-orders/[id]/items/[itemId].js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -101,5 +103,93 @@ describe('GET /api/dine-in-orders/:id', () => {
     expect(body.tableLabel).toBe('Bàn 7');
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ name: 'Mì Quảng', unitPrice: 45000, quantity: 1, amount: 45000, status: 'posted' });
+  });
+});
+
+describe('POST /api/dine-in-orders/:id/items', () => {
+  let orderId, menuItemId;
+  beforeEach(async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 2', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    orderId = order.meta.last_row_id;
+    const menu = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Mì Quảng', 'mon_an', 45000, 0, 1, 'admin_order', '2026-09-04T00:00:00Z')`).run();
+    menuItemId = menu.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await addItem({ request: new Request(`https://x/api/dine-in-orders/${orderId}/items`, { method: 'POST' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, observerToken, 'POST', { menuItemId, quantity: 1 }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent order', async () => {
+    const response = await addItem({ request: authedRequest('https://x/api/dine-in-orders/999999/items', receptionToken, 'POST', { menuItemId, quantity: 1 }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects an inactive menu item (400)', async () => {
+    const inactive = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Ngừng bán', 'mon_an', 30000, 0, 0, 'admin_order', '2026-09-04T00:00:00Z')`).run();
+    const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, receptionToken, 'POST', { menuItemId: inactive.meta.last_row_id, quantity: 1 }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('snapshots name/price and computes amount = unitPrice * quantity', async () => {
+    const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, receptionToken, 'POST', { menuItemId, quantity: 3 }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    const row = await env.DB.prepare(`SELECT name, unit_price, quantity, amount, status FROM dine_in_order_items WHERE id = ?`).bind(body.id).first();
+    expect(row).toEqual({ name: 'Mì Quảng', unit_price: 45000, quantity: 3, amount: 135000, status: 'posted' });
+  });
+
+  it('rejects adding items when the order is not open', async () => {
+    await env.DB.prepare(`UPDATE dine_in_orders SET status = 'closed' WHERE id = ?`).bind(orderId).run();
+    const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, receptionToken, 'POST', { menuItemId, quantity: 1 }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('PATCH /api/dine-in-orders/:id/items/:itemId', () => {
+  let orderId, itemId;
+  beforeEach(async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 4', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    orderId = order.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
+    itemId = item.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await voidItem({ request: new Request(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, { method: 'PATCH' }), env, params: { id: String(orderId), itemId: String(itemId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, observerToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s when the item does not belong to this order', async () => {
+    const otherOrder = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn khác', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${otherOrder.meta.last_row_id}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(otherOrder.meta.last_row_id), itemId: String(itemId) } });
+    expect(response.status).toBe(404);
+  });
+
+  it('voids the item and writes a service_void audit_log row', async () => {
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT status, voided_by FROM dine_in_order_items WHERE id = ?`).bind(itemId).first();
+    expect(row).toEqual({ status: 'voided', voided_by: 'le_tan_order' });
+
+    const auditRow = await env.DB.prepare(`SELECT action_type, entity_type, actor FROM audit_log WHERE entity_type = 'dine_in_order_item' AND entity_id = ?`).bind(itemId).first();
+    expect(auditRow).toEqual({ action_type: 'service_void', entity_type: 'dine_in_order_item', actor: 'le_tan_order' });
+  });
+
+  it('rejects voiding an already-voided item (400)', async () => {
+    await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
+    expect(response.status).toBe(400);
   });
 });
