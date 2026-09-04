@@ -230,4 +230,28 @@ describe('migration 0022', () => {
     const row = await env.DB.prepare(`SELECT subgroup, unit, requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(result.meta.last_row_id).first();
     expect(row).toEqual({ subgroup: 'Món gà', unit: 'con', requires_preorder: 1 });
   });
+
+  it('backfill statement gives legacy same-category rows (both display_order = 0) distinct values preserving id order', async () => {
+    // Simulate legacy pre-migration data: two rows in the same category, both inserted
+    // with the old hardcoded display_order = 0, matching how every row prior to this
+    // feature was written.
+    const first = await env.DB.prepare(
+      `INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Legacy A', 'do_uong', 20000, 0, 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const second = await env.DB.prepare(
+      `INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Legacy B', 'do_uong', 20000, 0, 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const firstId = first.meta.last_row_id;
+    const secondId = second.meta.last_row_id;
+
+    // Re-run the same backfill statement from migration 0022 in isolation.
+    await env.DB.exec(
+      `UPDATE dine_in_menu_items SET display_order = (SELECT COUNT(*) FROM dine_in_menu_items b WHERE b.category = dine_in_menu_items.category AND b.id < dine_in_menu_items.id)`
+    );
+
+    const firstRow = await env.DB.prepare(`SELECT display_order FROM dine_in_menu_items WHERE id = ?`).bind(firstId).first();
+    const secondRow = await env.DB.prepare(`SELECT display_order FROM dine_in_menu_items WHERE id = ?`).bind(secondId).first();
+    expect(firstRow.display_order).not.toBe(secondRow.display_order);
+    expect(firstRow.display_order).toBeLessThan(secondRow.display_order);
+  });
 });
