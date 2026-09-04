@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as getBooking } from '../functions/api/bookings/[id]/index.js';
+import { onRequestPatch as setIdentity } from '../functions/api/bookings/[id]/identity.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, observerToken;
@@ -57,5 +58,62 @@ describe('GET /api/bookings/:id', () => {
       roomId: room.id, roomName: room.name, checkIn: '2026-09-10', checkOut: '2026-09-12',
       guestsCount: 2, status: 'checked_in', idNumber: null, nationality: null,
     });
+  });
+});
+
+describe('PATCH /api/bookings/:id/identity', () => {
+  let bookingId;
+  beforeEach(async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Identity Test Guest', '0900000002', 'circle', '2026-09-10', '2026-09-12', 'confirmed', 'website', '2026-09-04T00:00:00Z')`
+    ).run();
+    bookingId = created.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await setIdentity({ request: new Request(`https://x/api/bookings/${bookingId}/identity`, { method: 'PATCH' }), env, params: { id: String(bookingId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, observerToken, 'PATCH', { idNumber: '079123456789' }), env, params: { id: String(bookingId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent id', async () => {
+    const response = await setIdentity({ request: authedRequest('https://x/api/bookings/999999/identity', receptionToken, 'PATCH', { idNumber: '079123456789' }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects an id_number over 200 characters (400)', async () => {
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: 'x'.repeat(201) }), env, params: { id: String(bookingId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('lets reception save both fields and writes an audit_log row', async () => {
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: '079123456789', nationality: 'Việt Nam' }), env, params: { id: String(bookingId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT id_number, nationality FROM bookings WHERE id = ?`).bind(bookingId).first();
+    expect(row).toEqual({ id_number: '079123456789', nationality: 'Việt Nam' });
+
+    const auditRow = await env.DB.prepare(`SELECT * FROM audit_log WHERE entity_type = 'booking' AND entity_id = ? AND action_type = 'guest_identity_update'`).bind(bookingId).first();
+    expect(auditRow).not.toBeNull();
+    expect(auditRow.actor).toBe('le_tan_id');
+  });
+
+  it('stores an empty string as null', async () => {
+    await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: '079123456789', nationality: 'Việt Nam' }), env, params: { id: String(bookingId) } });
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: '', nationality: '' }), env, params: { id: String(bookingId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT id_number, nationality FROM bookings WHERE id = ?`).bind(bookingId).first();
+    expect(row).toEqual({ id_number: null, nationality: null });
+  });
+
+  it('does not touch other booking fields', async () => {
+    await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: '079123456789' }), env, params: { id: String(bookingId) } });
+    const row = await env.DB.prepare(`SELECT guest_name, phone, status FROM bookings WHERE id = ?`).bind(bookingId).first();
+    expect(row).toEqual({ guest_name: 'Identity Test Guest', phone: '0900000002', status: 'confirmed' });
   });
 });

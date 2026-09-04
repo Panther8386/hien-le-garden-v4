@@ -14,6 +14,7 @@ const ACTION_TYPE_LABELS = {
   finance_opening_balance_set: 'Đặt số dư đầu kỳ',
   finance_category_create: 'Tạo danh mục thu chi',
   finance_category_update: 'Sửa danh mục thu chi',
+  guest_identity_update: 'Cập nhật giấy tờ khách',
 };
 
 function formatVnd(n) {
