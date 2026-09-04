@@ -13,8 +13,8 @@ let managerToken, receptionToken, adminToken, observerToken;
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
-  await env.DB.exec('DELETE FROM dine_in_orders');
   await env.DB.exec('DELETE FROM dine_in_order_items');
+  await env.DB.exec('DELETE FROM dine_in_orders');
   await env.DB.exec('DELETE FROM dine_in_menu_items');
   await env.DB.exec('DELETE FROM audit_log');
   await env.DB.exec(`DELETE FROM finance_transactions WHERE category = 'khach_vang_lai'`);
