@@ -37,6 +37,7 @@ export async function onRequestPost({ request, env }) {
   if (typeof tableLabel !== 'string' || tableLabel.trim() === '') return jsonError('Vui lòng nhập số bàn', 400);
   if (tableLabel.trim().length > 100) return jsonError('Số bàn quá dài', 400);
   if (note !== undefined && note !== null && typeof note !== 'string') return jsonError('Ghi chú không hợp lệ', 400);
+  if (note !== undefined && note !== null && typeof note === 'string' && note.trim().length > 500) return jsonError('Ghi chú quá dài', 400);
 
   const now = new Date().toISOString();
   const insert = await env.DB.prepare(

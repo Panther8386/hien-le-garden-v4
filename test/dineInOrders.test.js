@@ -51,6 +51,12 @@ describe('POST /api/dine-in-orders', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a note longer than 500 characters (400)', async () => {
+    const longNote = 'a'.repeat(501);
+    const response = await createOrder({ request: authedRequest('https://x/api/dine-in-orders', receptionToken, 'POST', { tableLabel: 'Bàn 1', note: longNote }), env });
+    expect(response.status).toBe(400);
+  });
+
   it('opens a table with status=open', async () => {
     const response = await createOrder({ request: authedRequest('https://x/api/dine-in-orders', receptionToken, 'POST', { tableLabel: 'Bàn 3', note: 'gần cửa' }), env });
     expect(response.status).toBe(201);
@@ -135,6 +141,11 @@ describe('POST /api/dine-in-orders/:id/items', () => {
   it('rejects an inactive menu item (400)', async () => {
     const inactive = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Ngừng bán', 'mon_an', 30000, 0, 0, 'admin_order', '2026-09-04T00:00:00Z')`).run();
     const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, receptionToken, 'POST', { menuItemId: inactive.meta.last_row_id, quantity: 1 }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a quantity above the 999 upper bound (400)', async () => {
+    const response = await addItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items`, receptionToken, 'POST', { menuItemId, quantity: 1000 }), env, params: { id: String(orderId) } });
     expect(response.status).toBe(400);
   });
 
@@ -294,5 +305,23 @@ describe('POST /api/dine-in-orders/:id/close', () => {
     await env.DB.prepare(`UPDATE dine_in_orders SET status = 'voided' WHERE id = ?`).bind(orderId).run();
     const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(orderId) } });
     expect(response.status).toBe(400);
+  });
+
+  // Finding 1 regression: the close.js fix added `AND status = 'open'` to the final UPDATE's
+  // WHERE clause to close a TOCTOU race (see functions/api/dine-in-orders/[id]/close.js). This
+  // test guards against a mistake in that new clause silently breaking the normal single-close
+  // path — close() called once on a freshly-opened order with posted items must still succeed.
+  it('still succeeds closing a freshly-opened order with items after the AND status = open guard was added (finding 1 regression)', async () => {
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.financeTransactionId).toBeTruthy();
+
+    const orderRow = await env.DB.prepare(`SELECT status FROM dine_in_orders WHERE id = ?`).bind(orderId).first();
+    expect(orderRow.status).toBe('closed');
+
+    const txRow = await env.DB.prepare(`SELECT id FROM finance_transactions WHERE id = ?`).bind(body.financeTransactionId).first();
+    expect(txRow).toBeTruthy();
   });
 });

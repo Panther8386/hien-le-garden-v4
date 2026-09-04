@@ -43,5 +43,5 @@ CREATE TABLE dine_in_order_items (
 );
 CREATE INDEX idx_dine_in_order_items_order ON dine_in_order_items(order_id, status);
 
-INSERT INTO finance_categories (slug, label, type, is_active, created_by, created_at, updated_by, updated_at)
+INSERT OR IGNORE INTO finance_categories (slug, label, type, is_active, created_by, created_at, updated_by, updated_at)
 VALUES ('khach_vang_lai', 'Khách vãng lai', 'income', 1, 'system', '2026-09-04T00:00:00Z', 'system', '2026-09-04T00:00:00Z');

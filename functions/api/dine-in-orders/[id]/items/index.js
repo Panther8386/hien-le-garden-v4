@@ -20,7 +20,7 @@ export async function onRequestPost({ request, env, params }) {
   }
   const { menuItemId, quantity } = body || {};
   if (!Number.isInteger(menuItemId)) return jsonError('Vui lòng chọn món', 400);
-  if (!Number.isInteger(quantity) || quantity < 1) return jsonError('Số lượng phải là số nguyên lớn hơn 0', 400);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) return jsonError('Số lượng phải là số nguyên từ 1 đến 999', 400);
 
   const menuItem = await env.DB.prepare(`SELECT id, name, price FROM dine_in_menu_items WHERE id = ? AND is_active = 1`).bind(menuItemId).first();
   if (!menuItem) return jsonError('Món không tồn tại hoặc đã ngừng bán', 400);
