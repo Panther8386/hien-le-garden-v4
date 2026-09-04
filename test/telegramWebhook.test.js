@@ -82,6 +82,25 @@ describe('POST /api/telegram/webhook', () => {
     expect(feedbackRow.telegram_chat_id).toBeNull();
   });
 
+  it('registers the chat id when Telegram sends the command with a bot-username suffix (group chats)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Telegram clients commonly send commands as /command@BotUsername in group chats
+    // (e.g. to disambiguate when multiple bots are present, or via autocomplete).
+    const update = { message: { chat: { id: -1001234567890 }, text: '/start@HienLeGardenbot staff_booking_notify' } };
+    const request = new Request('https://crm.hienlegarden.vn/api/telegram/webhook', {
+      method: 'POST',
+      body: JSON.stringify(update),
+    });
+    const response = await webhook({ request, env: { ...env, TELEGRAM_BOT_TOKEN: 'test-token' } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
+    expect(row.booking_notify_chat_id).toBe('-1001234567890');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('re-registering staff_booking_notify updates the existing chat id rather than adding a second row', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
 

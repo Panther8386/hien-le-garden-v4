@@ -6,11 +6,16 @@ export async function onRequestPost({ request, env }) {
     const update = await request.json();
     const message = update.message;
 
-    if (!message || !message.text || !message.text.startsWith('/start ') || !message.chat) {
+    // Telegram delivers the deep-link command as plain "/start <payload>" in a
+    // private chat, but commonly as "/start@BotUsername <payload>" in a group
+    // (e.g. to disambiguate when multiple bots are present, or via client
+    // autocomplete) — accept both forms.
+    const commandMatch = message && message.text && message.chat ? message.text.match(/^\/start(?:@\S+)?\s+(.+)$/) : null;
+    if (!commandMatch) {
       return new Response('ok', { status: 200 });
     }
 
-    const payload = message.text.replace('/start ', '').trim();
+    const payload = commandMatch[1].trim();
     const chatId = String(message.chat.id);
 
     if (payload === 'staff_booking_notify') {
