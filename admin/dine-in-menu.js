@@ -143,22 +143,13 @@ function renderTable(category, tbody) {
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
         editBtn.textContent = 'Sửa';
-        editBtn.addEventListener('click', () => editItem(m));
+        editBtn.addEventListener('click', () => startEdit(m));
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
         toggleBtn.className = 'btn-secondary';
         toggleBtn.textContent = m.isActive ? 'Ẩn' : 'Hiện lại';
         toggleBtn.addEventListener('click', () => toggleActive(m));
         tdActions.append(upBtn, downBtn, editBtn, toggleBtn);
-
-        if (isMonAn) {
-          const preorderBtn = document.createElement('button');
-          preorderBtn.type = 'button';
-          preorderBtn.className = 'btn-secondary';
-          preorderBtn.textContent = m.requiresPreorder ? 'Bỏ đặt trước' : 'Cần đặt trước';
-          preorderBtn.addEventListener('click', () => togglePreorder(m));
-          tdActions.append(preorderBtn);
-        }
       }
 
       tr.append(tdName, tdPrice, tdStatus, tdActions);
@@ -199,39 +190,35 @@ async function moveGroupHandler(category, subgroup, direction) {
   await loadMenu();
 }
 
-async function editItem(item) {
-  const newName = window.prompt('Tên món mới:', item.name);
-  if (newName === null) return;
-  const trimmedName = newName.trim();
-  if (!trimmedName) return;
+const formsByCategory = {};
 
-  const newPriceStr = window.prompt('Giá mới (đ):', String(item.price));
-  if (newPriceStr === null) return;
-  const newPrice = Number(newPriceStr);
-  const errorEl = document.getElementById('pageError');
-  if (!Number.isInteger(newPrice) || newPrice <= 0) {
-    errorEl.textContent = 'Giá không hợp lệ';
-    return;
+function startEdit(item) {
+  const config = formsByCategory[item.category];
+  if (!config) return;
+  const { form, submitBtn, cancelBtn, includePreorder, errorId } = config;
+  form.querySelector('[name="name"]').value = item.name;
+  form.querySelector('[name="subgroup"]').value = item.subgroup || '';
+  form.querySelector('[name="price"]').value = item.price;
+  form.querySelector('[name="unit"]').value = item.unit || '';
+  if (includePreorder) {
+    form.querySelector('[name="requiresPreorder"]').checked = !!item.requiresPreorder;
   }
+  form.dataset.editingId = String(item.id);
+  submitBtn.textContent = 'Lưu thay đổi';
+  cancelBtn.classList.remove('hidden');
+  document.getElementById(errorId).textContent = '';
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
-  const newSubgroupStr = window.prompt('Nhóm (để trống nếu không có):', item.subgroup || '');
-  if (newSubgroupStr === null) return;
-
-  const newUnitStr = window.prompt('Đơn vị (để trống nếu không có):', item.unit || '');
-  if (newUnitStr === null) return;
-
-  errorEl.textContent = '';
-  const response = await fetch(`/api/dine-in-menu/${item.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: trimmedName, price: newPrice, subgroup: newSubgroupStr.trim() || null, unit: newUnitStr.trim() || null }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    errorEl.textContent = body.error || 'Có lỗi khi sửa món';
-    return;
-  }
-  await loadMenu();
+function cancelEdit(category) {
+  const config = formsByCategory[category];
+  if (!config) return;
+  const { form, submitBtn, cancelBtn, addLabel, errorId } = config;
+  form.reset();
+  delete form.dataset.editingId;
+  submitBtn.textContent = addLabel;
+  cancelBtn.classList.add('hidden');
+  document.getElementById(errorId).textContent = '';
 }
 
 async function toggleActive(item) {
@@ -250,25 +237,15 @@ async function toggleActive(item) {
   await loadMenu();
 }
 
-async function togglePreorder(item) {
-  const errorEl = document.getElementById('pageError');
-  errorEl.textContent = '';
-  const response = await fetch(`/api/dine-in-menu/${item.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requiresPreorder: !item.requiresPreorder }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    errorEl.textContent = body.error || 'Có lỗi khi cập nhật cờ đặt trước';
-    return;
-  }
-  await loadMenu();
-}
-
-function wireAddForm(formId, errorId, category, includePreorder) {
+function wireAddForm(formId, errorId, category, includePreorder, addLabel) {
   const form = document.getElementById(formId);
   const errorEl = document.getElementById(errorId);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const cancelBtn = form.querySelector('.cancel-edit-btn');
+  formsByCategory[category] = { form, submitBtn, cancelBtn, includePreorder, addLabel, errorId };
+
+  cancelBtn.addEventListener('click', () => cancelEdit(category));
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorEl.textContent = '';
@@ -285,20 +262,34 @@ function wireAddForm(formId, errorId, category, includePreorder) {
       errorEl.textContent = 'Vui lòng nhập giá hợp lệ';
       return;
     }
-    const response = await fetch('/api/dine-in-menu', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, category, price, subgroup: subgroup || undefined, unit: unit || undefined, requiresPreorder }),
-    });
+
+    const editingId = form.dataset.editingId;
+    const response = editingId
+      ? await fetch(`/api/dine-in-menu/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, subgroup: subgroup || null, price, unit: unit || null, requiresPreorder }),
+        })
+      : await fetch('/api/dine-in-menu', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, category, price, subgroup: subgroup || undefined, unit: unit || undefined, requiresPreorder }),
+        });
+
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      errorEl.textContent = body.error || 'Có lỗi khi thêm món';
+      errorEl.textContent = body.error || (editingId ? 'Có lỗi khi sửa món' : 'Có lỗi khi thêm món');
       return;
     }
-    form.reset();
+
+    if (editingId) {
+      cancelEdit(category);
+    } else {
+      form.reset();
+    }
     await loadMenu();
   });
 }
 
-wireAddForm('monAnAddForm', 'monAnAddError', 'mon_an', true);
-wireAddForm('doUongAddForm', 'doUongAddError', 'do_uong', false);
+wireAddForm('monAnAddForm', 'monAnAddError', 'mon_an', true, '+ Thêm món');
+wireAddForm('doUongAddForm', 'doUongAddError', 'do_uong', false, '+ Thêm thức uống');
