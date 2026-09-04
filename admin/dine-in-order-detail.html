@@ -1,0 +1,46 @@
+<!-- v4/admin/dine-in-order-detail.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Chi tiết order — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1 id="pageTitle">Chi tiết bàn</h1>
+    <p id="pageError" class="error"></p>
+
+    <div id="itemsList" class="services-section"></div>
+
+    <form id="addItemForm" class="add-service-form hidden">
+      <select name="menuItemId" required></select>
+      <input type="number" name="quantity" min="1" step="1" value="1" required />
+      <button type="submit">+ Thêm món</button>
+    </form>
+    <p id="addItemError" class="error"></p>
+
+    <p id="orderTotal"></p>
+
+    <div id="closeSection" class="hidden">
+      <label class="checkbox-label"><input type="radio" name="paymentMethod" value="cash" /> 💵 Tiền mặt</label>
+      <label class="checkbox-label"><input type="radio" name="paymentMethod" value="transfer" /> 🏦 Chuyển khoản</label>
+      <button type="button" id="closeBtn" disabled>✅ Chốt & Thanh toán</button>
+      <button type="button" id="voidBtn" class="btn-secondary">❌ Huỷ bàn</button>
+      <p id="closeError" class="error"></p>
+    </div>
+
+    <button type="button" id="printBtn" class="hidden">🖨 In hoá đơn</button>
+  </div>
+
+  <script src="/admin/dine-in-order-detail.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
