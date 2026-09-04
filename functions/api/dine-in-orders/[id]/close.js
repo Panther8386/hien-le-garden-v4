@@ -37,9 +37,16 @@ export async function onRequestPost({ request, env, params }) {
   ).bind(totals.total, note, now.slice(0, 10), auth.username, now).run();
   const financeTransactionId = txInsert.meta.last_row_id;
 
-  await env.DB.prepare(
-    `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ?`
+  const orderUpdate = await env.DB.prepare(
+    `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'`
   ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id).run();
+
+  if (orderUpdate.meta.changes === 0) {
+    // Another request already closed/voided this order between our read and this write (TOCTOU).
+    // Roll back the finance_transactions row we just inserted so income isn't duplicated.
+    await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).run();
+    return jsonError('Bàn này vừa được chốt hoặc huỷ bởi thao tác khác, vui lòng tải lại', 409);
+  }
 
   return new Response(JSON.stringify({ ok: true, totalAmount: totals.total, financeTransactionId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

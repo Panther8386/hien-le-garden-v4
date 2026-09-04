@@ -178,11 +178,13 @@ document.querySelectorAll('input[name="paymentMethod"]').forEach((radio) => {
 });
 
 document.getElementById('closeBtn').addEventListener('click', async () => {
+  document.getElementById('closeBtn').disabled = true;
   const errorEl = document.getElementById('closeError');
   errorEl.textContent = '';
   const selected = document.querySelector('input[name="paymentMethod"]:checked');
   if (!selected) {
     errorEl.textContent = 'Vui lòng chọn hình thức thanh toán';
+    document.getElementById('closeBtn').disabled = false;
     return;
   }
   const response = await fetch(`/api/dine-in-orders/${currentOrder.id}/close`, {
@@ -193,6 +195,7 @@ document.getElementById('closeBtn').addEventListener('click', async () => {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi chốt order';
+    document.getElementById('closeBtn').disabled = false;
     return;
   }
   await loadOrder(currentOrder.id);
