@@ -204,6 +204,28 @@ describe('POST /api/gio-xanh-sessions/:id/items', () => {
     const response = await addItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/items`, receptionToken, 'POST', { source: 'gio_combo', sourceId: comboId, quantity: 1 }), env, params: { id: String(sessionId) } });
     expect(response.status).toBe(400);
   });
+
+  it('rejects a gio_combo that is label-priced (price_min NULL) with the same friendly 400 as an invalid combo', async () => {
+    const labelCombo = await env.DB.prepare(
+      `INSERT INTO service_catalog (category, subgroup, name, price_type, price_min, price_max, price_label, is_active, updated_by, updated_at)
+       VALUES ('luu_tru', 'Giờ Xanh Hiền Lê', 'Combo Nhãn Giá', 'label', NULL, NULL, 'Liên hệ', 1, 'admin_gx', '2026-09-04T00:00:00Z')`
+    ).run();
+    const response = await addItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/items`, receptionToken, 'POST', { source: 'gio_combo', sourceId: labelCombo.meta.last_row_id, quantity: 1 }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Combo giờ không tồn tại hoặc đã ngừng áp dụng');
+  });
+
+  it('rejects a gio_combo with price_min = 0 with the same friendly 400 as an invalid combo', async () => {
+    const zeroCombo = await env.DB.prepare(
+      `INSERT INTO service_catalog (category, subgroup, name, price_type, price_min, price_max, is_active, updated_by, updated_at)
+       VALUES ('luu_tru', 'Giờ Xanh Hiền Lê', 'Combo Giá 0', 'fixed', 0, NULL, 1, 'admin_gx', '2026-09-04T00:00:00Z')`
+    ).run();
+    const response = await addItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/items`, receptionToken, 'POST', { source: 'gio_combo', sourceId: zeroCombo.meta.last_row_id, quantity: 1 }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Combo giờ không tồn tại hoặc đã ngừng áp dụng');
+  });
 });
 
 describe('PATCH /api/gio-xanh-sessions/:id/items/:itemId', () => {
@@ -289,6 +311,47 @@ describe('POST /api/gio-xanh-sessions/:id/void', () => {
     await env.DB.prepare(`UPDATE gio_xanh_sessions SET status = 'closed' WHERE id = ?`).bind(sessionId).run();
     const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/void`, receptionToken, 'POST'), env, params: { id: String(sessionId) } });
     expect(response.status).toBe(400);
+  });
+
+  it('returns 409 and leaves the session untouched when it was closed by a concurrent request between the read and the write', async () => {
+    // Simulate the race: the session is really already 'closed' in the DB (as a
+    // concurrent close request would leave it), but this handler's own initial
+    // read is stubbed to still see 'open' — exactly the window the conditional
+    // UPDATE ... WHERE status = 'open' is meant to guard against.
+    const tx = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'gio_xanh_hien_le', 130000, 'test', '2026-09-04', 'confirmed', 'le_tan_gx', '2026-09-04T09:00:00Z')`
+    ).run();
+    await env.DB.prepare(
+      `UPDATE gio_xanh_sessions SET status = 'closed', closed_by = 'le_tan_gx', closed_at = '2026-09-04T09:00:00Z', payment_method = 'cash', total_amount = 130000, finance_transaction_id = ? WHERE id = ?`
+    ).bind(tx.meta.last_row_id, sessionId).run();
+
+    const originalPrepare = env.DB.prepare.bind(env.DB);
+    const staleReadDB = {
+      prepare(sql) {
+        if (typeof sql === 'string' && sql.trim().startsWith('SELECT s.id, s.guest_name AS guestName')) {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return { id: sessionId, guestName: 'Khách E', status: 'open', roomName: 'Phòng test' };
+                },
+              };
+            },
+          };
+        }
+        return originalPrepare(sql);
+      },
+    };
+    const staleEnv = { ...env, DB: staleReadDB };
+
+    const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/void`, receptionToken, 'POST'), env: staleEnv, params: { id: String(sessionId) } });
+    expect(response.status).toBe(409);
+
+    const row = await env.DB.prepare(`SELECT status FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
+    expect(row.status).toBe('closed');
+
+    const auditRow = await env.DB.prepare(`SELECT * FROM audit_log WHERE entity_type = 'gio_xanh_session' AND entity_id = ? AND action_type = 'gio_xanh_session_void'`).bind(sessionId).first();
+    expect(auditRow).toBeNull();
   });
 });
 
