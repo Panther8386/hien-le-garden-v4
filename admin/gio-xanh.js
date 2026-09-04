@@ -16,12 +16,12 @@ let currentRole = null;
   const { role } = await res.json();
   currentRole = role;
 
+  await loadSessions();
+
   if (currentRole !== 'observer') {
     document.getElementById('openSessionForm').classList.remove('hidden');
     await populateRoomSelect();
   }
-
-  await loadSessions();
 })();
 
 async function populateRoomSelect() {
@@ -35,9 +35,13 @@ async function populateRoomSelect() {
       fetch('/api/gio-xanh-sessions?status=open'),
     ]);
   } catch (err) {
+    document.getElementById('pageError').textContent = 'Có lỗi khi tải danh sách phòng';
     return;
   }
-  if (!roomsResponse.ok) return;
+  if (!roomsResponse.ok) {
+    document.getElementById('pageError').textContent = 'Có lỗi khi tải danh sách phòng';
+    return;
+  }
   const rooms = await roomsResponse.json();
   const openSessions = sessionsResponse.ok ? await sessionsResponse.json() : [];
   const busyRoomIds = new Set(openSessions.map((s) => s.roomId));

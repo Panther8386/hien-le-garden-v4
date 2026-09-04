@@ -53,6 +53,14 @@ function renderInvoice(session) {
   const el = document.getElementById('formPrint');
   el.innerHTML = '';
 
+  if (session.status !== 'closed') {
+    document.getElementById('printBtn').classList.add('hidden');
+    const p = document.createElement('p');
+    p.textContent = 'Phiên chưa chốt, không thể in hoá đơn.';
+    el.appendChild(p);
+    return;
+  }
+
   const h2 = document.createElement('h2');
   h2.textContent = 'HOÁ ĐƠN GIỜ XANH HIỀN LÊ';
   const subtitle = document.createElement('p');
@@ -80,9 +88,9 @@ function renderInvoice(session) {
   const thead = document.createElement('thead');
   thead.innerHTML = '<tr><th>Mục</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr>';
   const tbody = document.createElement('tbody');
-  let total = 0;
+  let computedTotal = 0;
   session.items.filter((i) => i.status === 'posted').forEach((item) => {
-    total += item.amount;
+    computedTotal += item.amount;
     const tr = document.createElement('tr');
     const tdName = document.createElement('td');
     tdName.textContent = item.name;
@@ -95,6 +103,7 @@ function renderInvoice(session) {
     tr.append(tdName, tdQty, tdPrice, tdAmount);
     tbody.appendChild(tr);
   });
+  const total = session.status === 'closed' ? session.totalAmount : computedTotal;
   const totalRow = document.createElement('tr');
   totalRow.className = 'total-row';
   totalRow.innerHTML = `<td colspan="3">Tổng cộng</td><td>${total.toLocaleString('vi-VN')}đ</td>`;

@@ -41,6 +41,7 @@ export async function onRequestPost({ request, env }) {
   if (typeof guestName !== 'string' || guestName.trim() === '') return jsonError('Vui lòng nhập tên khách', 400);
   if (guestName.trim().length > 200) return jsonError('Tên khách quá dài', 400);
   if (phone !== undefined && phone !== null && typeof phone !== 'string') return jsonError('Số điện thoại không hợp lệ', 400);
+  if (typeof phone === 'string' && phone.trim().length > 20) return jsonError('Số điện thoại quá dài', 400);
 
   const room = await env.DB.prepare(`SELECT id FROM rooms WHERE id = ? AND is_active = 1`).bind(roomId).first();
   if (!room) return jsonError('Phòng không tồn tại hoặc đã ngừng hoạt động', 400);
