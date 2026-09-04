@@ -15,6 +15,8 @@ const ACTION_TYPE_LABELS = {
   finance_category_create: 'Tạo danh mục thu chi',
   finance_category_update: 'Sửa danh mục thu chi',
   guest_identity_update: 'Cập nhật giấy tờ khách',
+  dine_in_menu_item_create: 'Tạo món trong menu',
+  dine_in_menu_item_update: 'Sửa món trong menu',
 };
 
 function formatVnd(n) {
