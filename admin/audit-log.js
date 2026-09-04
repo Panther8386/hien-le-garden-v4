@@ -17,6 +17,7 @@ const ACTION_TYPE_LABELS = {
   guest_identity_update: 'Cập nhật giấy tờ khách',
   dine_in_menu_item_create: 'Tạo món trong menu',
   dine_in_menu_item_update: 'Sửa món trong menu',
+  dine_in_order_void: 'Huỷ bàn order ăn uống',
 };
 
 function formatVnd(n) {

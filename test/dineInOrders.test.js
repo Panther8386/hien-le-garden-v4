@@ -4,6 +4,8 @@ import { onRequestGet as listOrders, onRequestPost as createOrder } from '../fun
 import { onRequestGet as getOrder } from '../functions/api/dine-in-orders/[id]/index.js';
 import { onRequestPost as addItem } from '../functions/api/dine-in-orders/[id]/items/index.js';
 import { onRequestPatch as voidItem } from '../functions/api/dine-in-orders/[id]/items/[itemId].js';
+import { onRequestPost as voidOrder } from '../functions/api/dine-in-orders/[id]/void.js';
+import { onRequestPost as closeOrder } from '../functions/api/dine-in-orders/[id]/close.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -190,6 +192,107 @@ describe('PATCH /api/dine-in-orders/:id/items/:itemId', () => {
   it('rejects voiding an already-voided item (400)', async () => {
     await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
     const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(orderId), itemId: String(itemId) } });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/dine-in-orders/:id/void', () => {
+  let orderId;
+  beforeEach(async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 8', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    orderId = order.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await voidOrder({ request: new Request(`https://x/api/dine-in-orders/${orderId}/void`, { method: 'POST' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await voidOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/void`, observerToken, 'POST'), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent order', async () => {
+    const response = await voidOrder({ request: authedRequest('https://x/api/dine-in-orders/999999/void', receptionToken, 'POST'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('voids the order without creating a finance_transactions row, writing a dine_in_order_void audit_log row', async () => {
+    const response = await voidOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/void`, receptionToken, 'POST'), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT status FROM dine_in_orders WHERE id = ?`).bind(orderId).first();
+    expect(row.status).toBe('voided');
+
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'khach_vang_lai'`).first();
+    expect(txCount.n).toBe(0);
+
+    const auditRow = await env.DB.prepare(`SELECT action_type, actor FROM audit_log WHERE entity_type = 'dine_in_order' AND entity_id = ?`).bind(orderId).first();
+    expect(auditRow).toEqual({ action_type: 'dine_in_order_void', actor: 'le_tan_order' });
+  });
+
+  it('rejects voiding an order that is not open (400)', async () => {
+    await env.DB.prepare(`UPDATE dine_in_orders SET status = 'closed' WHERE id = ?`).bind(orderId).run();
+    const response = await voidOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/void`, receptionToken, 'POST'), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/dine-in-orders/:id/close', () => {
+  let orderId;
+  beforeEach(async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 9', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    orderId = order.meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 2, 90000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
+    await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 25000, 1, 25000, 'voided', 'le_tan_order', '2026-09-04T08:06:00Z')`).bind(orderId).run();
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await closeOrder({ request: new Request(`https://x/api/dine-in-orders/${orderId}/close`, { method: 'POST' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, observerToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent order', async () => {
+    const response = await closeOrder({ request: authedRequest('https://x/api/dine-in-orders/999999/close', receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a missing/invalid paymentMethod (400)', async () => {
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', {}), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('closes the order, computing total from posted items only, and creates exactly one finance_transactions row', async () => {
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', { paymentMethod: 'transfer' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.totalAmount).toBe(90000);
+
+    const orderRow = await env.DB.prepare(`SELECT status, closed_by, payment_method, total_amount, finance_transaction_id FROM dine_in_orders WHERE id = ?`).bind(orderId).first();
+    expect(orderRow).toEqual({ status: 'closed', closed_by: 'le_tan_order', payment_method: 'transfer', total_amount: 90000, finance_transaction_id: body.financeTransactionId });
+
+    const txRows = await env.DB.prepare(`SELECT type, category, amount, status FROM finance_transactions WHERE id = ?`).bind(body.financeTransactionId).first();
+    expect(txRows).toEqual({ type: 'income', category: 'khach_vang_lai', amount: 90000, status: 'confirmed' });
+
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'khach_vang_lai'`).first();
+    expect(txCount.n).toBe(1);
+  });
+
+  it('rejects closing an order with zero posted items (400)', async () => {
+    await env.DB.exec(`DELETE FROM dine_in_order_items WHERE order_id = ${orderId}`);
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(orderId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects closing an order that is not open (400)', async () => {
+    await env.DB.prepare(`UPDATE dine_in_orders SET status = 'voided' WHERE id = ?`).bind(orderId).run();
+    const response = await closeOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(orderId) } });
     expect(response.status).toBe(400);
   });
 });
