@@ -305,3 +305,32 @@ describe('migration 0023', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('migration 0024', () => {
+  it('backfills distinct display_order values per type for the already-seeded categories', async () => {
+    const { results } = await env.DB.prepare(`SELECT id, type, display_order FROM finance_categories ORDER BY type, id`).all();
+    expect(results.length).toBeGreaterThan(0);
+    const seenByType = {};
+    for (const row of results) {
+      seenByType[row.type] = seenByType[row.type] || new Set();
+      expect(seenByType[row.type].has(row.display_order)).toBe(false);
+      seenByType[row.type].add(row.display_order);
+    }
+  });
+
+  it('accepts an explicit value for the new column on insert', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_categories (slug, label, type, is_active, display_order, created_by, created_at) VALUES ('test_slug_0024a', 'Test', 'income', 1, 5, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT display_order FROM finance_categories WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row.display_order).toBe(5);
+  });
+
+  it('defaults to 0 when not specified', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_categories (slug, label, type, is_active, created_by, created_at) VALUES ('test_slug_0024b', 'Test 2', 'expense', 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT display_order FROM finance_categories WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row.display_order).toBe(0);
+  });
+});

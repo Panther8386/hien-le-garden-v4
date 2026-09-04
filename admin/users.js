@@ -93,7 +93,7 @@ async function loadUsers() {
     if (window.__currentRole === 'admin') {
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
-      resetBtn.className = 'btn-secondary';
+      resetBtn.className = 'btn-secondary table-actions-btn';
       resetBtn.textContent = 'Đặt lại mật khẩu';
       resetBtn.disabled = isSelf;
       if (isSelf) resetBtn.title = 'Không thể tự đặt lại mật khẩu bằng chức năng này — dùng trang Đổi mật khẩu';
@@ -102,6 +102,7 @@ async function loadUsers() {
     }
 
     const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'table-actions-btn';
     deleteBtn.textContent = 'Xoá';
     deleteBtn.disabled = isSelf || isLastManager;
     if (isSelf) deleteBtn.title = 'Không thể tự xoá tài khoản của chính mình';

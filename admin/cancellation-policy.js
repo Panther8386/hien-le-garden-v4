@@ -49,10 +49,12 @@ function renderTable(tiers) {
     if (currentRole === 'admin') {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
+      editBtn.className = 'table-actions-btn';
       editBtn.textContent = 'Sửa';
       editBtn.addEventListener('click', () => openEditForm(tier));
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
+      deleteBtn.className = 'table-actions-btn';
       deleteBtn.textContent = 'Xoá';
       deleteBtn.addEventListener('click', () => deleteTier(tier.id));
       tdActions.append(editBtn, deleteBtn);

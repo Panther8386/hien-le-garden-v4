@@ -13,6 +13,7 @@ function coerceRow(r) {
     slug: r.slug,
     label: r.label,
     type: r.type,
+    displayOrder: r.display_order,
     isActive: !!r.is_active,
     createdBy: r.created_by,
     createdAt: r.created_at,
@@ -25,7 +26,7 @@ export async function onRequestGet({ request, env }) {
   const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
   if (auth instanceof Response) return auth;
 
-  const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ORDER BY type, id`).all();
+  const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ORDER BY type, display_order, id`).all();
   return new Response(JSON.stringify(results.map(coerceRow)), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
@@ -53,8 +54,9 @@ export async function onRequestPost({ request, env }) {
 
   const now = new Date().toISOString();
   const insert = await env.DB.prepare(
-    `INSERT INTO finance_categories (slug, label, type, is_active, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?)`
-  ).bind(slug, trimmedLabel, type, auth.username, now).run();
+    `INSERT INTO finance_categories (slug, label, type, is_active, display_order, created_by, created_at)
+     VALUES (?, ?, ?, 1, (SELECT COALESCE(MAX(display_order), -1) + 1 FROM finance_categories WHERE type = ?), ?, ?)`
+  ).bind(slug, trimmedLabel, type, type, auth.username, now).run();
   const newId = insert.meta.last_row_id;
 
   await env.DB.prepare(
