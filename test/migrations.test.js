@@ -213,3 +213,21 @@ describe('migration 0021', () => {
     expect(row).toEqual({ slug: 'khach_vang_lai', label: 'Khách vãng lai', type: 'income', is_active: 1 });
   });
 });
+
+describe('migration 0022', () => {
+  it('adds subgroup, unit, and requires_preorder, defaulting correctly', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Test Item', 'mon_an', 50000, 0, 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT subgroup, unit, requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row).toEqual({ subgroup: null, unit: null, requires_preorder: 0 });
+  });
+
+  it('accepts values for all three new columns', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO dine_in_menu_items (name, category, price, subgroup, unit, requires_preorder, display_order, is_active, updated_by, updated_at) VALUES ('Gà nướng', 'mon_an', 368000, 'Món gà', 'con', 1, 0, 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT subgroup, unit, requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row).toEqual({ subgroup: 'Món gà', unit: 'con', requires_preorder: 1 });
+  });
+});
