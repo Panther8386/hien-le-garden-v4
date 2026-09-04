@@ -150,3 +150,23 @@ describe('migration 0019', () => {
     expect(insert.meta.last_row_id).toBeGreaterThan(before.maxId || 0);
   });
 });
+
+describe('migration 0020', () => {
+  it('adds id_number and nationality columns, defaulting to null', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Test Guest', '090', 'circle', '2026-09-10', '2026-09-11', 'pending', 'website', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT id_number, nationality FROM bookings WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row).toEqual({ id_number: null, nationality: null });
+  });
+
+  it('accepts a value for both new columns', async () => {
+    const result = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, id_number, nationality, created_at)
+       VALUES ('Test Guest 2', '091', 'circle', '2026-09-10', '2026-09-11', 'pending', 'website', '079123456789', 'Việt Nam', '2026-09-04T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT id_number, nationality FROM bookings WHERE id = ?`).bind(result.meta.last_row_id).first();
+    expect(row).toEqual({ id_number: '079123456789', nationality: 'Việt Nam' });
+  });
+});
