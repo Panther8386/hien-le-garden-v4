@@ -46,7 +46,7 @@ describe('GET /api/dine-in-menu', () => {
     const response = await listMenu({ request: authedRequest('https://x/api/dine-in-menu', adminToken, 'GET'), env });
     const body = await response.json();
     expect(body).toEqual([
-      { id: expect.any(Number), name: 'Cà phê đen', category: 'do_uong', price: 25000, displayOrder: 1, isActive: false, updatedBy: 'system', updatedAt: '2026-09-04T00:00:00Z' },
+      { id: expect.any(Number), name: 'Cà phê đen', category: 'do_uong', price: 25000, subgroup: null, unit: null, requiresPreorder: false, displayOrder: 1, isActive: false, updatedBy: 'system', updatedAt: '2026-09-04T00:00:00Z' },
     ]);
   });
 });
@@ -86,6 +86,36 @@ describe('POST /api/dine-in-menu', () => {
     const auditRow = await env.DB.prepare(`SELECT actor FROM audit_log WHERE action_type = 'dine_in_menu_item_create' AND entity_id = ?`).bind(body.id).first();
     expect(auditRow.actor).toBe('admin_menu');
   });
+
+  it('accepts subgroup/unit/requiresPreorder for mon_an, appending at the end of a new subgroup block', async () => {
+    const response = await createMenuItem({ request: authedRequest('https://x/api/dine-in-menu', adminToken, 'POST', { name: 'Gà nướng', category: 'mon_an', price: 368000, subgroup: 'Món gà', unit: 'con', requiresPreorder: true }), env });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body).toMatchObject({ subgroup: 'Món gà', unit: 'con', requiresPreorder: true });
+
+    const row = await env.DB.prepare(`SELECT subgroup, unit, requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(body.id).first();
+    expect(row).toEqual({ subgroup: 'Món gà', unit: 'con', requires_preorder: 1 });
+  });
+
+  it('ignores requiresPreorder for do_uong, always storing 0', async () => {
+    const response = await createMenuItem({ request: authedRequest('https://x/api/dine-in-menu', adminToken, 'POST', { name: 'Cà phê sữa', category: 'do_uong', price: 25000, requiresPreorder: true }), env });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.requiresPreorder).toBe(false);
+    const row = await env.DB.prepare(`SELECT requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(body.id).first();
+    expect(row.requires_preorder).toBe(0);
+  });
+
+  it('inserts a second item into the same subgroup block, keeping it contiguous and after the first', async () => {
+    const first = await createMenuItem({ request: authedRequest('https://x/api/dine-in-menu', adminToken, 'POST', { name: 'Gỏi hải sản', category: 'mon_an', price: 179000, subgroup: 'Hải sản' }), env });
+    const firstBody = await first.json();
+    const secondResponse = await createMenuItem({ request: authedRequest('https://x/api/dine-in-menu', adminToken, 'POST', { name: 'Tôm sốt', category: 'mon_an', price: 275000, subgroup: 'Hải sản' }), env });
+    const secondBody = await secondResponse.json();
+
+    const firstRow = await env.DB.prepare(`SELECT display_order FROM dine_in_menu_items WHERE id = ?`).bind(firstBody.id).first();
+    const secondRow = await env.DB.prepare(`SELECT display_order FROM dine_in_menu_items WHERE id = ?`).bind(secondBody.id).first();
+    expect(secondRow.display_order).toBe(firstRow.display_order + 1);
+  });
 });
 
 describe('PATCH /api/dine-in-menu/:id', () => {
@@ -114,5 +144,29 @@ describe('PATCH /api/dine-in-menu/:id', () => {
 
     const auditRow = await env.DB.prepare(`SELECT actor FROM audit_log WHERE action_type = 'dine_in_menu_item_update' AND entity_id = ?`).bind(itemId).first();
     expect(auditRow.actor).toBe('admin_menu');
+  });
+
+  it('accepts subgroup/unit/requiresPreorder updates', async () => {
+    const created = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Cá tầm nướng', 'mon_an', 210000, 5, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const response = await patchMenuItem({ request: authedRequest(`https://x/api/dine-in-menu/${created.meta.last_row_id}`, adminToken, 'PATCH', { subgroup: 'Món gà', unit: 'phần', requiresPreorder: true }), env, params: { id: String(created.meta.last_row_id) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT subgroup, unit, requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(created.meta.last_row_id).first();
+    expect(row).toEqual({ subgroup: 'Món gà', unit: 'phần', requires_preorder: 1 });
+  });
+
+  it('moving an item to a different subgroup keeps display_order contiguous within the new group', async () => {
+    const a = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Món gà 1', 'mon_an', 100000, 'Món gà', 0, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const b = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Hải sản 1', 'mon_an', 100000, 'Hải sản', 1, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const c = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Hải sản 2', 'mon_an', 100000, 'Hải sản', 2, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+
+    const response = await patchMenuItem({ request: authedRequest(`https://x/api/dine-in-menu/${a.meta.last_row_id}`, adminToken, 'PATCH', { subgroup: 'Hải sản' }), env, params: { id: String(a.meta.last_row_id) } });
+    expect(response.status).toBe(200);
+
+    const { results } = await env.DB.prepare(`SELECT id, subgroup FROM dine_in_menu_items WHERE category = 'mon_an' ORDER BY display_order`).all();
+    expect(results).toEqual([
+      { id: b.meta.last_row_id, subgroup: 'Hải sản' },
+      { id: c.meta.last_row_id, subgroup: 'Hải sản' },
+      { id: a.meta.last_row_id, subgroup: 'Hải sản' },
+    ]);
   });
 });
