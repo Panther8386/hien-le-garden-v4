@@ -430,3 +430,19 @@ body.has-nav-drawer { padding-top: 68px; }
 }
 .nav-drawer-footer-links a:hover { opacity: 1; color: var(--gold); }
 .nav-drawer-footer-links a.active { opacity: 1; color: var(--gold); font-weight: 600; }
+
+.dine-orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.dine-order-card {
+  background: rgba(245, 240, 230, 0.06);
+  border: 1px solid rgba(245, 240, 230, 0.15);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.dine-order-card .table-label { font-weight: 600; margin-bottom: 4px; }
+.dine-order-card .order-total { color: var(--gold); font-weight: 600; }

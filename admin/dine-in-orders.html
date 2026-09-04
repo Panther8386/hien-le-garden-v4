@@ -1,0 +1,35 @@
+<!-- v4/admin/dine-in-orders.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Order ăn uống — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Order ăn uống</h1>
+    <p id="pageError" class="error"></p>
+
+    <form id="openTableForm" class="hidden">
+      <label>Số bàn <input type="text" name="tableLabel" required maxlength="100" /></label>
+      <label>Ghi chú <input type="text" name="note" maxlength="500" /></label>
+      <button type="submit">➕ Mở bàn mới</button>
+      <p id="openTableError" class="error"></p>
+    </form>
+
+    <div id="ordersGrid" class="dine-orders-grid"></div>
+    <p id="emptyState" class="hidden">Không có bàn nào đang mở.</p>
+  </div>
+
+  <script src="/admin/dine-in-orders.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
