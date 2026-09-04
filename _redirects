@@ -30,6 +30,7 @@
 /manager/audit-log             /admin/audit-log        200
 /manager/change-password      /admin/change-password 200
 /manager/dine-in-orders         /admin/dine-in-orders   200
+/manager/gio-xanh               /admin/gio-xanh         200
 
 /reception                    /admin/reception       200
 /reception/customers          /admin/customers       200
@@ -39,6 +40,7 @@
 /reception/cancellation-policy  /admin/cancellation-policy   200
 /reception/change-password    /admin/change-password 200
 /reception/dine-in-orders       /admin/dine-in-orders   200
+/reception/gio-xanh             /admin/gio-xanh         200
 
 /observer                     /admin/reception       200
 /observer/dashboard            /admin/dashboard       200
@@ -48,3 +50,4 @@
 /observer/cancellation-policy   /admin/cancellation-policy   200
 /observer/change-password      /admin/change-password 200
 /observer/dine-in-orders        /admin/dine-in-orders   200
+/observer/gio-xanh              /admin/gio-xanh         200

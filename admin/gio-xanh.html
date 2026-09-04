@@ -1,0 +1,38 @@
+<!-- v4/admin/gio-xanh.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Giờ Xanh Hiền Lê — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Giờ Xanh Hiền Lê</h1>
+    <p id="pageError" class="error"></p>
+
+    <form id="openSessionForm" class="hidden">
+      <label>Phòng
+        <select name="roomId" required></select>
+      </label>
+      <label>Tên khách <input type="text" name="guestName" required maxlength="200" /></label>
+      <label>Số điện thoại <input type="text" name="phone" maxlength="20" /></label>
+      <button type="submit">➕ Mở phiên mới</button>
+      <p id="openSessionError" class="error"></p>
+    </form>
+
+    <div id="sessionsGrid" class="gio-xanh-grid"></div>
+    <p id="emptyState" class="hidden">Không có phiên Giờ Xanh nào đang mở.</p>
+  </div>
+
+  <script src="/admin/gio-xanh.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
