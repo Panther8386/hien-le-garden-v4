@@ -4,6 +4,8 @@ import { onRequestGet as listSessions, onRequestPost as createSession } from '..
 import { onRequestGet as getSession } from '../functions/api/gio-xanh-sessions/[id]/index.js';
 import { onRequestPost as addItem } from '../functions/api/gio-xanh-sessions/[id]/items/index.js';
 import { onRequestPatch as voidItem } from '../functions/api/gio-xanh-sessions/[id]/items/[itemId].js';
+import { onRequestPost as voidSession } from '../functions/api/gio-xanh-sessions/[id]/void.js';
+import { onRequestPost as closeSession } from '../functions/api/gio-xanh-sessions/[id]/close.js';
 import { createSession as createStaffSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -244,5 +246,109 @@ describe('PATCH /api/gio-xanh-sessions/:id/items/:itemId', () => {
     await voidItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(sessionId), itemId: String(itemId) } });
     const response = await voidItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(sessionId), itemId: String(itemId) } });
     expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/gio-xanh-sessions/:id/void', () => {
+  let sessionId;
+  beforeEach(async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách E', 'open', 'le_tan_gx', '2026-09-04T08:00:00Z')`).bind(roomId1).run();
+    sessionId = session.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await voidSession({ request: new Request(`https://x/api/gio-xanh-sessions/${sessionId}/void`, { method: 'POST' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/void`, observerToken, 'POST'), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent session', async () => {
+    const response = await voidSession({ request: authedRequest('https://x/api/gio-xanh-sessions/999999/void', receptionToken, 'POST'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('voids the session without creating a finance_transactions row, writing a gio_xanh_session_void audit_log row', async () => {
+    const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/void`, receptionToken, 'POST'), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT status FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
+    expect(row.status).toBe('voided');
+
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'gio_xanh_hien_le'`).first();
+    expect(txCount.n).toBe(0);
+
+    const auditRow = await env.DB.prepare(`SELECT action_type, actor FROM audit_log WHERE entity_type = 'gio_xanh_session' AND entity_id = ?`).bind(sessionId).first();
+    expect(auditRow).toEqual({ action_type: 'gio_xanh_session_void', actor: 'le_tan_gx' });
+  });
+
+  it('rejects voiding a session that is not open (400)', async () => {
+    await env.DB.prepare(`UPDATE gio_xanh_sessions SET status = 'closed' WHERE id = ?`).bind(sessionId).run();
+    const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/void`, receptionToken, 'POST'), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/gio-xanh-sessions/:id/close', () => {
+  let sessionId;
+  beforeEach(async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách F', 'open', 'le_tan_gx', '2026-09-04T08:00:00Z')`).bind(roomId1).run();
+    sessionId = session.meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan_gx', '2026-09-04T08:05:00Z')`).bind(sessionId).run();
+    await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'mon_an_uong', 1, 'Cà phê', 25000, 1, 25000, 'posted', 'le_tan_gx', '2026-09-04T08:06:00Z')`).bind(sessionId).run();
+    await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'mon_an_uong', 2, 'Trà đá', 10000, 1, 10000, 'voided', 'le_tan_gx', '2026-09-04T08:07:00Z')`).bind(sessionId).run();
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await closeSession({ request: new Request(`https://x/api/gio-xanh-sessions/${sessionId}/close`, { method: 'POST' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, observerToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent session', async () => {
+    const response = await closeSession({ request: authedRequest('https://x/api/gio-xanh-sessions/999999/close', receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a missing/invalid paymentMethod (400)', async () => {
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', {}), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('closes the session, combining gio_combo and mon_an_uong totals (posted only) into one finance_transactions row', async () => {
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'transfer' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.totalAmount).toBe(155000);
+
+    const sessionRow = await env.DB.prepare(`SELECT status, closed_by, payment_method, total_amount, finance_transaction_id FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
+    expect(sessionRow).toEqual({ status: 'closed', closed_by: 'le_tan_gx', payment_method: 'transfer', total_amount: 155000, finance_transaction_id: body.financeTransactionId });
+
+    const txRow = await env.DB.prepare(`SELECT type, category, amount, status FROM finance_transactions WHERE id = ?`).bind(body.financeTransactionId).first();
+    expect(txRow).toEqual({ type: 'income', category: 'gio_xanh_hien_le', amount: 155000, status: 'confirmed' });
+
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'gio_xanh_hien_le'`).first();
+    expect(txCount.n).toBe(1);
+  });
+
+  it('rejects closing a session with zero posted items (400)', async () => {
+    await env.DB.exec(`UPDATE gio_xanh_session_items SET status = 'voided' WHERE session_id = ${sessionId}`);
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects closing a session that is not open (400) and does not touch finance_transactions when already closed', async () => {
+    await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    expect(response.status).toBe(400);
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'gio_xanh_hien_le'`).first();
+    expect(txCount.n).toBe(1);
   });
 });
