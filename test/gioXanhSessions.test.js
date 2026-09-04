@@ -69,6 +69,18 @@ describe('POST /api/gio-xanh-sessions', () => {
     const response = await createSession({ request: authedRequest('https://x/api/gio-xanh-sessions', receptionToken, 'POST', { roomId: roomId1, guestName: 'Khách 2' }), env });
     expect(response.status).toBe(400);
   });
+
+  it('enforces one-open-session-per-room at the DB level via the partial unique index', async () => {
+    await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách 1', 'open', 'le_tan_gx', '2026-09-04T08:00:00Z')`
+    ).bind(roomId1).run();
+
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách 2', 'open', 'le_tan_gx', '2026-09-04T08:01:00Z')`
+      ).bind(roomId1).run()
+    ).rejects.toThrow();
+  });
 });
 
 describe('GET /api/gio-xanh-sessions', () => {

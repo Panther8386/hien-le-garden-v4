@@ -49,9 +49,17 @@ export async function onRequestPost({ request, env }) {
   if (existing) return jsonError('Phòng này đang có phiên Giờ Xanh khác chưa chốt', 400);
 
   const now = new Date().toISOString();
-  const insert = await env.DB.prepare(
-    `INSERT INTO gio_xanh_sessions (room_id, guest_name, phone, status, opened_by, opened_at) VALUES (?, ?, ?, 'open', ?, ?)`
-  ).bind(roomId, guestName.trim(), phone ? (phone.trim() || null) : null, auth.username, now).run();
+  let insert;
+  try {
+    insert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, phone, status, opened_by, opened_at) VALUES (?, ?, ?, 'open', ?, ?)`
+    ).bind(roomId, guestName.trim(), phone ? (phone.trim() || null) : null, auth.username, now).run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+      return jsonError('Phòng này đang có phiên Giờ Xanh khác chưa chốt', 400);
+    }
+    throw err;
+  }
 
   return new Response(JSON.stringify({ id: insert.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

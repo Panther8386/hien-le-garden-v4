@@ -290,4 +290,18 @@ describe('migration 0023', () => {
       ).bind(sessionInsert.meta.last_row_id).run()
     ).rejects.toThrow();
   });
+
+  it('enforces at most one open session per room via a partial unique index', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+
+    await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Test Guest 3', 'open', 'le_tan', '2026-09-04T08:00:00Z')`
+    ).bind(roomRow.id).run();
+
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Test Guest 4', 'open', 'le_tan', '2026-09-04T08:01:00Z')`
+      ).bind(roomRow.id).run()
+    ).rejects.toThrow();
+  });
 });

@@ -33,3 +33,5 @@ CREATE TABLE gio_xanh_session_items (
   voided_at TEXT
 );
 CREATE INDEX idx_gio_xanh_session_items_session ON gio_xanh_session_items(session_id, status);
+
+CREATE UNIQUE INDEX idx_gio_xanh_sessions_one_open_per_room ON gio_xanh_sessions(room_id) WHERE status = 'open';
