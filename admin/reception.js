@@ -594,6 +594,12 @@ async function loadArrivals() {
     btn.addEventListener('click', () => doBookingAction(b.id, 'check-in'));
     actions.appendChild(btn);
 
+    const printBtn = document.createElement('button');
+    printBtn.textContent = '🖨 In phiếu';
+    printBtn.className = 'btn-secondary';
+    printBtn.addEventListener('click', () => window.open(`/admin/stay-registration-print.html?bookingId=${b.id}`, '_blank'));
+    actions.appendChild(printBtn);
+
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Hủy đặt phòng';
     cancelBtn.className = 'btn-secondary';
@@ -629,7 +635,14 @@ async function loadDepartures() {
 
 async function loadInhouse() {
   const bookings = await fetchBookings(`status=checked_in&date=${todayISO()}&view=inhouse`);
-  renderList('inhouseList', bookings, 'Không có khách đang lưu trú nhiều đêm.', () => {});
+  renderList('inhouseList', bookings, 'Không có khách đang lưu trú nhiều đêm.', (actions, b) => {
+    if (currentRole === 'observer') return;
+    const printBtn = document.createElement('button');
+    printBtn.textContent = '🖨 In phiếu';
+    printBtn.className = 'btn-secondary';
+    printBtn.addEventListener('click', () => window.open(`/admin/stay-registration-print.html?bookingId=${b.id}`, '_blank'));
+    actions.appendChild(printBtn);
+  });
 }
 
 async function doBookingAction(id, action) {

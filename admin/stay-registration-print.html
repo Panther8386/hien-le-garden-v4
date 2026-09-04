@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Phiếu đăng ký lưu trú — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+  <style>
+    .form-print { background: #fff; color: #111; padding: 32px; max-width: 700px; margin: 0 auto; font-family: 'Inter', sans-serif; }
+    .form-print h2 { text-align: center; margin-bottom: 4px; }
+    .form-print .subtitle { text-align: center; margin-top: 0; margin-bottom: 24px; opacity: 0.7; }
+    .form-print dl { display: grid; grid-template-columns: 200px 1fr; gap: 8px 12px; margin: 0 0 24px; }
+    .form-print dt { font-weight: 600; }
+    .form-print dd { margin: 0; }
+    .form-print .signatures { display: flex; justify-content: space-between; margin-top: 48px; text-align: center; }
+    .form-print .signatures div { width: 45%; }
+    .form-print .signatures p:first-child { font-weight: 600; }
+    .form-print .signatures .sign-space { height: 64px; }
+    @media print {
+      .no-print { display: none !important; }
+      .form-print { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page page-wide no-print">
+    <h1>In phiếu đăng ký lưu trú</h1>
+    <p id="pageError" class="error"></p>
+
+    <div id="identityForm">
+      <h2>Thông tin định danh khách</h2>
+      <label>Số CCCD/hộ chiếu <input type="text" id="idNumberInput" /></label>
+      <label>Quốc tịch <input type="text" id="nationalityInput" /></label>
+      <button type="button" id="saveIdentityBtn">Lưu</button>
+      <p id="saveError" class="error"></p>
+    </div>
+
+    <button type="button" id="printBtn">🖨 In</button>
+  </div>
+
+  <div id="formPrint" class="form-print"></div>
+
+  <script src="/admin/stay-registration-print.js"></script>
+</body>
+</html>
