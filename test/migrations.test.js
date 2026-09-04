@@ -82,7 +82,7 @@ describe('migration 0016', () => {
 
 describe('migration 0018', () => {
   it('seeds exactly 14 categories with the correct labels and types, including the two requested edits', async () => {
-    const { results } = await env.DB.prepare(`SELECT slug, label, type, is_active FROM finance_categories ORDER BY id`).all();
+    const { results } = await env.DB.prepare(`SELECT slug, label, type, is_active FROM finance_categories WHERE slug != 'khach_vang_lai' ORDER BY id`).all();
     expect(results).toEqual([
       { slug: 'cay_giong', label: 'Cây giống', type: 'expense', is_active: 1 },
       { slug: 'vat_tu', label: 'Vật tư', type: 'expense', is_active: 1 },
@@ -168,5 +168,48 @@ describe('migration 0020', () => {
     ).run();
     const row = await env.DB.prepare(`SELECT id_number, nationality FROM bookings WHERE id = ?`).bind(result.meta.last_row_id).first();
     expect(row).toEqual({ id_number: '079123456789', nationality: 'Việt Nam' });
+  });
+});
+
+describe('migration 0021', () => {
+  it('creates dine_in_menu_items, dine_in_orders, and dine_in_order_items with working relationships', async () => {
+    const menuInsert = await env.DB.prepare(
+      `INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at)
+       VALUES ('Mì Quảng', 'mon_an', 45000, 1, 1, 'system', '2026-09-04T00:00:00Z')`
+    ).run();
+    const menuId = menuInsert.meta.last_row_id;
+
+    const orderInsert = await env.DB.prepare(
+      `INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 1', 'open', 'le_tan', '2026-09-04T08:00:00Z')`
+    ).run();
+    const orderId = orderInsert.meta.last_row_id;
+
+    const itemInsert = await env.DB.prepare(
+      `INSERT INTO dine_in_order_items (order_id, menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, ?, 'Mì Quảng', 45000, 2, 90000, 'posted', 'le_tan', '2026-09-04T08:05:00Z')`
+    ).bind(orderId, menuId).run();
+
+    const menuRow = await env.DB.prepare(`SELECT name, category, price, is_active FROM dine_in_menu_items WHERE id = ?`).bind(menuId).first();
+    expect(menuRow).toEqual({ name: 'Mì Quảng', category: 'mon_an', price: 45000, is_active: 1 });
+
+    const orderRow = await env.DB.prepare(`SELECT table_label, status, total_amount FROM dine_in_orders WHERE id = ?`).bind(orderId).first();
+    expect(orderRow).toEqual({ table_label: 'Bàn 1', status: 'open', total_amount: null });
+
+    const itemRow = await env.DB.prepare(`SELECT order_id, name, quantity, amount, status FROM dine_in_order_items WHERE id = ?`).bind(itemInsert.meta.last_row_id).first();
+    expect(itemRow).toEqual({ order_id: orderId, name: 'Mì Quảng', quantity: 2, amount: 90000, status: 'posted' });
+  });
+
+  it('rejects an invalid dine_in_menu_items category via the CHECK constraint', async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at)
+         VALUES ('X', 'trang_mieng', 10000, 0, 1, 'system', '2026-09-04T00:00:00Z')`
+      ).run()
+    ).rejects.toThrow();
+  });
+
+  it('seeds the "Khách vãng lai" income category', async () => {
+    const row = await env.DB.prepare(`SELECT slug, label, type, is_active FROM finance_categories WHERE slug = 'khach_vang_lai'`).first();
+    expect(row).toEqual({ slug: 'khach_vang_lai', label: 'Khách vãng lai', type: 'income', is_active: 1 });
   });
 });
