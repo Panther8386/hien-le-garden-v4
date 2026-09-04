@@ -29,7 +29,7 @@ export async function onRequestPost({ request, env, params }) {
   let name, unitPrice;
   if (source === 'gio_combo') {
     const combo = await env.DB.prepare(
-      `SELECT name, price_min AS price FROM service_catalog WHERE id = ? AND category = 'luu_tru' AND subgroup = 'Giờ Xanh Hiền Lê' AND is_active = 1`
+      `SELECT name, price_min AS price FROM service_catalog WHERE id = ? AND category = 'luu_tru' AND subgroup = 'Giờ Xanh Hiền Lê' AND is_active = 1 AND price_type IN ('fixed', 'range') AND price_min IS NOT NULL AND price_min > 0`
     ).bind(sourceId).first();
     if (!combo) return jsonError('Combo giờ không tồn tại hoặc đã ngừng áp dụng', 400);
     name = combo.name;

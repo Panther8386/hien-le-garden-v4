@@ -43,7 +43,7 @@ function sessionIdFromQuery() {
     }
     if (catalogResponse.ok) {
       const catalog = await catalogResponse.json();
-      comboItems = catalog.filter((c) => c.category === 'luu_tru' && c.subgroup === 'Giờ Xanh Hiền Lê' && c.isActive);
+      comboItems = catalog.filter((c) => c.category === 'luu_tru' && c.subgroup === 'Giờ Xanh Hiền Lê' && c.isActive && typeof c.priceMin === 'number' && c.priceMin > 0);
       populateComboSelect();
     }
     if (menuResponse.ok) {
