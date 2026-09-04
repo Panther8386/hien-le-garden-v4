@@ -255,3 +255,39 @@ describe('migration 0022', () => {
     expect(firstRow.display_order).toBeLessThan(secondRow.display_order);
   });
 });
+
+describe('migration 0023', () => {
+  it('creates gio_xanh_sessions and gio_xanh_session_items with working relationships', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id, name FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+
+    const sessionInsert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Test Guest', 'open', 'le_tan', '2026-09-04T08:00:00Z')`
+    ).bind(roomRow.id).run();
+    const sessionId = sessionInsert.meta.last_row_id;
+
+    const itemInsert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan', '2026-09-04T08:05:00Z')`
+    ).bind(sessionId).run();
+
+    const sessionRow = await env.DB.prepare(`SELECT room_id, guest_name, status, total_amount FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
+    expect(sessionRow).toEqual({ room_id: roomRow.id, guest_name: 'Test Guest', status: 'open', total_amount: null });
+
+    const itemRow = await env.DB.prepare(`SELECT source, name, amount, status FROM gio_xanh_session_items WHERE id = ?`).bind(itemInsert.meta.last_row_id).first();
+    expect(itemRow).toEqual({ source: 'gio_combo', name: 'Giờ Đầu Tiên', amount: 130000, status: 'posted' });
+  });
+
+  it('rejects an invalid source via the CHECK constraint', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+    const sessionInsert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Test Guest 2', 'open', 'le_tan', '2026-09-04T08:00:00Z')`
+    ).bind(roomRow.id).run();
+
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at)
+         VALUES (?, 'invalid_source', 1, 'X', 10000, 1, 10000, 'posted', 'le_tan', '2026-09-04T08:05:00Z')`
+      ).bind(sessionInsert.meta.last_row_id).run()
+    ).rejects.toThrow();
+  });
+});
