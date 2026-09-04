@@ -26,8 +26,12 @@
       </table>
     </div>
     <form id="monAnAddForm" class="hidden">
-      <label>Tên món ăn mới <input type="text" name="name" required /></label>
+      <label>Tên món ăn mới <input type="text" name="name" required maxlength="200" /></label>
+      <label>Nhóm <input type="text" name="subgroup" list="monAnSubgroupList" maxlength="100" /></label>
+      <datalist id="monAnSubgroupList"></datalist>
       <label>Giá (đ) <input type="number" name="price" min="1" step="1" required /></label>
+      <label>Đơn vị <input type="text" name="unit" maxlength="100" /></label>
+      <label class="checkbox-label"><input type="checkbox" name="requiresPreorder" /> Cần đặt trước</label>
       <button type="submit">+ Thêm món</button>
       <p id="monAnAddError" class="error"></p>
     </form>
@@ -40,8 +44,11 @@
       </table>
     </div>
     <form id="doUongAddForm" class="hidden">
-      <label>Tên thức uống mới <input type="text" name="name" required /></label>
+      <label>Tên thức uống mới <input type="text" name="name" required maxlength="200" /></label>
+      <label>Nhóm <input type="text" name="subgroup" list="doUongSubgroupList" maxlength="100" /></label>
+      <datalist id="doUongSubgroupList"></datalist>
       <label>Giá (đ) <input type="number" name="price" min="1" step="1" required /></label>
+      <label>Đơn vị <input type="text" name="unit" maxlength="100" /></label>
       <button type="submit">+ Thêm thức uống</button>
       <p id="doUongAddError" class="error"></p>
     </form>

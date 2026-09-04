@@ -43,40 +43,160 @@ async function loadMenu() {
   menuItems = await response.json();
   renderTable('mon_an', document.querySelector('#monAnTable tbody'));
   renderTable('do_uong', document.querySelector('#doUongTable tbody'));
+  populateSubgroupDatalist('mon_an', document.getElementById('monAnSubgroupList'));
+  populateSubgroupDatalist('do_uong', document.getElementById('doUongSubgroupList'));
+}
+
+function populateSubgroupDatalist(category, datalistEl) {
+  datalistEl.innerHTML = '';
+  const seen = new Set();
+  menuItems.filter((m) => m.category === category && m.subgroup).forEach((m) => {
+    if (seen.has(m.subgroup)) return;
+    seen.add(m.subgroup);
+    const option = document.createElement('option');
+    option.value = m.subgroup;
+    datalistEl.appendChild(option);
+  });
+}
+
+function groupByOrder(category) {
+  const groupOrder = [];
+  const groups = {};
+  menuItems.filter((m) => m.category === category).forEach((m) => {
+    const key = m.subgroup || '';
+    if (!(key in groups)) {
+      groups[key] = [];
+      groupOrder.push(key);
+    }
+    groups[key].push(m);
+  });
+  return { groupOrder, groups };
 }
 
 function renderTable(category, tbody) {
   tbody.innerHTML = '';
-  menuItems.filter((m) => m.category === category).forEach((m) => {
-    const tr = document.createElement('tr');
-    if (!m.isActive) tr.style.opacity = '0.5';
+  const { groupOrder, groups } = groupByOrder(category);
+  const isMonAn = category === 'mon_an';
 
-    const tdName = document.createElement('td');
-    tdName.textContent = m.name;
+  groupOrder.forEach((subgroup, groupIndex) => {
+    if (subgroup) {
+      const headerRow = document.createElement('tr');
+      const headerCell = document.createElement('td');
+      headerCell.colSpan = 4;
+      headerCell.style.fontWeight = '600';
+      headerCell.append(subgroup + ' ');
 
-    const tdPrice = document.createElement('td');
-    tdPrice.textContent = `${m.price.toLocaleString('vi-VN')}đ`;
+      if (currentRole === 'admin') {
+        const upGroupBtn = document.createElement('button');
+        upGroupBtn.type = 'button';
+        upGroupBtn.className = 'btn-secondary';
+        upGroupBtn.textContent = '▲';
+        upGroupBtn.disabled = groupIndex === 0;
+        upGroupBtn.addEventListener('click', () => moveGroupHandler(category, subgroup, 'up'));
+        const downGroupBtn = document.createElement('button');
+        downGroupBtn.type = 'button';
+        downGroupBtn.className = 'btn-secondary';
+        downGroupBtn.textContent = '▼';
+        downGroupBtn.disabled = groupIndex === groupOrder.length - 1;
+        downGroupBtn.addEventListener('click', () => moveGroupHandler(category, subgroup, 'down'));
+        headerCell.append(upGroupBtn, downGroupBtn);
+      }
 
-    const tdStatus = document.createElement('td');
-    tdStatus.textContent = m.isActive ? 'Đang bán' : 'Đã ẩn';
-
-    const tdActions = document.createElement('td');
-    if (currentRole === 'admin') {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.textContent = 'Sửa';
-      editBtn.addEventListener('click', () => editItem(m));
-      const toggleBtn = document.createElement('button');
-      toggleBtn.type = 'button';
-      toggleBtn.className = 'btn-secondary';
-      toggleBtn.textContent = m.isActive ? 'Ẩn' : 'Hiện lại';
-      toggleBtn.addEventListener('click', () => toggleActive(m));
-      tdActions.append(editBtn, toggleBtn);
+      headerRow.appendChild(headerCell);
+      tbody.appendChild(headerRow);
     }
 
-    tr.append(tdName, tdPrice, tdStatus, tdActions);
-    tbody.appendChild(tr);
+    const items = groups[subgroup];
+    items.forEach((m, itemIndex) => {
+      const tr = document.createElement('tr');
+      if (!m.isActive) tr.style.opacity = '0.5';
+
+      const tdName = document.createElement('td');
+      tdName.textContent = m.name;
+
+      const tdPrice = document.createElement('td');
+      const unitSuffix = m.unit ? `/${m.unit}` : '';
+      tdPrice.textContent = `${m.price.toLocaleString('vi-VN')}đ${unitSuffix}`;
+      if (isMonAn && m.requiresPreorder) {
+        const badge = document.createElement('span');
+        badge.textContent = ' ⚠ Đặt trước';
+        tdPrice.appendChild(badge);
+      }
+
+      const tdStatus = document.createElement('td');
+      tdStatus.textContent = m.isActive ? 'Đang bán' : 'Đã ẩn';
+
+      const tdActions = document.createElement('td');
+      if (currentRole === 'admin') {
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'btn-secondary';
+        upBtn.textContent = '▲';
+        upBtn.disabled = itemIndex === 0;
+        upBtn.addEventListener('click', () => moveItemHandler(m.id, 'up'));
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'btn-secondary';
+        downBtn.textContent = '▼';
+        downBtn.disabled = itemIndex === items.length - 1;
+        downBtn.addEventListener('click', () => moveItemHandler(m.id, 'down'));
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.textContent = 'Sửa';
+        editBtn.addEventListener('click', () => editItem(m));
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'btn-secondary';
+        toggleBtn.textContent = m.isActive ? 'Ẩn' : 'Hiện lại';
+        toggleBtn.addEventListener('click', () => toggleActive(m));
+        tdActions.append(upBtn, downBtn, editBtn, toggleBtn);
+
+        if (isMonAn) {
+          const preorderBtn = document.createElement('button');
+          preorderBtn.type = 'button';
+          preorderBtn.className = 'btn-secondary';
+          preorderBtn.textContent = m.requiresPreorder ? 'Bỏ đặt trước' : 'Cần đặt trước';
+          preorderBtn.addEventListener('click', () => togglePreorder(m));
+          tdActions.append(preorderBtn);
+        }
+      }
+
+      tr.append(tdName, tdPrice, tdStatus, tdActions);
+      tbody.appendChild(tr);
+    });
   });
+}
+
+async function moveItemHandler(itemId, direction) {
+  const errorEl = document.getElementById('pageError');
+  errorEl.textContent = '';
+  const response = await fetch(`/api/dine-in-menu/${itemId}/move`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi đổi thứ tự món';
+    return;
+  }
+  await loadMenu();
+}
+
+async function moveGroupHandler(category, subgroup, direction) {
+  const errorEl = document.getElementById('pageError');
+  errorEl.textContent = '';
+  const response = await fetch('/api/dine-in-menu/move-group', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, subgroup, direction }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi đổi thứ tự nhóm';
+    return;
+  }
+  await loadMenu();
 }
 
 async function editItem(item) {
@@ -94,11 +214,17 @@ async function editItem(item) {
     return;
   }
 
+  const newSubgroupStr = window.prompt('Nhóm (để trống nếu không có):', item.subgroup || '');
+  if (newSubgroupStr === null) return;
+
+  const newUnitStr = window.prompt('Đơn vị (để trống nếu không có):', item.unit || '');
+  if (newUnitStr === null) return;
+
   errorEl.textContent = '';
   const response = await fetch(`/api/dine-in-menu/${item.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: trimmedName, price: newPrice }),
+    body: JSON.stringify({ name: trimmedName, price: newPrice, subgroup: newSubgroupStr.trim() || null, unit: newUnitStr.trim() || null }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -124,14 +250,33 @@ async function toggleActive(item) {
   await loadMenu();
 }
 
-function wireAddForm(formId, errorId, category) {
+async function togglePreorder(item) {
+  const errorEl = document.getElementById('pageError');
+  errorEl.textContent = '';
+  const response = await fetch(`/api/dine-in-menu/${item.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requiresPreorder: !item.requiresPreorder }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi cập nhật cờ đặt trước';
+    return;
+  }
+  await loadMenu();
+}
+
+function wireAddForm(formId, errorId, category, includePreorder) {
   const form = document.getElementById(formId);
   const errorEl = document.getElementById(errorId);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorEl.textContent = '';
     const name = form.querySelector('[name="name"]').value.trim();
+    const subgroup = form.querySelector('[name="subgroup"]').value.trim();
     const price = Number(form.querySelector('[name="price"]').value);
+    const unit = form.querySelector('[name="unit"]').value.trim();
+    const requiresPreorder = includePreorder ? form.querySelector('[name="requiresPreorder"]').checked : false;
     if (!name) {
       errorEl.textContent = 'Vui lòng nhập tên món';
       return;
@@ -143,7 +288,7 @@ function wireAddForm(formId, errorId, category) {
     const response = await fetch('/api/dine-in-menu', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, category, price }),
+      body: JSON.stringify({ name, category, price, subgroup: subgroup || undefined, unit: unit || undefined, requiresPreorder }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -155,5 +300,5 @@ function wireAddForm(formId, errorId, category) {
   });
 }
 
-wireAddForm('monAnAddForm', 'monAnAddError', 'mon_an');
-wireAddForm('doUongAddForm', 'doUongAddError', 'do_uong');
+wireAddForm('monAnAddForm', 'monAnAddError', 'mon_an', true);
+wireAddForm('doUongAddForm', 'doUongAddError', 'do_uong', false);
