@@ -351,4 +351,36 @@ describe('POST /api/gio-xanh-sessions/:id/close', () => {
     const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'gio_xanh_hien_le'`).first();
     expect(txCount.n).toBe(1);
   });
+
+  it('rolls back the finance_transactions row and returns 500 if the session UPDATE throws after the finance INSERT already succeeded', async () => {
+    const originalPrepare = env.DB.prepare.bind(env.DB);
+    const failingDB = {
+      prepare(sql) {
+        if (typeof sql === 'string' && sql.trim().startsWith(`UPDATE gio_xanh_sessions`)) {
+          return {
+            bind() {
+              return {
+                async run() {
+                  throw new Error('Simulated DB failure between finance INSERT and session UPDATE');
+                },
+              };
+            },
+          };
+        }
+        return originalPrepare(sql);
+      },
+    };
+    const failingEnv = { ...env, DB: failingDB };
+
+    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env: failingEnv, params: { id: String(sessionId) } });
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(typeof body.error).toBe('string');
+
+    const txCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'gio_xanh_hien_le'`).first();
+    expect(txCount.n).toBe(0);
+
+    const sessionRow = await env.DB.prepare(`SELECT status FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
+    expect(sessionRow.status).toBe('open');
+  });
 });
