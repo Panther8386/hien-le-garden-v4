@@ -89,17 +89,23 @@ function renderTable(category, tbody) {
       if (currentRole === 'admin') {
         const upGroupBtn = document.createElement('button');
         upGroupBtn.type = 'button';
-        upGroupBtn.className = 'btn-secondary';
+        upGroupBtn.className = 'btn-secondary table-actions-btn';
         upGroupBtn.textContent = '▲';
         upGroupBtn.disabled = groupIndex === 0;
         upGroupBtn.addEventListener('click', () => moveGroupHandler(category, subgroup, 'up'));
         const downGroupBtn = document.createElement('button');
         downGroupBtn.type = 'button';
-        downGroupBtn.className = 'btn-secondary';
+        downGroupBtn.className = 'btn-secondary table-actions-btn';
         downGroupBtn.textContent = '▼';
         downGroupBtn.disabled = groupIndex === groupOrder.length - 1;
         downGroupBtn.addEventListener('click', () => moveGroupHandler(category, subgroup, 'down'));
-        headerCell.append(upGroupBtn, downGroupBtn);
+        const renameGroupBtn = document.createElement('button');
+        renameGroupBtn.type = 'button';
+        renameGroupBtn.className = 'btn-secondary table-actions-btn';
+        renameGroupBtn.textContent = '✎';
+        renameGroupBtn.title = 'Sửa tên nhóm';
+        renameGroupBtn.addEventListener('click', () => renameGroupHandler(category, subgroup));
+        headerCell.append(upGroupBtn, downGroupBtn, renameGroupBtn);
       }
 
       headerRow.appendChild(headerCell);
@@ -130,23 +136,24 @@ function renderTable(category, tbody) {
       if (currentRole === 'admin') {
         const upBtn = document.createElement('button');
         upBtn.type = 'button';
-        upBtn.className = 'btn-secondary';
+        upBtn.className = 'btn-secondary table-actions-btn';
         upBtn.textContent = '▲';
         upBtn.disabled = itemIndex === 0;
         upBtn.addEventListener('click', () => moveItemHandler(m.id, 'up'));
         const downBtn = document.createElement('button');
         downBtn.type = 'button';
-        downBtn.className = 'btn-secondary';
+        downBtn.className = 'btn-secondary table-actions-btn';
         downBtn.textContent = '▼';
         downBtn.disabled = itemIndex === items.length - 1;
         downBtn.addEventListener('click', () => moveItemHandler(m.id, 'down'));
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
+        editBtn.className = 'table-actions-btn';
         editBtn.textContent = 'Sửa';
         editBtn.addEventListener('click', () => startEdit(m));
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
-        toggleBtn.className = 'btn-secondary';
+        toggleBtn.className = 'btn-secondary table-actions-btn';
         toggleBtn.textContent = m.isActive ? 'Ẩn' : 'Hiện lại';
         toggleBtn.addEventListener('click', () => toggleActive(m));
         tdActions.append(upBtn, downBtn, editBtn, toggleBtn);
@@ -185,6 +192,27 @@ async function moveGroupHandler(category, subgroup, direction) {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi đổi thứ tự nhóm';
+    return;
+  }
+  await loadMenu();
+}
+
+async function renameGroupHandler(category, subgroup) {
+  const newSubgroup = window.prompt('Đổi tên nhóm:', subgroup);
+  if (newSubgroup === null) return;
+  const trimmed = newSubgroup.trim();
+  const errorEl = document.getElementById('pageError');
+  if (!trimmed || trimmed === subgroup) return;
+
+  errorEl.textContent = '';
+  const response = await fetch('/api/dine-in-menu/rename-group', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, subgroup, newSubgroup: trimmed }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi đổi tên nhóm';
     return;
   }
   await loadMenu();

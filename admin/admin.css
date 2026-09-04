@@ -265,6 +265,7 @@ th { color: var(--gold); font-weight: 600; }
 .room-filters { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .room-layout-history { margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); }
 .room-card button { margin-top: 8px; width: auto; padding: 6px 10px; font-size: 0.8rem; }
+.table-actions-btn { width: auto; padding: 6px 10px; font-size: 0.8rem; margin: 2px 4px 2px 0; }
 
 .services-section { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(245, 240, 230, 0.15); }
 .service-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

@@ -4,6 +4,7 @@ import { onRequestGet as listMenu, onRequestPost as createMenuItem } from '../fu
 import { onRequestPatch as patchMenuItem } from '../functions/api/dine-in-menu/[id].js';
 import { onRequestPatch as moveItem } from '../functions/api/dine-in-menu/[id]/move.js';
 import { onRequestPost as moveGroup } from '../functions/api/dine-in-menu/move-group.js';
+import { onRequestPost as renameGroup } from '../functions/api/dine-in-menu/rename-group.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -286,5 +287,66 @@ describe('POST /api/dine-in-menu/move-group', () => {
     expect(response.status).toBe(200);
     const { results } = await env.DB.prepare(`SELECT id FROM dine_in_menu_items WHERE category = 'mon_an' ORDER BY display_order`).all();
     expect(results.map((r) => r.id)).toEqual([idA1, idA2, idB1, idC1]);
+  });
+});
+
+describe('POST /api/dine-in-menu/rename-group', () => {
+  let idA1, idA2, idB1;
+  beforeEach(async () => {
+    const a1 = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Hải sản A', 'mon_an', 100000, 'Hải sản', 0, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const a2 = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Hải sản B', 'mon_an', 100000, 'Hải sản', 1, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const b1 = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Món gà A', 'mon_an', 100000, 'Món gà', 2, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    idA1 = a1.meta.last_row_id; idA2 = a2.meta.last_row_id; idB1 = b1.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await renameGroup({ request: new Request('https://x/api/dine-in-menu/rename-group', { method: 'POST' }), env });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects non-admin roles (403)', async () => {
+    const response = await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', managerToken, 'POST', { category: 'mon_an', subgroup: 'Hải sản', newSubgroup: 'Hải Sản Tươi' }), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent subgroup', async () => {
+    const response = await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', adminToken, 'POST', { category: 'mon_an', subgroup: 'Không tồn tại', newSubgroup: 'X' }), env });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a new name colliding with a different existing subgroup (400)', async () => {
+    const response = await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', adminToken, 'POST', { category: 'mon_an', subgroup: 'Hải sản', newSubgroup: 'Món gà' }), env });
+    expect(response.status).toBe(400);
+    const { results } = await env.DB.prepare(`SELECT subgroup FROM dine_in_menu_items WHERE id = ?`).bind(idA1).all();
+    expect(results[0].subgroup).toBe('Hải sản');
+  });
+
+  it('rejects renaming to the same name (400)', async () => {
+    const response = await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', adminToken, 'POST', { category: 'mon_an', subgroup: 'Hải sản', newSubgroup: 'Hải sản' }), env });
+    expect(response.status).toBe(400);
+  });
+
+  it('renames every item in the group and writes one audit_log row', async () => {
+    const response = await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', adminToken, 'POST', { category: 'mon_an', subgroup: 'Hải sản', newSubgroup: 'Hải Sản Tươi' }), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.updated).toBe(2);
+
+    const { results } = await env.DB.prepare(`SELECT id, subgroup, display_order FROM dine_in_menu_items WHERE category = 'mon_an' ORDER BY display_order`).all();
+    expect(results).toEqual([
+      { id: idA1, subgroup: 'Hải Sản Tươi', display_order: 0 },
+      { id: idA2, subgroup: 'Hải Sản Tươi', display_order: 1 },
+      { id: idB1, subgroup: 'Món gà', display_order: 2 },
+    ]);
+
+    const auditCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'dine_in_menu_item_update' AND old_value = 'Hải sản' AND new_value = 'Hải Sản Tươi'`).first();
+    expect(auditCount.n).toBe(1);
+  });
+
+  it('does not touch items in a different category with the same subgroup name', async () => {
+    await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Cà phê', 'do_uong', 25000, 'Hải sản', 0, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    await renameGroup({ request: authedRequest('https://x/api/dine-in-menu/rename-group', adminToken, 'POST', { category: 'mon_an', subgroup: 'Hải sản', newSubgroup: 'Hải Sản Tươi' }), env });
+    const { results } = await env.DB.prepare(`SELECT subgroup FROM dine_in_menu_items WHERE category = 'do_uong'`).all();
+    expect(results[0].subgroup).toBe('Hải sản');
   });
 });
