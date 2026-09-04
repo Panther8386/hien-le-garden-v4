@@ -156,6 +156,30 @@ describe('PATCH /api/dine-in-menu/:id', () => {
     expect(row).toEqual({ subgroup: 'Món gà', unit: 'phần', requires_preorder: 1 });
   });
 
+  it('records a diffable audit_log row when only subgroup changes (name/price/isActive unchanged)', async () => {
+    const created = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Cá tầm nướng', 'mon_an', 210000, 5, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const id = created.meta.last_row_id;
+
+    const response = await patchMenuItem({ request: authedRequest(`https://x/api/dine-in-menu/${id}`, adminToken, 'PATCH', { subgroup: 'Món gà' }), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
+
+    const auditRow = await env.DB.prepare(`SELECT old_value, new_value FROM audit_log WHERE action_type = 'dine_in_menu_item_update' AND entity_id = ?`).bind(id).first();
+    expect(auditRow.old_value).not.toBe(auditRow.new_value);
+  });
+
+  it('PATCH forces requiresPreorder to false for a do_uong item', async () => {
+    const created = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, display_order, is_active, updated_by, updated_at) VALUES ('Cà phê sữa', 'do_uong', 25000, 0, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
+    const id = created.meta.last_row_id;
+
+    // Note: the PATCH endpoint's response body is `{ ok: true }` only (unlike POST, it
+    // does not echo the updated record), so this asserts the persisted DB state.
+    const response = await patchMenuItem({ request: authedRequest(`https://x/api/dine-in-menu/${id}`, adminToken, 'PATCH', { requiresPreorder: true }), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT requires_preorder FROM dine_in_menu_items WHERE id = ?`).bind(id).first();
+    expect(row.requires_preorder).toBe(0);
+  });
+
   it('moving an item to a different subgroup keeps display_order contiguous within the new group', async () => {
     const a = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Món gà 1', 'mon_an', 100000, 'Món gà', 0, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();
     const b = await env.DB.prepare(`INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Hải sản 1', 'mon_an', 100000, 'Hải sản', 1, 1, 'admin_menu', '2026-09-04T00:00:00Z')`).run();

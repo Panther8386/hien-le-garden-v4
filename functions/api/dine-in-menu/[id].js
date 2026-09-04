@@ -49,8 +49,8 @@ export async function onRequestPatch({ request, env, params }) {
     ).bind(
       params.id,
       trimmedName,
-      `${existing.name} — ${existing.price.toLocaleString('vi-VN')}đ (${existing.is_active ? 'active' : 'inactive'})`,
-      `${trimmedName} — ${price.toLocaleString('vi-VN')}đ (${isActive ? 'active' : 'inactive'})`,
+      `${existing.name} — ${existing.price.toLocaleString('vi-VN')}đ (${existing.is_active ? 'active' : 'inactive'}) — nhóm: ${existing.subgroup || '(không có)'} — đơn vị: ${existing.unit || '(không có)'} — đặt trước: ${existing.requires_preorder ? 'có' : 'không'}`,
+      `${trimmedName} — ${price.toLocaleString('vi-VN')}đ (${isActive ? 'active' : 'inactive'}) — nhóm: ${trimmedSubgroup || '(không có)'} — đơn vị: ${trimmedUnit || '(không có)'} — đặt trước: ${resolvedPreorder ? 'có' : 'không'}`,
       auth.username,
       now
     ),

@@ -61,7 +61,7 @@ function populateSubgroupDatalist(category, datalistEl) {
 
 function groupByOrder(category) {
   const groupOrder = [];
-  const groups = {};
+  const groups = Object.create(null);
   menuItems.filter((m) => m.category === category).forEach((m) => {
     const key = m.subgroup || '';
     if (!(key in groups)) {

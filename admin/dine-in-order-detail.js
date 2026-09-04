@@ -52,7 +52,7 @@ function populateMenuSelect() {
 
   ['mon_an', 'do_uong'].forEach((category) => {
     const groupOrder = [];
-    const groups = {};
+    const groups = Object.create(null);
     menuItems.filter((m) => m.category === category).forEach((m) => {
       const key = m.subgroup || (category === 'mon_an' ? 'Món ăn khác' : 'Thức uống khác');
       if (!(key in groups)) {

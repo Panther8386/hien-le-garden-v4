@@ -21,7 +21,7 @@ export async function onRequestPatch({ request, env, params }) {
   if (direction !== 'up' && direction !== 'down') return jsonError('Hướng di chuyển không hợp lệ', 400);
 
   const { results: siblings } = await env.DB.prepare(
-    `SELECT id, display_order FROM dine_in_menu_items WHERE category = ? AND (subgroup = ? OR (subgroup IS NULL AND ? IS NULL)) ORDER BY display_order`
+    `SELECT id, display_order FROM dine_in_menu_items WHERE category = ? AND (subgroup = ? OR (subgroup IS NULL AND ? IS NULL)) ORDER BY display_order, id`
   ).bind(item.category, item.subgroup, item.subgroup).all();
 
   const index = siblings.findIndex((s) => s.id === item.id);
