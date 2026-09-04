@@ -49,19 +49,32 @@ function orderIdFromQuery() {
 function populateMenuSelect() {
   const select = document.querySelector('#addItemForm select[name="menuItemId"]');
   select.innerHTML = '<option value="">-- Chọn món --</option>';
-  const groups = { mon_an: 'Món ăn', do_uong: 'Thức uống' };
-  Object.entries(groups).forEach(([category, label]) => {
-    const items = menuItems.filter((m) => m.category === category);
-    if (items.length === 0) return;
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = label;
-    items.forEach((m) => {
-      const option = document.createElement('option');
-      option.value = m.id;
-      option.textContent = `${m.name} — ${m.price.toLocaleString('vi-VN')}đ`;
-      optgroup.appendChild(option);
+
+  ['mon_an', 'do_uong'].forEach((category) => {
+    const groupOrder = [];
+    const groups = {};
+    menuItems.filter((m) => m.category === category).forEach((m) => {
+      const key = m.subgroup || (category === 'mon_an' ? 'Món ăn khác' : 'Thức uống khác');
+      if (!(key in groups)) {
+        groups[key] = [];
+        groupOrder.push(key);
+      }
+      groups[key].push(m);
     });
-    select.appendChild(optgroup);
+
+    groupOrder.forEach((key) => {
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = key;
+      groups[key].forEach((m) => {
+        const option = document.createElement('option');
+        option.value = m.id;
+        const unitSuffix = m.unit ? `/${m.unit}` : '';
+        const preorderSuffix = m.requiresPreorder ? ' ⚠ Đặt trước' : '';
+        option.textContent = `${m.name} — ${m.price.toLocaleString('vi-VN')}đ${unitSuffix}${preorderSuffix}`;
+        optgroup.appendChild(option);
+      });
+      select.appendChild(optgroup);
+    });
   });
 }
 
