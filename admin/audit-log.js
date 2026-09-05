@@ -19,6 +19,7 @@ const ACTION_TYPE_LABELS = {
   dine_in_menu_item_update: 'Sửa món trong menu',
   dine_in_order_void: 'Huỷ bàn order ăn uống',
   gio_xanh_session_void: 'Huỷ phiên Giờ Xanh',
+  record_hide: 'Ẩn/hiện bản ghi',
 };
 
 function formatVnd(n) {

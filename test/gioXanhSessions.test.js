@@ -6,6 +6,7 @@ import { onRequestPost as addItem } from '../functions/api/gio-xanh-sessions/[id
 import { onRequestPatch as voidItem } from '../functions/api/gio-xanh-sessions/[id]/items/[itemId].js';
 import { onRequestPost as voidSession } from '../functions/api/gio-xanh-sessions/[id]/void.js';
 import { onRequestPost as closeSession } from '../functions/api/gio-xanh-sessions/[id]/close.js';
+import { onRequestPatch as hideSession } from '../functions/api/gio-xanh-sessions/[id]/hide.js';
 import { createSession as createStaffSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -445,5 +446,77 @@ describe('POST /api/gio-xanh-sessions/:id/close', () => {
 
     const sessionRow = await env.DB.prepare(`SELECT status FROM gio_xanh_sessions WHERE id = ?`).bind(sessionId).first();
     expect(sessionRow.status).toBe('open');
+  });
+});
+
+describe('GET /api/gio-xanh-sessions — is_hidden filtering', () => {
+  it('excludes hidden sessions by default', async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Khách Ẩn', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z', 1)`).bind(roomId1).run();
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions?status=closed', adminToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((s) => s.id === session.meta.last_row_id)).toBeUndefined();
+  });
+
+  it('includes hidden sessions when includeHidden=1 and role is admin', async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Khách Ẩn', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z', 1)`).bind(roomId1).run();
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions?status=closed&includeHidden=1', adminToken, 'GET'), env });
+    const body = await response.json();
+    const found = body.find((s) => s.id === session.meta.last_row_id);
+    expect(found).toBeTruthy();
+    expect(found.isHidden).toBe(true);
+  });
+
+  it('ignores includeHidden=1 for a non-admin role', async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Khách Ẩn', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z', 1)`).bind(roomId1).run();
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions?status=closed&includeHidden=1', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((s) => s.id === session.meta.last_row_id)).toBeUndefined();
+  });
+});
+
+describe('PATCH /api/gio-xanh-sessions/:id/hide', () => {
+  let closedSessionId, openSessionId;
+  beforeEach(async () => {
+    const closed = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách Đã Chốt', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z')`).bind(roomId1).run();
+    closedSessionId = closed.meta.last_row_id;
+    const open = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách Đang Mở', 'open', 'le_tan_gx', '2026-09-05T08:00:00Z')`).bind(roomId2).run();
+    openSessionId = open.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await hideSession({ request: new Request(`https://x/api/gio-xanh-sessions/${closedSessionId}/hide`, { method: 'PATCH' }), env, params: { id: String(closedSessionId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects manager (403) — hiding is admin-only', async () => {
+    const response = await hideSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${closedSessionId}/hide`, managerToken, 'PATCH', { hidden: true }), env, params: { id: String(closedSessionId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent session', async () => {
+    const response = await hideSession({ request: authedRequest('https://x/api/gio-xanh-sessions/999999/hide', adminToken, 'PATCH', { hidden: true }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects hiding a session that is still open (400)', async () => {
+    const response = await hideSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${openSessionId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(openSessionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('hides a closed session and writes a record_hide audit_log row', async () => {
+    const response = await hideSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${closedSessionId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(closedSessionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(closedSessionId).first();
+    expect(row.is_hidden).toBe(1);
+    const auditRow = await env.DB.prepare(`SELECT action_type, entity_type, old_value, new_value FROM audit_log WHERE entity_type = 'gio_xanh_session' AND entity_id = ?`).bind(closedSessionId).first();
+    expect(auditRow).toEqual({ action_type: 'record_hide', entity_type: 'gio_xanh_session', old_value: 'hiện', new_value: 'ẩn' });
+  });
+
+  it('unhides a hidden session (hidden: false)', async () => {
+    await env.DB.prepare(`UPDATE gio_xanh_sessions SET is_hidden = 1 WHERE id = ?`).bind(closedSessionId).run();
+    const response = await hideSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${closedSessionId}/hide`, adminToken, 'PATCH', { hidden: false }), env, params: { id: String(closedSessionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(closedSessionId).first();
+    expect(row.is_hidden).toBe(0);
   });
 });
