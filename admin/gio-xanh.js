@@ -17,11 +17,17 @@ let currentRole = null;
   currentRole = role;
 
   await loadSessions();
+  await loadSessionHistory();
 
   if (currentRole !== 'observer') {
     document.getElementById('openSessionForm').classList.remove('hidden');
     await populateRoomSelect();
   }
+
+  if (currentRole === 'admin') {
+    document.getElementById('showHiddenSessionsWrap').classList.remove('hidden');
+  }
+  document.getElementById('showHiddenSessions').addEventListener('change', loadSessionHistory);
 })();
 
 async function populateRoomSelect() {
@@ -138,3 +144,89 @@ document.getElementById('openSessionForm').addEventListener('submit', async (eve
   const result = await response.json();
   window.location.href = `/admin/gio-xanh-detail.html?sessionId=${result.id}`;
 });
+
+async function loadSessionHistory() {
+  const errorEl = document.getElementById('pageError');
+  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenSessions').checked;
+  const suffix = showHidden ? '&includeHidden=1' : '';
+  let closedRes, voidedRes;
+  try {
+    [closedRes, voidedRes] = await Promise.all([
+      fetch(`/api/gio-xanh-sessions?status=closed${suffix}`),
+      fetch(`/api/gio-xanh-sessions?status=voided${suffix}`),
+    ]);
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tải lịch sử phiên';
+    return;
+  }
+  if (!closedRes.ok || !voidedRes.ok) {
+    errorEl.textContent = 'Có lỗi khi tải lịch sử phiên';
+    return;
+  }
+  const closed = await closedRes.json();
+  const voided = await voidedRes.json();
+  const all = [...closed, ...voided].sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+  renderHistoryGrid(all);
+}
+
+function renderHistoryGrid(sessions) {
+  const grid = document.getElementById('sessionHistoryGrid');
+  const emptyState = document.getElementById('historyEmptyState');
+  grid.innerHTML = '';
+  if (sessions.length === 0) {
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+
+  sessions.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'gio-xanh-card';
+    if (s.isHidden) card.style.opacity = '0.5';
+
+    const roomLabel = document.createElement('div');
+    roomLabel.className = 'room-label';
+    roomLabel.textContent = s.roomName;
+
+    const guestLabel = document.createElement('div');
+    guestLabel.textContent = s.guestName;
+
+    const statusLabel = document.createElement('div');
+    statusLabel.textContent = s.status === 'closed' ? 'Đã chốt' : 'Đã huỷ';
+
+    const total = document.createElement('div');
+    total.className = 'session-total';
+    total.textContent = `${s.currentTotal.toLocaleString('vi-VN')}đ`;
+
+    card.append(roomLabel, guestLabel, statusLabel, total);
+
+    if (currentRole === 'admin') {
+      const hideBtn = document.createElement('button');
+      hideBtn.type = 'button';
+      hideBtn.className = 'btn-secondary table-actions-btn';
+      hideBtn.textContent = s.isHidden ? 'Hiện' : 'Ẩn';
+      hideBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const errorEl = document.getElementById('pageError');
+        errorEl.textContent = '';
+        const response = await fetch(`/api/gio-xanh-sessions/${s.id}/hide`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hidden: !s.isHidden }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          errorEl.textContent = body.error || 'Có lỗi khi ẩn/hiện phiên';
+          return;
+        }
+        await loadSessionHistory();
+      });
+      card.appendChild(hideBtn);
+    }
+
+    card.addEventListener('click', () => {
+      window.location.href = `/admin/gio-xanh-detail.html?sessionId=${s.id}`;
+    });
+    grid.appendChild(card);
+  });
+}
