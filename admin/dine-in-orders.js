@@ -108,6 +108,7 @@ document.getElementById('openTableForm').addEventListener('submit', async (event
 
 async function loadOrderHistory() {
   const errorEl = document.getElementById('pageError');
+  errorEl.textContent = '';
   const showHidden = currentRole === 'admin' && document.getElementById('showHiddenOrders').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
   let closedRes, voidedRes;

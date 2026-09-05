@@ -22,6 +22,12 @@ const ACTION_TYPE_LABELS = {
   record_hide: 'Ẩn/hiện bản ghi',
 };
 
+const RECORD_HIDE_ENTITY_LABELS = {
+  gio_xanh_session: 'Ẩn/hiện phiên Giờ Xanh',
+  dine_in_order: 'Ẩn/hiện bàn Order ăn uống',
+  booking: 'Ẩn/hiện đặt phòng',
+};
+
 function formatVnd(n) {
   return `${Number(n).toLocaleString('vi-VN')} đ`;
 }
@@ -69,7 +75,9 @@ function renderTable(entries) {
     tdTime.textContent = new Date(entry.createdAt).toLocaleString('vi-VN');
 
     const tdType = document.createElement('td');
-    tdType.textContent = ACTION_TYPE_LABELS[entry.actionType] || entry.actionType;
+    tdType.textContent = entry.actionType === 'record_hide'
+      ? (RECORD_HIDE_ENTITY_LABELS[entry.entityType] || ACTION_TYPE_LABELS[entry.actionType])
+      : (ACTION_TYPE_LABELS[entry.actionType] || entry.actionType);
 
     const tdActor = document.createElement('td');
     tdActor.textContent = entry.actor;

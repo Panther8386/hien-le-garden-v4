@@ -8,7 +8,10 @@ export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, ['admin']);
   if (auth instanceof Response) return auth;
 
-  const session = await env.DB.prepare(`SELECT id, status, is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(params.id).first();
+  const session = await env.DB.prepare(
+    `SELECT s.id, s.status, s.is_hidden, s.guest_name AS guestName, r.name AS roomName
+     FROM gio_xanh_sessions s JOIN rooms r ON r.id = s.room_id WHERE s.id = ?`
+  ).bind(params.id).first();
   if (!session) return jsonError('Không tìm thấy phiên', 404);
   if (session.status !== 'closed' && session.status !== 'voided') {
     return jsonError('Chỉ có thể ẩn phiên đã chốt hoặc đã huỷ', 400);
@@ -29,7 +32,7 @@ export async function onRequestPatch({ request, env, params }) {
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
        VALUES ('record_hide', 'gio_xanh_session', ?, ?, ?, ?, ?, ?)`
-    ).bind(params.id, `Phiên #${params.id}`, session.is_hidden ? 'ẩn' : 'hiện', hidden ? 'ẩn' : 'hiện', auth.username, now),
+    ).bind(params.id, `${session.guestName} — ${session.roomName}`, session.is_hidden ? 'ẩn' : 'hiện', hidden ? 'ẩn' : 'hiện', auth.username, now),
   ]);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });

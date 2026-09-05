@@ -568,6 +568,7 @@ function renderList(containerId, bookings, emptyText, buildActions) {
   bookings.forEach((b) => {
     const { card, actions } = renderBookingCard(b);
     buildActions(actions, b);
+    if (b.isHidden) card.style.opacity = '0.5';
     container.appendChild(card);
   });
 }

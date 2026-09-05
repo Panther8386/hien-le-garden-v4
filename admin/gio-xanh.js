@@ -147,6 +147,7 @@ document.getElementById('openSessionForm').addEventListener('submit', async (eve
 
 async function loadSessionHistory() {
   const errorEl = document.getElementById('pageError');
+  errorEl.textContent = '';
   const showHidden = currentRole === 'admin' && document.getElementById('showHiddenSessions').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
   let closedRes, voidedRes;
