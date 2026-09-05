@@ -53,12 +53,16 @@ let catalogItems = [];
   document.getElementById('roomDateFilter').value = todayISO();
   document.getElementById('roomDateFilter').addEventListener('change', loadRooms);
   document.getElementById('roomStatusFilter').addEventListener('change', applyRoomStatusFilter);
+  if (currentRole === 'admin') {
+    document.getElementById('showHiddenBookingsWrap').classList.remove('hidden');
+  }
+  document.getElementById('showHiddenBookings').addEventListener('change', loadBookingHistory);
   await refreshAll();
   await loadLayoutHistory();
 })();
 
 async function refreshAll() {
-  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadRooms(), loadReminders()]);
+  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadBookingHistory(), loadRooms(), loadReminders()]);
 }
 
 async function loadReminders() {
@@ -1187,3 +1191,41 @@ document.getElementById('claimGiftBtn').addEventListener('click', async () => {
   document.getElementById('claimGiftBtn').style.display = 'none';
   errorEl.textContent = '';
 });
+
+async function loadBookingHistory() {
+  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenBookings').checked;
+  const suffix = showHidden ? '&includeHidden=1' : '';
+  const [checkedOut, cancelled] = await Promise.all([
+    fetchBookings(`status=checked_out${suffix}`),
+    fetchBookings(`status=cancelled${suffix}`),
+  ]);
+  const all = [...checkedOut, ...cancelled].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  renderList('bookingHistoryList', all, 'Chưa có đặt phòng nào đã trả phòng/huỷ.', (actions, b) => {
+    if (currentRole !== 'admin') return;
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'btn-secondary table-actions-btn';
+    hideBtn.textContent = b.isHidden ? 'Hiện' : 'Ẩn';
+    hideBtn.addEventListener('click', async () => {
+      let response;
+      try {
+        response = await fetch(`/api/bookings/${b.id}/hide`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hidden: !b.isHidden }),
+        });
+      } catch (err) {
+        showOpsError('Có lỗi khi ẩn/hiện đặt phòng');
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        showOpsError(body.error || 'Có lỗi khi ẩn/hiện đặt phòng');
+        return;
+      }
+      showOpsError('');
+      await loadBookingHistory();
+    });
+    actions.appendChild(hideBtn);
+  });
+}
