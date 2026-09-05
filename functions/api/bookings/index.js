@@ -91,6 +91,7 @@ export async function onRequestGet({ request, env }) {
   const status = url.searchParams.get('status');
   const date = url.searchParams.get('date');
   const view = url.searchParams.get('view');
+  const includeHidden = url.searchParams.get('includeHidden') === '1' && auth.role === 'admin';
 
   const conditions = [];
   const params = [];
@@ -109,17 +110,22 @@ export async function onRequestGet({ request, env }) {
     conditions.push('check_out > ?');
     params.push(date);
   }
+  if (!includeHidden) {
+    conditions.push('is_hidden = 0');
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const { results } = await env.DB.prepare(
     `SELECT id, guest_name AS guestName, phone, email, room_type AS roomType, room_id AS roomId,
             check_in AS checkIn, check_out AS checkOut, guests_count AS guestsCount, notes, status, source,
-            deposit_amount AS depositAmount,
+            deposit_amount AS depositAmount, is_hidden AS isHidden,
             created_at AS createdAt, created_by AS createdBy, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt,
             cancel_reason AS cancelReason
      FROM bookings ${where} ORDER BY check_in ASC`
   ).bind(...params).all();
+
+  results.forEach((r) => { r.isHidden = !!r.isHidden; });
 
   if (auth.role === 'observer') {
     results.forEach((r) => {

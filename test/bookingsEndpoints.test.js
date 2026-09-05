@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as createBooking, onRequestGet as listBookings } from '../functions/api/bookings/index.js';
 import { onRequestPatch as setDeposit } from '../functions/api/bookings/[id]/deposit.js';
+import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken;
 let observerToken;
 let receptionToken;
+let adminToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -22,6 +24,9 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   receptionToken = await createSession(env.DB, 3);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
+  adminToken = await createSession(env.DB, 4);
 });
 
 function postReq(url, body) {
@@ -30,6 +35,10 @@ function postReq(url, body) {
 
 function authedRequest(url, token, method = 'GET') {
   return new Request(url, { method, headers: { Cookie: `session=${token}` } });
+}
+
+function authedPatchRequest(url, token, body) {
+  return new Request(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: `session=${token}` }, body: JSON.stringify(body || {}) });
 }
 
 describe('POST /api/bookings', () => {
@@ -385,5 +394,77 @@ describe('PATCH /api/bookings/:id/deposit', () => {
     });
     const response = await setDeposit({ request, env, params: { id: '1' } });
     expect(response.status).toBe(401);
+  });
+});
+
+describe('GET /api/bookings — is_hidden filtering', () => {
+  it('excludes hidden bookings by default', async () => {
+    const booking = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`).run();
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings?status=cancelled', adminToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((b) => b.id === booking.meta.last_row_id)).toBeUndefined();
+  });
+
+  it('includes hidden bookings when includeHidden=1 and role is admin', async () => {
+    const booking = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`).run();
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings?status=cancelled&includeHidden=1', adminToken, 'GET'), env });
+    const body = await response.json();
+    const found = body.find((b) => b.id === booking.meta.last_row_id);
+    expect(found).toBeTruthy();
+    expect(found.isHidden).toBe(true);
+  });
+
+  it('ignores includeHidden=1 for a non-admin role', async () => {
+    const booking = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`).run();
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings?status=cancelled&includeHidden=1', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((b) => b.id === booking.meta.last_row_id)).toBeUndefined();
+  });
+});
+
+describe('PATCH /api/bookings/:id/hide', () => {
+  let cancelledBookingId, pendingBookingId;
+  beforeEach(async () => {
+    const cancelled = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đã Huỷ', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z')`).run();
+    cancelledBookingId = cancelled.meta.last_row_id;
+    const pending = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đang Chờ', '0900000002', 'circle', '2026-09-12', '2026-09-13', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run();
+    pendingBookingId = pending.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await hideBooking({ request: new Request(`https://x/api/bookings/${cancelledBookingId}/hide`, { method: 'PATCH' }), env, params: { id: String(cancelledBookingId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects manager (403) — hiding is admin-only', async () => {
+    const response = await hideBooking({ request: authedRequest(`https://x/api/bookings/${cancelledBookingId}/hide`, managerToken, 'PATCH'), env, params: { id: String(cancelledBookingId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent booking', async () => {
+    const response = await hideBooking({ request: authedRequest('https://x/api/bookings/999999/hide', adminToken, 'PATCH'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects hiding a booking that is still pending (400)', async () => {
+    const response = await hideBooking({ request: authedRequest(`https://x/api/bookings/${pendingBookingId}/hide`, adminToken, 'PATCH'), env, params: { id: String(pendingBookingId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('hides a cancelled booking and writes a record_hide audit_log row', async () => {
+    const response = await hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${cancelledBookingId}/hide`, adminToken, { hidden: true }), env, params: { id: String(cancelledBookingId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM bookings WHERE id = ?`).bind(cancelledBookingId).first();
+    expect(row.is_hidden).toBe(1);
+    const auditRow = await env.DB.prepare(`SELECT action_type, entity_type, old_value, new_value FROM audit_log WHERE entity_type = 'booking' AND entity_id = ?`).bind(cancelledBookingId).first();
+    expect(auditRow).toEqual({ action_type: 'record_hide', entity_type: 'booking', old_value: 'hiện', new_value: 'ẩn' });
+  });
+
+  it('unhides a hidden booking (hidden: false)', async () => {
+    await env.DB.prepare(`UPDATE bookings SET is_hidden = 1 WHERE id = ?`).bind(cancelledBookingId).run();
+    const response = await hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${cancelledBookingId}/hide`, adminToken, { hidden: false }), env, params: { id: String(cancelledBookingId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM bookings WHERE id = ?`).bind(cancelledBookingId).first();
+    expect(row.is_hidden).toBe(0);
   });
 });
