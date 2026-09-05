@@ -21,6 +21,12 @@ let currentRole = null;
   }
 
   await loadOrders();
+  await loadOrderHistory();
+
+  if (currentRole === 'admin') {
+    document.getElementById('showHiddenOrdersWrap').classList.remove('hidden');
+  }
+  document.getElementById('showHiddenOrders').addEventListener('change', loadOrderHistory);
 })();
 
 async function loadOrders() {
@@ -99,3 +105,86 @@ document.getElementById('openTableForm').addEventListener('submit', async (event
   const result = await response.json();
   window.location.href = `/admin/dine-in-order-detail.html?orderId=${result.id}`;
 });
+
+async function loadOrderHistory() {
+  const errorEl = document.getElementById('pageError');
+  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenOrders').checked;
+  const suffix = showHidden ? '&includeHidden=1' : '';
+  let closedRes, voidedRes;
+  try {
+    [closedRes, voidedRes] = await Promise.all([
+      fetch(`/api/dine-in-orders?status=closed${suffix}`),
+      fetch(`/api/dine-in-orders?status=voided${suffix}`),
+    ]);
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi tải lịch sử';
+    return;
+  }
+  if (!closedRes.ok || !voidedRes.ok) {
+    errorEl.textContent = 'Có lỗi khi tải lịch sử';
+    return;
+  }
+  const closed = await closedRes.json();
+  const voided = await voidedRes.json();
+  const all = [...closed, ...voided].sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+  renderHistoryGrid(all);
+}
+
+function renderHistoryGrid(orders) {
+  const grid = document.getElementById('orderHistoryGrid');
+  const emptyState = document.getElementById('historyEmptyState');
+  grid.innerHTML = '';
+  if (orders.length === 0) {
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+
+  orders.forEach((o) => {
+    const card = document.createElement('div');
+    card.className = 'dine-order-card';
+    if (o.isHidden) card.style.opacity = '0.5';
+
+    const tableLabel = document.createElement('div');
+    tableLabel.className = 'table-label';
+    tableLabel.textContent = o.tableLabel;
+
+    const statusLabel = document.createElement('div');
+    statusLabel.textContent = o.status === 'closed' ? 'Đã chốt' : 'Đã huỷ';
+
+    const total = document.createElement('div');
+    total.className = 'order-total';
+    total.textContent = `${o.currentTotal.toLocaleString('vi-VN')}đ`;
+
+    card.append(tableLabel, statusLabel, total);
+
+    if (currentRole === 'admin') {
+      const hideBtn = document.createElement('button');
+      hideBtn.type = 'button';
+      hideBtn.className = 'btn-secondary table-actions-btn';
+      hideBtn.textContent = o.isHidden ? 'Hiện' : 'Ẩn';
+      hideBtn.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const errorEl = document.getElementById('pageError');
+        errorEl.textContent = '';
+        const response = await fetch(`/api/dine-in-orders/${o.id}/hide`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hidden: !o.isHidden }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          errorEl.textContent = body.error || 'Có lỗi khi ẩn/hiện bàn';
+          return;
+        }
+        await loadOrderHistory();
+      });
+      card.appendChild(hideBtn);
+    }
+
+    card.addEventListener('click', () => {
+      window.location.href = `/admin/dine-in-order-detail.html?orderId=${o.id}`;
+    });
+    grid.appendChild(card);
+  });
+}
