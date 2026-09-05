@@ -334,3 +334,49 @@ describe('migration 0024', () => {
     expect(row.display_order).toBe(0);
   });
 });
+
+describe('migration 0025', () => {
+  it('adds is_hidden defaulting to 0 on gio_xanh_sessions, dine_in_orders, and bookings', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+
+    const sessionInsert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Test Guest', 'open', 'system', '2026-09-05T00:00:00Z')`
+    ).bind(roomRow.id).run();
+    const sessionRow = await env.DB.prepare(`SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(sessionInsert.meta.last_row_id).first();
+    expect(sessionRow.is_hidden).toBe(0);
+
+    const orderInsert = await env.DB.prepare(
+      `INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Test', 'open', 'system', '2026-09-05T00:00:00Z')`
+    ).run();
+    const orderRow = await env.DB.prepare(`SELECT is_hidden FROM dine_in_orders WHERE id = ?`).bind(orderInsert.meta.last_row_id).first();
+    expect(orderRow.is_hidden).toBe(0);
+
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest', '0900000000', 'circle', '2026-09-10', '2026-09-11', 'pending', 'phone', '2026-09-05T00:00:00Z')`
+    ).run();
+    const bookingRow = await env.DB.prepare(`SELECT is_hidden FROM bookings WHERE id = ?`).bind(bookingInsert.meta.last_row_id).first();
+    expect(bookingRow.is_hidden).toBe(0);
+  });
+
+  it('accepts is_hidden = 1 on all three tables', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+
+    const sessionInsert = await env.DB.prepare(
+      `INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Test Guest', 'closed', 'system', '2026-09-05T00:00:00Z', 1)`
+    ).bind(roomRow.id).run();
+    const sessionRow = await env.DB.prepare(`SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(sessionInsert.meta.last_row_id).first();
+    expect(sessionRow.is_hidden).toBe(1);
+
+    const orderInsert = await env.DB.prepare(
+      `INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Test', 'closed', 'system', '2026-09-05T00:00:00Z', 1)`
+    ).run();
+    const orderRow = await env.DB.prepare(`SELECT is_hidden FROM dine_in_orders WHERE id = ?`).bind(orderInsert.meta.last_row_id).first();
+    expect(orderRow.is_hidden).toBe(1);
+
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Test Guest', '0900000000', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`
+    ).run();
+    const bookingRow = await env.DB.prepare(`SELECT is_hidden FROM bookings WHERE id = ?`).bind(bookingInsert.meta.last_row_id).first();
+    expect(bookingRow.is_hidden).toBe(1);
+  });
+});
