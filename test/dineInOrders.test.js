@@ -6,6 +6,7 @@ import { onRequestPost as addItem } from '../functions/api/dine-in-orders/[id]/i
 import { onRequestPatch as voidItem } from '../functions/api/dine-in-orders/[id]/items/[itemId].js';
 import { onRequestPost as voidOrder } from '../functions/api/dine-in-orders/[id]/void.js';
 import { onRequestPost as closeOrder } from '../functions/api/dine-in-orders/[id]/close.js';
+import { onRequestPatch as hideOrder } from '../functions/api/dine-in-orders/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -80,7 +81,7 @@ describe('GET /api/dine-in-orders', () => {
 
     const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
     const body = await response.json();
-    expect(body).toEqual([{ id: orderId, tableLabel: 'Bàn 5', note: null, status: 'open', openedBy: 'le_tan_order', openedAt: '2026-09-04T08:00:00Z', currentTotal: 45000 }]);
+    expect(body).toEqual([{ id: orderId, tableLabel: 'Bàn 5', note: null, status: 'open', openedBy: 'le_tan_order', openedAt: '2026-09-04T08:00:00Z', isHidden: false, currentTotal: 45000 }]);
   });
 
   it('rejects an invalid status query param (400)', async () => {
@@ -323,5 +324,77 @@ describe('POST /api/dine-in-orders/:id/close', () => {
 
     const txRow = await env.DB.prepare(`SELECT id FROM finance_transactions WHERE id = ?`).bind(body.financeTransactionId).first();
     expect(txRow).toBeTruthy();
+  });
+});
+
+describe('GET /api/dine-in-orders — is_hidden filtering', () => {
+  it('excludes hidden orders by default', async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders?status=closed', adminToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((o) => o.id === order.meta.last_row_id)).toBeUndefined();
+  });
+
+  it('includes hidden orders when includeHidden=1 and role is admin', async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders?status=closed&includeHidden=1', adminToken, 'GET'), env });
+    const body = await response.json();
+    const found = body.find((o) => o.id === order.meta.last_row_id);
+    expect(found).toBeTruthy();
+    expect(found.isHidden).toBe(true);
+  });
+
+  it('ignores includeHidden=1 for a non-admin role', async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders?status=closed&includeHidden=1', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((o) => o.id === order.meta.last_row_id)).toBeUndefined();
+  });
+});
+
+describe('PATCH /api/dine-in-orders/:id/hide', () => {
+  let closedOrderId, openOrderId;
+  beforeEach(async () => {
+    const closed = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đã Chốt', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z')`).run();
+    closedOrderId = closed.meta.last_row_id;
+    const open = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đang Mở', 'open', 'le_tan_order', '2026-09-05T08:00:00Z')`).run();
+    openOrderId = open.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await hideOrder({ request: new Request(`https://x/api/dine-in-orders/${closedOrderId}/hide`, { method: 'PATCH' }), env, params: { id: String(closedOrderId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects manager (403) — hiding is admin-only', async () => {
+    const response = await hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${closedOrderId}/hide`, managerToken, 'PATCH', { hidden: true }), env, params: { id: String(closedOrderId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent order', async () => {
+    const response = await hideOrder({ request: authedRequest('https://x/api/dine-in-orders/999999/hide', adminToken, 'PATCH', { hidden: true }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects hiding an order that is still open (400)', async () => {
+    const response = await hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${openOrderId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(openOrderId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('hides a closed order and writes a record_hide audit_log row', async () => {
+    const response = await hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${closedOrderId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(closedOrderId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM dine_in_orders WHERE id = ?`).bind(closedOrderId).first();
+    expect(row.is_hidden).toBe(1);
+    const auditRow = await env.DB.prepare(`SELECT action_type, entity_type, old_value, new_value FROM audit_log WHERE entity_type = 'dine_in_order' AND entity_id = ?`).bind(closedOrderId).first();
+    expect(auditRow).toEqual({ action_type: 'record_hide', entity_type: 'dine_in_order', old_value: 'hiện', new_value: 'ẩn' });
+  });
+
+  it('unhides a hidden order (hidden: false)', async () => {
+    await env.DB.prepare(`UPDATE dine_in_orders SET is_hidden = 1 WHERE id = ?`).bind(closedOrderId).run();
+    const response = await hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${closedOrderId}/hide`, adminToken, 'PATCH', { hidden: false }), env, params: { id: String(closedOrderId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM dine_in_orders WHERE id = ?`).bind(closedOrderId).first();
+    expect(row.is_hidden).toBe(0);
   });
 });

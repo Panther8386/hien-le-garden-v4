@@ -13,14 +13,15 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const status = url.searchParams.get('status') || 'open';
   if (!VALID_STATUSES.includes(status)) return jsonError('Trạng thái không hợp lệ', 400);
+  const includeHidden = url.searchParams.get('includeHidden') === '1' && auth.role === 'admin';
 
   const { results } = await env.DB.prepare(
-    `SELECT o.id, o.table_label AS tableLabel, o.note, o.status, o.opened_by AS openedBy, o.opened_at AS openedAt,
+    `SELECT o.id, o.table_label AS tableLabel, o.note, o.status, o.opened_by AS openedBy, o.opened_at AS openedAt, o.is_hidden AS isHidden,
        COALESCE((SELECT SUM(amount) FROM dine_in_order_items WHERE order_id = o.id AND status = 'posted'), 0) AS currentTotal
-     FROM dine_in_orders o WHERE o.status = ? ORDER BY o.opened_at ASC`
+     FROM dine_in_orders o WHERE o.status = ?${includeHidden ? '' : ' AND o.is_hidden = 0'} ORDER BY o.opened_at ASC`
   ).bind(status).all();
 
-  return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(results.map((r) => ({ ...r, isHidden: !!r.isHidden }))), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {
