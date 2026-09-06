@@ -18,45 +18,59 @@
     <p id="financeError" class="error"></p>
     <p id="financeStorageWarning" class="warning-banner hidden"></p>
 
-    <div id="addTransactionSection" class="hidden">
-      <h2>Thêm giao dịch</h2>
-      <div class="filters" id="defaultTypeToggle">
-        <span style="align-self: center;">Mặc định khi mở form:</span>
-        <button type="button" class="tab-btn" data-default-type="income">Thu</button>
-        <button type="button" class="tab-btn" data-default-type="expense">Chi</button>
-      </div>
-      <form id="financeForm">
-        <div class="form-row">
-          <label>Loại
-            <select name="type" required>
-              <option value="income">Thu</option>
-              <option value="expense" selected>Chi</option>
+    <button type="button" id="openAddTransactionBtn" class="hidden">+ Thêm giao dịch</button>
+
+    <div id="financeFormOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box wide">
+        <h3 id="financeFormTitle">Thêm giao dịch</h3>
+        <div class="filters" id="defaultTypeToggle">
+          <span style="align-self: center;">Mặc định khi mở form:</span>
+          <button type="button" class="tab-btn" data-default-type="income">Thu</button>
+          <button type="button" class="tab-btn" data-default-type="expense">Chi</button>
+        </div>
+        <form id="financeForm">
+          <div class="form-row">
+            <label>Loại
+              <select name="type" required>
+                <option value="income">Thu</option>
+                <option value="expense" selected>Chi</option>
+              </select>
+            </label>
+            <label>Danh mục
+              <select name="category" required></select>
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Số tiền (đ) <input type="number" name="amount" min="0" step="1" required /></label>
+            <label>Ngày <input type="date" name="transactionDate" required /></label>
+          </div>
+          <label>Ghi chú <input type="text" name="note" /></label>
+          <label>Trạng thái
+            <select name="status">
+              <option value="draft" selected>Nháp</option>
+              <option value="confirmed">Đã xác nhận</option>
+              <option value="paid">Đã thanh toán</option>
             </select>
           </label>
-          <label>Danh mục
-            <select name="category" required></select>
+          <label>Hoá đơn/chứng từ (ảnh hoặc PDF, tối đa 10MB)
+            <input type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" />
           </label>
-        </div>
-        <div class="form-row">
-          <label>Số tiền (đ) <input type="number" name="amount" min="0" step="1" required /></label>
-          <label>Ngày <input type="date" name="transactionDate" required /></label>
-        </div>
-        <label>Ghi chú <input type="text" name="note" /></label>
-        <label>Trạng thái
-          <select name="status">
-            <option value="draft" selected>Nháp</option>
-            <option value="confirmed">Đã xác nhận</option>
-            <option value="paid">Đã thanh toán</option>
-          </select>
-        </label>
-        <label>Hoá đơn/chứng từ (ảnh hoặc PDF, tối đa 10MB)
-          <input type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" />
-        </label>
-        <p id="financeAttachmentInfo"></p>
-        <button type="submit">Ghi giao dịch</button>
-        <button type="button" id="financeCancelEditBtn" class="btn-secondary hidden">Huỷ sửa</button>
-        <p id="financeFormError" class="error"></p>
-      </form>
+          <p id="financeAttachmentInfo"></p>
+          <button type="submit">Ghi giao dịch</button>
+          <button type="button" id="financeFormCloseBtn" class="btn-secondary">Đóng</button>
+          <p id="financeFormError" class="error"></p>
+        </form>
+      </div>
+    </div>
+
+    <div id="financeVoidOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box">
+        <h3>Xác nhận huỷ giao dịch</h3>
+        <p id="financeVoidSummary"></p>
+        <button type="button" id="financeVoidConfirmBtn">Huỷ giao dịch</button>
+        <button type="button" id="financeVoidCancelBtn" class="btn-secondary">Đóng</button>
+        <p id="financeVoidError" class="error"></p>
+      </div>
     </div>
 
     <h2>Cân đối</h2>
@@ -65,6 +79,10 @@
     <div id="openingBalanceEditor" class="hidden"></div>
 
     <h2>Biểu đồ</h2>
+    <div class="filters" id="chartTypeToggle">
+      <button type="button" class="tab-btn active" data-chart-type="time">Theo thời gian</button>
+      <button type="button" class="tab-btn" data-chart-type="category">Theo danh mục</button>
+    </div>
     <div class="filters" id="chartGranularity">
       <button type="button" class="tab-btn" data-granularity="day">Ngày</button>
       <button type="button" class="tab-btn active" data-granularity="week">Tuần</button>
@@ -90,6 +108,9 @@
       </select>
       <input type="text" id="filterKeyword" placeholder="Tìm ghi chú..." />
     </div>
+    <label class="checkbox hidden" id="showHiddenTransactionsWrap"><input type="checkbox" id="showHiddenTransactions" /> Hiển thị các log đã ẩn</label>
+
+    <div class="stat-grid" id="financeFilteredStats"></div>
 
     <p id="listError" class="error"></p>
     <div class="table-scroll" id="financeTableWrap">
@@ -99,6 +120,18 @@
       </table>
     </div>
     <div class="booking-list" id="financeCardList"></div>
+
+    <div class="filters" id="financePagination">
+      <select id="financePageSize">
+        <option value="10">10 / trang</option>
+        <option value="25" selected>25 / trang</option>
+        <option value="50">50 / trang</option>
+        <option value="100">100 / trang</option>
+      </select>
+      <button type="button" id="financePrevPageBtn" class="btn-secondary">← Trước</button>
+      <span id="financePageInfo"></span>
+      <button type="button" id="financeNextPageBtn" class="btn-secondary">Sau →</button>
+    </div>
   </div>
 
   <script src="/admin/finance.js"></script>

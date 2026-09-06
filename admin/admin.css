@@ -281,6 +281,7 @@ th { color: var(--gold); font-weight: 600; }
   background: var(--dark-green); border: 1px solid rgba(245,240,230,0.15);
   border-radius: 8px; padding: 20px; max-width: 400px; width: 100%;
 }
+.confirm-box.wide { max-width: 560px; }
 .btn-secondary { background: transparent; border: 1px solid rgba(245,240,230,0.3); color: var(--cream); }
 
 .stat-grid {

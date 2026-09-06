@@ -35,9 +35,6 @@ function populateCategorySelect(select, { includeAllOption = false, type } = {})
   }
   const entries = Object.entries(categoryMeta).filter(([, meta]) => !type || meta.type === type);
   if (!type) {
-    // Filter bar's "all categories" case: group by type for readability. Includes
-    // inactive categories on purpose — filtering the transaction list by a since-hidden
-    // category (to find its old rows) must keep working.
     [['income', 'Thu'], ['expense', 'Chi']].forEach(([groupType, groupLabel]) => {
       const group = document.createElement('optgroup');
       group.label = groupLabel;
@@ -99,8 +96,8 @@ function setDefaultTypePreference(type) {
   try {
     localStorage.setItem('financeDefaultType', type);
   } catch (err) {
-    // localStorage unavailable (private browsing, blocked storage) — the toggle
-    // still updates the button state below, it just won't persist across reloads.
+    // localStorage unavailable — the toggle still updates the button state
+    // below, it just won't persist across reloads.
   }
   document.querySelectorAll('#defaultTypeToggle .tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.defaultType === type);
@@ -118,6 +115,55 @@ document.querySelector('#financeForm select[name="type"]').addEventListener('cha
 function showFinanceError(message) {
   document.getElementById('financeError').textContent = message || '';
 }
+
+function openFinanceFormOverlay() {
+  document.getElementById('financeFormOverlay').classList.remove('hidden');
+}
+
+function closeFinanceFormOverlay() {
+  document.getElementById('financeFormOverlay').classList.add('hidden');
+}
+
+document.getElementById('openAddTransactionBtn').addEventListener('click', () => {
+  resetFinanceForm();
+  openFinanceFormOverlay();
+});
+
+document.getElementById('financeFormCloseBtn').addEventListener('click', () => {
+  document.getElementById('financeFormError').textContent = '';
+  resetFinanceForm();
+  closeFinanceFormOverlay();
+});
+
+let pendingVoidId = null;
+
+function openVoidConfirm(t) {
+  pendingVoidId = t.id;
+  document.getElementById('financeVoidError').textContent = '';
+  const typeLabel = t.type === 'income' ? 'Thu' : 'Chi';
+  document.getElementById('financeVoidSummary').textContent = `${t.transactionDate} — ${typeLabel} · ${categoryLabel(t.category)} · ${formatVnd(t.amount)}`;
+  document.getElementById('financeVoidOverlay').classList.remove('hidden');
+}
+
+function closeVoidConfirm() {
+  pendingVoidId = null;
+  document.getElementById('financeVoidOverlay').classList.add('hidden');
+}
+
+document.getElementById('financeVoidCancelBtn').addEventListener('click', closeVoidConfirm);
+
+document.getElementById('financeVoidConfirmBtn').addEventListener('click', async () => {
+  if (!pendingVoidId) return;
+  const ok = await voidTransaction(pendingVoidId);
+  if (ok) closeVoidConfirm();
+});
+
+let currentPage = 1;
+let currentPageSize = 25;
+let currentTotal = 0;
+let currentCategoryTotals = {};
+let currentChartRows = [];
+let currentChartType = 'time';
 
 (async () => {
   let res;
@@ -140,9 +186,17 @@ function showFinanceError(message) {
   populateCategorySelect(document.getElementById('filterCategory'), { includeAllOption: true });
 
   if (currentRole === 'manager' || currentRole === 'admin') {
-    document.getElementById('addTransactionSection').classList.remove('hidden');
+    document.getElementById('openAddTransactionBtn').classList.remove('hidden');
     document.getElementById('openingBalanceEditor').classList.remove('hidden');
   }
+
+  if (currentRole === 'admin') {
+    document.getElementById('showHiddenTransactionsWrap').classList.remove('hidden');
+  }
+  document.getElementById('showHiddenTransactions').addEventListener('change', () => {
+    currentPage = 1;
+    loadTransactions();
+  });
 
   resetFinanceForm();
   await loadTransactions();
@@ -160,6 +214,52 @@ function transactionRowHtml(t) {
   return { typeLabel, statusClass, canEdit };
 }
 
+async function toggleHideTransaction(t) {
+  const errorEl = document.getElementById('listError');
+  errorEl.textContent = '';
+  const response = await fetch(`/api/finance/transactions/${t.id}/hide`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hidden: !t.isHidden }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi ẩn/hiện giao dịch';
+    return;
+  }
+  await loadTransactions();
+}
+
+function buildActionButtons(t) {
+  const { canEdit } = transactionRowHtml(t);
+  const container = document.createDocumentFragment();
+  if (canEdit) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'table-actions-btn';
+    editBtn.title = 'Sửa';
+    editBtn.textContent = '✏️';
+    editBtn.addEventListener('click', () => openEditTransaction(t));
+    const voidBtn = document.createElement('button');
+    voidBtn.type = 'button';
+    voidBtn.className = 'btn-secondary table-actions-btn';
+    voidBtn.title = 'Huỷ';
+    voidBtn.textContent = '🗑';
+    voidBtn.addEventListener('click', () => openVoidConfirm(t));
+    container.append(editBtn, voidBtn);
+  }
+  if (currentRole === 'admin' && t.voidedAt) {
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'btn-secondary table-actions-btn';
+    hideBtn.title = t.isHidden ? 'Hiện' : 'Ẩn';
+    hideBtn.textContent = t.isHidden ? '👁️' : '🙈';
+    hideBtn.addEventListener('click', () => toggleHideTransaction(t));
+    container.appendChild(hideBtn);
+  }
+  return container;
+}
+
 function renderTransactions(list) {
   currentTransactions = list;
   const tbody = document.querySelector('#financeTable tbody');
@@ -175,7 +275,7 @@ function renderTransactions(list) {
   }
 
   list.forEach((t) => {
-    const { typeLabel, statusClass, canEdit } = transactionRowHtml(t);
+    const { typeLabel, statusClass } = transactionRowHtml(t);
 
     const tr = document.createElement('tr');
     const tdDate = document.createElement('td');
@@ -216,19 +316,8 @@ function renderTransactions(list) {
     }
     applyVoidedStyle(tdAttachment, t.voidedAt);
     const tdActions = document.createElement('td');
+    tdActions.appendChild(buildActionButtons(t));
     tr.append(tdDate, tdType, tdCategory, tdAmount, tdStatus, tdNote, tdCreatedBy, tdAttachment, tdActions);
-    if (canEdit) {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.textContent = 'Sửa';
-      editBtn.addEventListener('click', () => openEditTransaction(t));
-      const voidBtn = document.createElement('button');
-      voidBtn.type = 'button';
-      voidBtn.className = 'btn-secondary';
-      voidBtn.textContent = 'Huỷ';
-      voidBtn.addEventListener('click', () => voidTransaction(t.id));
-      tdActions.append(editBtn, voidBtn);
-    }
     tbody.appendChild(tr);
 
     const card = document.createElement('div');
@@ -263,24 +352,12 @@ function renderTransactions(list) {
       pAttachment.appendChild(link);
       card.appendChild(pAttachment);
     }
-    if (canEdit) {
-      const cardActions = document.createElement('div');
-      cardActions.className = 'booking-actions';
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.textContent = 'Sửa';
-      editBtn.addEventListener('click', () => openEditTransaction(t));
-      const voidBtn = document.createElement('button');
-      voidBtn.type = 'button';
-      voidBtn.className = 'btn-secondary';
-      voidBtn.textContent = 'Huỷ';
-      voidBtn.addEventListener('click', () => voidTransaction(t.id));
-      cardActions.append(editBtn, voidBtn);
-      card.appendChild(cardActions);
-    }
+    const cardActions = document.createElement('div');
+    cardActions.className = 'booking-actions';
+    cardActions.appendChild(buildActionButtons(t));
+    if (cardActions.childNodes.length > 0) card.appendChild(cardActions);
     cardList.appendChild(card);
   });
-  renderChart(currentGranularity);
 }
 
 function currentFilters() {
@@ -294,6 +371,50 @@ function currentFilters() {
   };
 }
 
+function renderFilteredStats(sumIncome) {
+  const container = document.getElementById('financeFilteredStats');
+  container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'stat-card';
+  const value = document.createElement('div');
+  value.className = 'stat-value';
+  value.textContent = formatVnd(sumIncome);
+  const label = document.createElement('div');
+  label.className = 'stat-label';
+  label.textContent = 'Tổng doanh thu (theo bộ lọc)';
+  div.append(value, label);
+  container.appendChild(div);
+}
+
+function renderPagination() {
+  const info = document.getElementById('financePageInfo');
+  const totalPages = Math.max(1, Math.ceil(currentTotal / currentPageSize));
+  info.textContent = `Trang ${currentPage}/${totalPages} (${currentTotal} giao dịch)`;
+  document.getElementById('financePrevPageBtn').disabled = currentPage <= 1;
+  document.getElementById('financeNextPageBtn').disabled = currentPage >= totalPages;
+}
+
+document.getElementById('financePageSize').addEventListener('change', (event) => {
+  currentPageSize = Number(event.target.value);
+  currentPage = 1;
+  loadTransactions();
+});
+
+document.getElementById('financePrevPageBtn').addEventListener('click', () => {
+  if (currentPage > 1) {
+    currentPage -= 1;
+    loadTransactions();
+  }
+});
+
+document.getElementById('financeNextPageBtn').addEventListener('click', () => {
+  const totalPages = Math.max(1, Math.ceil(currentTotal / currentPageSize));
+  if (currentPage < totalPages) {
+    currentPage += 1;
+    loadTransactions();
+  }
+});
+
 async function loadTransactions(filters) {
   const listError = document.getElementById('listError');
   listError.textContent = '';
@@ -301,6 +422,11 @@ async function loadTransactions(filters) {
   Object.entries(filters || currentFilters()).forEach(([key, value]) => {
     if (value) params.set(key, value);
   });
+  params.set('page', String(currentPage));
+  params.set('pageSize', String(currentPageSize));
+  if (currentRole === 'admin' && document.getElementById('showHiddenTransactions').checked) {
+    params.set('includeHidden', '1');
+  }
   let response;
   try {
     response = await fetch(`/api/finance/transactions?${params.toString()}`);
@@ -313,31 +439,34 @@ async function loadTransactions(filters) {
     listError.textContent = body.error || 'Có lỗi khi tải giao dịch';
     return;
   }
-  renderTransactions(await response.json());
+  const body = await response.json();
+  currentTotal = body.total;
+  currentCategoryTotals = body.categoryTotals;
+  currentChartRows = body.chartRows;
+  renderTransactions(body.transactions);
+  renderFilteredStats(body.sumIncome);
+  renderPagination();
+  renderChart();
 }
 
 async function voidTransaction(id) {
-  const listError = document.getElementById('listError');
-  listError.textContent = '';
+  const errorEl = document.getElementById('financeVoidError');
+  errorEl.textContent = '';
   const response = await fetch(`/api/finance/transactions/${id}/void`, { method: 'PATCH' });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    listError.textContent = body.error || 'Có lỗi khi huỷ giao dịch';
-    return;
+    errorEl.textContent = body.error || 'Có lỗi khi huỷ giao dịch';
+    return false;
   }
   await loadTransactions();
   if (typeof refreshFinanceSummary === 'function') refreshFinanceSummary();
+  return true;
 }
 
 function openEditTransaction(t) {
   const form = document.getElementById('financeForm');
   form.querySelector('[name="type"]').value = t.type;
   const select = form.querySelector('[name="category"]');
-  // Legacy rows may hold a category that doesn't belong to their own type, or whose
-  // category has since been deactivated by an admin — either way, a type-filtered
-  // (active-only) select would silently drop such a value, leaving the select
-  // unselected and blocking submit. Fall back to the unfiltered, grouped-by-type
-  // option list (which includes inactive categories) so the value stays selectable.
   const meta = categoryMeta[t.category];
   const isLegacyMismatch = !meta || meta.type !== t.type || !meta.isActive;
   populateCategorySelect(select, isLegacyMismatch ? {} : { type: t.type });
@@ -348,8 +477,9 @@ function openEditTransaction(t) {
   form.querySelector('[name="status"]').value = t.status;
   form.dataset.editingId = t.id;
   document.querySelector('#financeForm button[type="submit"]').textContent = 'Lưu thay đổi';
-  document.getElementById('financeCancelEditBtn').classList.remove('hidden');
+  document.getElementById('financeFormTitle').textContent = 'Sửa giao dịch';
   renderAttachmentEditor(t);
+  openFinanceFormOverlay();
 }
 
 function resetFinanceForm() {
@@ -361,14 +491,9 @@ function resetFinanceForm() {
   populateCategorySelect(form.querySelector('[name="category"]'), { type: defaultType });
   form.querySelector('[name="transactionDate"]').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
   document.querySelector('#financeForm button[type="submit"]').textContent = 'Ghi giao dịch';
-  document.getElementById('financeCancelEditBtn').classList.add('hidden');
+  document.getElementById('financeFormTitle').textContent = 'Thêm giao dịch';
   renderAttachmentEditor(null);
 }
-
-document.getElementById('financeCancelEditBtn').addEventListener('click', () => {
-  document.getElementById('financeFormError').textContent = '';
-  resetFinanceForm();
-});
 
 document.getElementById('financeForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -418,6 +543,7 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
   const transactionId = editingId || body.id;
   const fileInput = form.querySelector('[name="receipt"]');
   const file = fileInput.files[0];
+  let attachmentFailed = false;
   if (file) {
     const uploadForm = new FormData();
     uploadForm.append('file', file);
@@ -425,25 +551,39 @@ document.getElementById('financeForm').addEventListener('submit', async (event) 
       const uploadResponse = await fetch(`/api/finance/transactions/${transactionId}/attachment`, { method: 'POST', body: uploadForm });
       if (!uploadResponse.ok) {
         errorEl.textContent = 'Đã lưu giao dịch nhưng tải chứng từ lên thất bại — có thể thử lại bằng nút Sửa';
+        attachmentFailed = true;
       }
     } catch (err) {
       errorEl.textContent = 'Đã lưu giao dịch nhưng tải chứng từ lên thất bại — có thể thử lại bằng nút Sửa';
+      attachmentFailed = true;
     }
   }
 
-  resetFinanceForm();
   await loadTransactions();
   if (typeof refreshFinanceSummary === 'function') refreshFinanceSummary();
+  if (attachmentFailed) {
+    // Keep the popup open so the error stays visible and the user can retry
+    // the attachment via "Sửa" — the transaction record itself already saved.
+    return;
+  }
+  resetFinanceForm();
+  closeFinanceFormOverlay();
 });
 
 document.querySelectorAll('#financeFilters input:not(#filterKeyword), #financeFilters select').forEach((el) => {
-  el.addEventListener('change', () => loadTransactions());
+  el.addEventListener('change', () => {
+    currentPage = 1;
+    loadTransactions();
+  });
 });
 
 let keywordDebounceTimer;
 document.getElementById('filterKeyword').addEventListener('input', () => {
   clearTimeout(keywordDebounceTimer);
-  keywordDebounceTimer = setTimeout(() => loadTransactions(), 350);
+  keywordDebounceTimer = setTimeout(() => {
+    currentPage = 1;
+    loadTransactions();
+  }, 350);
 });
 
 function currentMonthValue() {
@@ -455,10 +595,6 @@ function renderStatCards(summary) {
   container.innerHTML = '';
   const sourceLabels = { manual: 'nhập tay', carried_forward: 'kế thừa kỳ trước', default_zero: 'mặc định' };
   const sourceLabel = sourceLabels[summary.openingBalanceSource];
-  // Card list is driven entirely by which fields the API actually returned — the
-  // full set (openingBalance/totalIncome/totalExpense/netChange/closingBalance) for
-  // any role that can reach this page (manager/admin only; observer is blocked at
-  // the API level and never gets here).
   const cards = [];
   if (summary.openingBalance !== undefined) {
     cards.push({ label: sourceLabel ? `Số dư đầu kỳ (${sourceLabel})` : 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) });
@@ -530,12 +666,6 @@ async function refreshFinanceSummary() {
   const errorEl = document.getElementById('financeError');
   errorEl.textContent = '';
 
-  // GET /api/finance/opening-balance is manager/admin only — skip fetching it for
-  // any other role rather than treat the expected 403 as an error.
-  // renderOpeningBalanceEditor already renders nothing for a non-manager/admin
-  // role, so passing null is harmless. (finance.html itself is now unreachable
-  // for observer at the API level — this guard only matters if some other role
-  // is ever added to this page in the future.)
   const isPrivileged = currentRole === 'manager' || currentRole === 'admin';
 
   let summaryResponse, openingResponse;
@@ -568,7 +698,7 @@ async function refreshStorageWarning() {
   try {
     response = await fetch('/api/finance/receipts-usage');
   } catch (err) {
-    return; // Non-critical — a failed usage check should never block the page.
+    return;
   }
   if (!response.ok) return;
   const { totalBytes, overThreshold } = await response.json();
@@ -588,7 +718,7 @@ let currentGranularity = 'week';
 function isoWeekMonday(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
-  const day = date.getUTCDay(); // 0=Sun..6=Sat
+  const day = date.getUTCDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   date.setUTCDate(date.getUTCDate() + diffToMonday);
   return date.toISOString().slice(0, 10);
@@ -609,9 +739,9 @@ function bucketLabel(key, granularity) {
   return `${d}/${m}`;
 }
 
-function buildBuckets(transactions, granularity) {
+function buildBuckets(rows, granularity) {
   const map = new Map();
-  transactions
+  rows
     .filter((t) => !t.voidedAt && (t.status === 'confirmed' || t.status === 'paid'))
     .forEach((t) => {
       const key = bucketKey(t.transactionDate, granularity);
@@ -623,10 +753,10 @@ function buildBuckets(transactions, granularity) {
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function renderChart(granularity) {
+function renderTimeChart(granularity) {
   currentGranularity = granularity || currentGranularity;
   const container = document.getElementById('financeChart');
-  const buckets = buildBuckets(currentTransactions, currentGranularity);
+  const buckets = buildBuckets(currentChartRows, currentGranularity);
 
   if (buckets.length === 0) {
     container.innerHTML = '<p style="opacity: 0.6;">Không có dữ liệu để vẽ biểu đồ.</p>';
@@ -659,10 +789,82 @@ function renderChart(granularity) {
   container.innerHTML = `<div class="table-scroll">${svg}</div><p style="font-size: 0.85rem; opacity: 0.7;"><span style="color: #C9A84C;">■</span> Thu &nbsp; <span style="color: #ff8a8a;">■</span> Chi</p>`;
 }
 
+const CHART_COLORS = ['#C9A84C', '#ff8a8a', '#7fb8a4', '#8aa8ff', '#e0a458', '#c084fc', '#5ec8d8', '#f28fa3', '#9fca5a', '#d9906c', '#7f9fc9', '#e8c15a'];
+
+function buildPieSlices(totals, key) {
+  const entries = Object.entries(totals)
+    .map(([slug, t]) => ({ slug, value: t[key] }))
+    .filter((e) => e.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const sum = entries.reduce((s, e) => s + e.value, 0);
+  return { entries, sum };
+}
+
+function renderPie(containerId, totals, key, titleText) {
+  const container = document.getElementById(containerId);
+  const { entries, sum } = buildPieSlices(totals, key);
+  if (sum === 0) {
+    container.innerHTML = `<h4 style="margin:8px 0 4px;">${titleText}</h4><p style="opacity:0.6;">Không có dữ liệu để vẽ biểu đồ.</p>`;
+    return;
+  }
+  const cx = 90;
+  const cy = 90;
+  const r = 80;
+  let angle = -90;
+  let svg = `<svg viewBox="0 0 180 180" role="img" aria-label="Biểu đồ ${titleText} theo danh mục" style="width: 180px; height: 180px; flex-shrink: 0;">`;
+  entries.forEach((e, i) => {
+    const fraction = e.value / sum;
+    const sweep = fraction * 360;
+    const x1 = cx + r * Math.cos((Math.PI / 180) * angle);
+    const y1 = cy + r * Math.sin((Math.PI / 180) * angle);
+    const endAngle = angle + sweep;
+    const x2 = cx + r * Math.cos((Math.PI / 180) * endAngle);
+    const y2 = cy + r * Math.sin((Math.PI / 180) * endAngle);
+    const largeArc = sweep > 180 ? 1 : 0;
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    svg += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${color}" />`;
+    angle = endAngle;
+  });
+  svg += `</svg>`;
+
+  const legend = entries.map((e, i) => {
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    const pct = ((e.value / sum) * 100).toFixed(1);
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:0.85rem;"><span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;"></span>${categoryLabel(e.slug)} — ${pct}% (${formatVnd(e.value)})</div>`;
+  }).join('');
+
+  container.innerHTML = `<h4 style="margin:8px 0 4px;">${titleText}</h4><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">${svg}<div style="display:flex;flex-direction:column;gap:4px;">${legend}</div></div>`;
+}
+
+function renderCategoryPies() {
+  const container = document.getElementById('financeChart');
+  container.innerHTML = '<div id="financePieIncome"></div><div id="financePieExpense"></div>';
+  renderPie('financePieIncome', currentCategoryTotals, 'income', 'Thu');
+  renderPie('financePieExpense', currentCategoryTotals, 'expense', 'Chi');
+}
+
+function renderChart() {
+  if (currentChartType === 'category') {
+    renderCategoryPies();
+  } else {
+    renderTimeChart(currentGranularity);
+  }
+}
+
+document.querySelectorAll('#chartTypeToggle .tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#chartTypeToggle .tab-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentChartType = btn.dataset.chartType;
+    document.getElementById('chartGranularity').classList.toggle('hidden', currentChartType !== 'time');
+    renderChart();
+  });
+});
+
 document.querySelectorAll('#chartGranularity .tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#chartGranularity .tab-btn').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    renderChart(btn.dataset.granularity);
+    renderTimeChart(btn.dataset.granularity);
   });
 });
