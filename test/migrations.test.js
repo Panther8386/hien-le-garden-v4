@@ -380,3 +380,21 @@ describe('migration 0025', () => {
     expect(bookingRow.is_hidden).toBe(1);
   });
 });
+
+describe('migration 0026', () => {
+  it('adds is_hidden defaulting to 0 on finance_transactions', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES ('income', 'ban_hang', 100000, '2026-09-06', 'paid', 'system', '2026-09-06T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT is_hidden FROM finance_transactions WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('accepts is_hidden = 1 on finance_transactions', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES ('expense', 'vat_tu', 50000, '2026-09-06', 'confirmed', 'system', '2026-09-06T00:00:00Z', 1)`
+    ).run();
+    const row = await env.DB.prepare(`SELECT is_hidden FROM finance_transactions WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.is_hidden).toBe(1);
+  });
+});
