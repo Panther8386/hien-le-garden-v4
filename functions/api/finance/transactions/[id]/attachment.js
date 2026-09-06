@@ -86,18 +86,11 @@ export async function onRequestDelete({ request, env, params }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
   if (!existing || !existing.receipt_key) return jsonError('Không tìm thấy chứng từ', 404);
-  // Observer's transaction-visibility boundary applies here too: a 403 would itself confirm
-  // an attachment exists on an expense transaction this role can't otherwise see — 404 is
-  // indistinguishable from "no attachment", same as GET .../transactions already hides
-  // expense rows by omission rather than erroring.
-  if (auth.role === 'observer' && existing.type !== 'income') {
-    return jsonError('Không tìm thấy chứng từ', 404);
-  }
 
   const object = await env.RECEIPTS.get(existing.receipt_key);
   if (!object) return jsonError('Không tìm thấy chứng từ', 404);

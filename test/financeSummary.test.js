@@ -48,19 +48,9 @@ describe('GET /api/finance/summary', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets observer read, but strips every expense-derived field from the response', async () => {
-    await insertTx({ type: 'income', category: 'ban_hang', amount: 1000000, date: '2026-08-10' });
-    await insertTx({ type: 'expense', category: 'vat_tu', amount: 300000, date: '2026-08-15' });
-
+  it('rejects observer (403) — revenue/expense figures are off-limits to this role', async () => {
     const response = await getSummary({ request: authedRequest('https://x/api/finance/summary?month=2026-08', observerToken, 'GET'), env });
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toEqual({ month: '2026-08', totalIncome: 1000000 });
-    expect(body).not.toHaveProperty('totalExpense');
-    expect(body).not.toHaveProperty('netChange');
-    expect(body).not.toHaveProperty('closingBalance');
-    expect(body).not.toHaveProperty('openingBalance');
-    expect(body).not.toHaveProperty('openingBalanceSource');
+    expect(response.status).toBe(403);
   });
 
   it('manager and admin still get the full response shape (no regression)', async () => {

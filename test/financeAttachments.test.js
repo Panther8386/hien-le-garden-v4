@@ -188,16 +188,10 @@ describe('GET /api/finance/transactions/:id/attachment', () => {
     expect(response.headers.get('Content-Disposition')).toContain('bill.pdf');
   });
 
-  it('observer can fetch an income transaction attachment', async () => {
+  it('rejects observer (403) for any attachment, income or expense', async () => {
     await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('income-receipt.pdf')), env, params: { id: String(incomeTxId) } });
     const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(incomeTxId) } });
-    expect(response.status).toBe(200);
-  });
-
-  it('observer gets 404 (not 403) for an expense transaction attachment, even though one exists', async () => {
-    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, managerToken, pdfFile()), env, params: { id: String(expenseTxId) } });
-    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(expenseTxId) } });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(403);
   });
 
   it('produces a safe, well-formed Content-Disposition for a filename with diacritics and a quote character', async () => {

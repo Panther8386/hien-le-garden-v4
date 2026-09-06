@@ -23,7 +23,7 @@ async function sumIncomeExpense(env, fromDateInclusive, toDateExclusive) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -54,15 +54,6 @@ export async function onRequestGet({ request, env }) {
   const { income: totalIncome, expense: totalExpense } = await sumIncomeExpense(env, monthStart(month), monthStart(nextMonth(month)));
   const netChange = totalIncome - totalExpense;
   const closingBalance = openingBalance + netChange;
-
-  // Observer permission restriction: every one of the other fields here is
-  // expense-derived (directly, like totalExpense, or indirectly — openingBalance/
-  // netChange/closingBalance all encode expense data once totalIncome is known).
-  // Stripped server-side so this role can never see or infer expense figures,
-  // not just have them hidden by the UI.
-  if (auth.role === 'observer') {
-    return new Response(JSON.stringify({ month, totalIncome }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }
 
   return new Response(
     JSON.stringify({ month, openingBalance, openingBalanceSource, totalIncome, totalExpense, netChange, closingBalance }),

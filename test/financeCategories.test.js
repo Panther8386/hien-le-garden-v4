@@ -53,9 +53,9 @@ describe('GET /api/finance/categories', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets manager, admin, and observer list, including inactive rows', async () => {
+  it('lets manager and admin list, including inactive rows', async () => {
     await env.DB.prepare(`UPDATE finance_categories SET is_active = 0 WHERE slug = 'khac'`).run();
-    for (const token of [managerToken, adminToken, observerToken]) {
+    for (const token of [managerToken, adminToken]) {
       const response = await listCategories({ request: authedRequest('https://x/api/finance/categories', token, 'GET'), env });
       expect(response.status).toBe(200);
       const body = await response.json();
@@ -63,6 +63,11 @@ describe('GET /api/finance/categories', () => {
       const khac = body.find((c) => c.slug === 'khac');
       expect(khac.isActive).toBe(false);
     }
+  });
+
+  it('rejects observer (403) — category data is off-limits to this role', async () => {
+    const response = await listCategories({ request: authedRequest('https://x/api/finance/categories', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
   });
 
   it('returns the exact field shape expected by clients', async () => {

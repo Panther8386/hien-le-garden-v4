@@ -71,8 +71,8 @@ describe('GET /api/dashboard/summary', () => {
     expect(response.status).toBe(400);
   });
 
-  it('lets an observer view the summary', async () => {
+  it('rejects observer (403) — dashboard revenue figures are off-limits to this role', async () => {
     const response = await getSummary({ request: authedRequest('https://x/api/dashboard/summary', observerToken), env });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
   });
 });

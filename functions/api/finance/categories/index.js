@@ -23,7 +23,7 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, ['manager', 'admin']);
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ORDER BY type, display_order, id`).all();

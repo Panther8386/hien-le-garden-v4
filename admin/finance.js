@@ -144,13 +144,6 @@ function showFinanceError(message) {
     document.getElementById('openingBalanceEditor').classList.remove('hidden');
   }
 
-  if (currentRole === 'observer') {
-    // The server already refuses to return any expense row/field to this role — this
-    // just keeps the filter UI from offering a choice that can only ever come back empty.
-    const expenseOption = document.querySelector('#filterType option[value="expense"]');
-    if (expenseOption) expenseOption.remove();
-  }
-
   resetFinanceForm();
   await loadTransactions();
   document.getElementById('financeMonthInput').value = currentMonthValue();
@@ -462,10 +455,10 @@ function renderStatCards(summary) {
   container.innerHTML = '';
   const sourceLabels = { manual: 'nhập tay', carried_forward: 'kế thừa kỳ trước', default_zero: 'mặc định' };
   const sourceLabel = sourceLabels[summary.openingBalanceSource];
-  // Card list is driven entirely by which fields the API actually returned, not by
-  // currentRole — the observer role gets a summary response with only {month,
-  // totalIncome} (every expense-derived field stripped server-side), so this
-  // naturally renders just the one card with no role-specific branching needed here.
+  // Card list is driven entirely by which fields the API actually returned — the
+  // full set (openingBalance/totalIncome/totalExpense/netChange/closingBalance) for
+  // any role that can reach this page (manager/admin only; observer is blocked at
+  // the API level and never gets here).
   const cards = [];
   if (summary.openingBalance !== undefined) {
     cards.push({ label: sourceLabel ? `Số dư đầu kỳ (${sourceLabel})` : 'Số dư đầu kỳ', value: formatVnd(summary.openingBalance) });
@@ -537,10 +530,12 @@ async function refreshFinanceSummary() {
   const errorEl = document.getElementById('financeError');
   errorEl.textContent = '';
 
-  // Observer's GET /api/finance/opening-balance now 403s outright (that data is
-  // expense-derived, off-limits to this role) — skip fetching it entirely rather
-  // than treat the expected 403 as an error. renderOpeningBalanceEditor already
-  // renders nothing for a non-manager/admin role, so passing null is harmless.
+  // GET /api/finance/opening-balance is manager/admin only — skip fetching it for
+  // any other role rather than treat the expected 403 as an error.
+  // renderOpeningBalanceEditor already renders nothing for a non-manager/admin
+  // role, so passing null is harmless. (finance.html itself is now unreachable
+  // for observer at the API level — this guard only matters if some other role
+  // is ever added to this page in the future.)
   const isPrivileged = currentRole === 'manager' || currentRole === 'admin';
 
   let summaryResponse, openingResponse;

@@ -213,19 +213,9 @@ describe('GET /api/finance/transactions', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets observer list (read-only role), but only ever returns income rows — never expense, even voided ones', async () => {
+  it('rejects observer (403) — transaction data is off-limits to this role entirely', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', observerToken, 'GET'), env });
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toHaveLength(1);
-    expect(body.every((t) => t.type === 'income')).toBe(true);
-  });
-
-  it('observer requesting ?type=expense explicitly still gets zero expense rows back (server-side override, not just a UI hint)', async () => {
-    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?type=expense', observerToken, 'GET'), env });
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toEqual([]);
+    expect(response.status).toBe(403);
   });
 
   it('manager and admin still see both income and expense rows (no regression)', async () => {
