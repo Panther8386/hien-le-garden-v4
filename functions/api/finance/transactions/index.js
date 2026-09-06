@@ -33,8 +33,11 @@ function coerceRow(r) {
     receiptKey: r.receipt_key,
     receiptFilename: r.receipt_filename,
     receiptUploadedAt: r.receipt_uploaded_at,
+    isHidden: !!r.is_hidden,
   };
 }
+
+const VALID_PAGE_SIZES = [10, 25, 50, 100];
 
 export async function onRequestGet({ request, env }) {
   const auth = await requireAuth(request, env, ['manager', 'admin']);
@@ -47,6 +50,14 @@ export async function onRequestGet({ request, env }) {
   const category = url.searchParams.get('category');
   const status = url.searchParams.get('status');
   const q = url.searchParams.get('q');
+  const includeHidden = url.searchParams.get('includeHidden') === '1' && auth.role === 'admin';
+
+  const pageParam = url.searchParams.get('page');
+  const pageSizeParam = url.searchParams.get('pageSize');
+  const page = pageParam ? Number(pageParam) : 1;
+  const pageSize = pageSizeParam ? Number(pageSizeParam) : 25;
+  if (!Number.isInteger(page) || page < 1) return jsonError('Trang không hợp lệ', 400);
+  if (!VALID_PAGE_SIZES.includes(pageSize)) return jsonError('Số mục/trang không hợp lệ', 400);
 
   const clauses = [];
   const params = [];
@@ -56,13 +67,38 @@ export async function onRequestGet({ request, env }) {
   if (category) { clauses.push('category = ?'); params.push(category); }
   if (status) { clauses.push('status = ?'); params.push(status); }
   if (q) { clauses.push('note LIKE ? COLLATE NOCASE'); params.push(`%${q}%`); }
+  if (!includeHidden) { clauses.push('is_hidden = 0'); }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-  const { results } = await env.DB.prepare(
+  const { results: allRows } = await env.DB.prepare(
     `SELECT * FROM finance_transactions ${where} ORDER BY transaction_date DESC, id DESC`
   ).bind(...params).all();
 
-  return new Response(JSON.stringify(results.map(coerceRow)), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const total = allRows.length;
+  let sumIncome = 0;
+  let sumExpense = 0;
+  const categoryTotals = {};
+  const chartRows = [];
+  for (const r of allRows) {
+    if (r.type === 'income') sumIncome += r.amount; else sumExpense += r.amount;
+    if (!categoryTotals[r.category]) categoryTotals[r.category] = { income: 0, expense: 0 };
+    categoryTotals[r.category][r.type] += r.amount;
+    chartRows.push({ transactionDate: r.transaction_date, type: r.type, amount: r.amount, status: r.status, voidedAt: r.voided_at });
+  }
+
+  const offset = (page - 1) * pageSize;
+  const pageRows = allRows.slice(offset, offset + pageSize);
+
+  return new Response(JSON.stringify({
+    transactions: pageRows.map(coerceRow),
+    total,
+    page,
+    pageSize,
+    sumIncome,
+    sumExpense,
+    categoryTotals,
+    chartRows,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {

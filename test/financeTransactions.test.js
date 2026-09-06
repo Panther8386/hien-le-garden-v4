@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as listTransactions, onRequestPost as createTransaction } from '../functions/api/finance/transactions/index.js';
 import { onRequestPatch as patchTransaction } from '../functions/api/finance/transactions/[id].js';
 import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
+import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -221,14 +222,14 @@ describe('GET /api/finance/transactions', () => {
   it('manager and admin still see both income and expense rows (no regression)', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body).toHaveLength(3);
-    expect(body.some((t) => t.type === 'expense')).toBe(true);
+    expect(body.transactions).toHaveLength(3);
+    expect(body.transactions.some((t) => t.type === 'expense')).toBe(true);
   });
 
   it('includes voided transactions in the list (UI shows them struck-through)', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
-    const voided = body.find((t) => t.note === 'Công cắt cỏ');
+    const voided = body.transactions.find((t) => t.note === 'Công cắt cỏ');
     expect(voided.voidedAt).not.toBeNull();
     expect(voided.voidedBy).toBe('admin_fin');
   });
@@ -236,46 +237,192 @@ describe('GET /api/finance/transactions', () => {
   it('orders newest transaction_date first', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.transactionDate)).toEqual(['2026-08-20', '2026-08-15', '2026-08-01']);
+    expect(body.transactions.map((t) => t.transactionDate)).toEqual(['2026-08-20', '2026-08-15', '2026-08-01']);
   });
 
   it('filters by type', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?type=income', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.note)).toEqual(['Bán rau']);
+    expect(body.transactions.map((t) => t.note)).toEqual(['Bán rau']);
   });
 
   it('filters by category', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?category=nhan_cong', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.note)).toEqual(['Công cắt cỏ']);
+    expect(body.transactions.map((t) => t.note)).toEqual(['Công cắt cỏ']);
   });
 
   it('filters by status', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?status=paid', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.note)).toEqual(['Bán rau']);
+    expect(body.transactions.map((t) => t.note)).toEqual(['Bán rau']);
   });
 
   it('filters by date range', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?from=2026-08-10&to=2026-08-16', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.note)).toEqual(['Bán rau']);
+    expect(body.transactions.map((t) => t.note)).toEqual(['Bán rau']);
   });
 
   it('filters by keyword against note, case-insensitively', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?q=rau', managerToken, 'GET'), env });
     const body = await response.json();
-    expect(body.map((t) => t.note)).toEqual(['Bán rau']);
+    expect(body.transactions.map((t) => t.note)).toEqual(['Bán rau']);
   });
 
   it('includes null receipt fields for a transaction with no attachment', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
-    const row = body.find((t) => t.note === 'Bán rau');
+    const row = body.transactions.find((t) => t.note === 'Bán rau');
     expect(row.receiptKey).toBeNull();
     expect(row.receiptFilename).toBeNull();
     expect(row.receiptUploadedAt).toBeNull();
+  });
+
+  it('rejects an invalid pageSize (400)', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?pageSize=7', managerToken, 'GET'), env });
+    expect(response.status).toBe(400);
+  });
+
+  it('defaults to page=1, pageSize=25 when omitted', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+    expect(body.transactions).toHaveLength(3);
+  });
+
+  it('paginates with pageSize=10 across multiple pages, keeping total/sums stable regardless of page', async () => {
+    for (let i = 0; i < 12; i += 1) {
+      await env.DB.prepare(
+        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'ban_hang', 100000, ?, ?, 'paid', 'admin_fin', '2026-08-05T00:00:00Z')`
+      ).bind(`Extra ${i}`, `2026-08-0${(i % 9) + 1}`).run();
+    }
+    const page1Response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?pageSize=10&page=1', managerToken, 'GET'), env });
+    const page1 = await page1Response.json();
+    expect(page1.transactions).toHaveLength(10);
+    expect(page1.total).toBe(15);
+
+    const page2Response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?pageSize=10&page=2', managerToken, 'GET'), env });
+    const page2 = await page2Response.json();
+    expect(page2.transactions).toHaveLength(5);
+    expect(page2.total).toBe(15);
+    expect(page2.sumIncome).toBe(page1.sumIncome);
+  });
+
+  it('computes sumIncome/sumExpense over the full filtered set, not just the current page', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.sumIncome).toBe(3000000);
+    expect(body.sumExpense).toBe(300000);
+  });
+
+  it('computes categoryTotals grouped by category and type', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.categoryTotals.vat_tu).toEqual({ income: 0, expense: 100000 });
+    expect(body.categoryTotals.ban_hang).toEqual({ income: 3000000, expense: 0 });
+    expect(body.categoryTotals.nhan_cong).toEqual({ income: 0, expense: 200000 });
+  });
+
+  it('returns chartRows with exactly transactionDate/type/amount/status/voidedAt for every filtered row', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.chartRows).toHaveLength(3);
+    expect(Object.keys(body.chartRows[0]).sort()).toEqual(['amount', 'status', 'transactionDate', 'type', 'voidedAt']);
+  });
+
+  it('excludes hidden transactions by default', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE note = 'Công cắt cỏ'`).run();
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.transactions.map((t) => t.note)).not.toContain('Công cắt cỏ');
+    expect(body.total).toBe(2);
+  });
+
+  it('includeHidden=1 has no effect for a non-admin role', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE note = 'Công cắt cỏ'`).run();
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?includeHidden=1', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.total).toBe(2);
+  });
+
+  it('includeHidden=1 as admin includes hidden transactions', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE note = 'Công cắt cỏ'`).run();
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?includeHidden=1', adminToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.total).toBe(3);
+    expect(body.transactions.map((t) => t.note)).toContain('Công cắt cỏ');
+  });
+
+  it('response includes isHidden as a real boolean on every row', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.transactions.every((t) => typeof t.isHidden === 'boolean')).toBe(true);
+  });
+});
+
+describe('PATCH /api/finance/transactions/:id/hide', () => {
+  let voidedTxId, activeTxId;
+
+  beforeEach(async () => {
+    const voided = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at, voided_by, voided_at) VALUES ('expense', 'vat_tu', 50000, 'Nhập nhầm', '2026-08-22', 'confirmed', 'quan_ly_fin', '2026-08-22T00:00:00Z', 'admin_fin', '2026-08-23T00:00:00Z')`
+    ).run();
+    voidedTxId = voided.meta.last_row_id;
+    const active = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('expense', 'vat_tu', 60000, 'Còn hiệu lực', '2026-08-24', 'confirmed', 'quan_ly_fin', '2026-08-24T00:00:00Z')`
+    ).run();
+    activeTxId = active.meta.last_row_id;
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, null, 'PATCH', { hidden: true }), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects manager (403) — hide is admin-only', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, managerToken, 'PATCH', { hidden: true }), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects reception (403)', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, receptionToken, 'PATCH', { hidden: true }), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('404s for a non-existent id', async () => {
+    const response = await hideTransaction({ request: authedRequest('https://x/api/finance/transactions/999999/hide', adminToken, 'PATCH', { hidden: true }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('400s when the transaction has not been voided', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${activeTxId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(activeTxId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('400s when hidden is missing or not a boolean', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, adminToken, 'PATCH', {}), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('hides a voided transaction and writes an audit_log row using summarize()', async () => {
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, adminToken, 'PATCH', { hidden: true }), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM finance_transactions WHERE id = ?`).bind(voidedTxId).first();
+    expect(row.is_hidden).toBe(1);
+    const audit = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'record_hide' AND entity_id = ?`).bind(voidedTxId).first();
+    expect(audit.entity_type).toBe('finance_transaction');
+    expect(audit.entity_label).toContain('Nhập nhầm');
+    expect(audit.new_value).toBe('ẩn');
+  });
+
+  it('unhides a hidden transaction', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE id = ?`).bind(voidedTxId).run();
+    const response = await hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${voidedTxId}/hide`, adminToken, 'PATCH', { hidden: false }), env, params: { id: String(voidedTxId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_hidden FROM finance_transactions WHERE id = ?`).bind(voidedTxId).first();
+    expect(row.is_hidden).toBe(0);
   });
 });
 
