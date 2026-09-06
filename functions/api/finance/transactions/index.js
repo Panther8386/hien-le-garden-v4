@@ -80,10 +80,19 @@ export async function onRequestGet({ request, env }) {
   const categoryTotals = {};
   const chartRows = [];
   for (const r of allRows) {
+    chartRows.push({ transactionDate: r.transaction_date, type: r.type, amount: r.amount, status: r.status, voidedAt: r.voided_at });
+    // sumIncome/sumExpense/categoryTotals represent settled revenue — matching
+    // the same confirmed/paid-and-not-voided filter that GET /api/finance/summary
+    // and the client's own time-chart bucketing already use for the other two
+    // money figures on this page. The raw transactions/total above (and chartRows,
+    // whose consumer applies this same filter itself) still include every row
+    // regardless of status, so the "Giao dịch" list keeps showing drafts/voided
+    // rows unchanged.
+    const isSettled = !r.voided_at && (r.status === 'confirmed' || r.status === 'paid');
+    if (!isSettled) continue;
     if (r.type === 'income') sumIncome += r.amount; else sumExpense += r.amount;
     if (!categoryTotals[r.category]) categoryTotals[r.category] = { income: 0, expense: 0 };
     categoryTotals[r.category][r.type] += r.amount;
-    chartRows.push({ transactionDate: r.transaction_date, type: r.type, amount: r.amount, status: r.status, voidedAt: r.voided_at });
   }
 
   const offset = (page - 1) * pageSize;

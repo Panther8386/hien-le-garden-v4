@@ -282,6 +282,8 @@ th { color: var(--gold); font-weight: 600; }
   border-radius: 8px; padding: 20px; max-width: 400px; width: 100%;
 }
 .confirm-box.wide { max-width: 560px; }
+.confirm-overlay.form-overlay { align-items: flex-start; overflow-y: auto; }
+.confirm-overlay.form-overlay .confirm-box { margin: 24px auto; }
 .btn-secondary { background: transparent; border: 1px solid rgba(245,240,230,0.3); color: var(--cream); }
 
 .stat-grid {

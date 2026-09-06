@@ -310,19 +310,26 @@ describe('GET /api/finance/transactions', () => {
     expect(page2.sumIncome).toBe(page1.sumIncome);
   });
 
-  it('computes sumIncome/sumExpense over the full filtered set, not just the current page', async () => {
+  it('computes sumIncome/sumExpense over the full filtered set, excluding drafts and voided rows', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
+    // beforeEach seeds: income/ban_hang/3000000 (paid, not voided) — counts;
+    // expense/vat_tu/100000 (confirmed, not voided) — counts;
+    // expense/nhan_cong/200000 (confirmed, but VOIDED) — excluded.
     expect(body.sumIncome).toBe(3000000);
-    expect(body.sumExpense).toBe(300000);
+    expect(body.sumExpense).toBe(100000);
+    // The raw list itself is unaffected — all 3 rows still appear.
+    expect(body.transactions).toHaveLength(3);
+    expect(body.total).toBe(3);
   });
 
-  it('computes categoryTotals grouped by category and type', async () => {
+  it('computes categoryTotals grouped by category and type, excluding a voided row entirely', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
     const body = await response.json();
     expect(body.categoryTotals.vat_tu).toEqual({ income: 0, expense: 100000 });
     expect(body.categoryTotals.ban_hang).toEqual({ income: 3000000, expense: 0 });
-    expect(body.categoryTotals.nhan_cong).toEqual({ income: 0, expense: 200000 });
+    // nhan_cong's only transaction is voided — it never enters categoryTotals.
+    expect(body.categoryTotals.nhan_cong).toBeUndefined();
   });
 
   it('returns chartRows with exactly transactionDate/type/amount/status/voidedAt for every filtered row', async () => {

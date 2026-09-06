@@ -26,6 +26,7 @@ const RECORD_HIDE_ENTITY_LABELS = {
   gio_xanh_session: 'Ẩn/hiện phiên Giờ Xanh',
   dine_in_order: 'Ẩn/hiện bàn Order ăn uống',
   booking: 'Ẩn/hiện đặt phòng',
+  finance_transaction: 'Ẩn/hiện giao dịch thu chi',
 };
 
 function formatVnd(n) {

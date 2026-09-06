@@ -441,6 +441,15 @@ async function loadTransactions(filters) {
   }
   const body = await response.json();
   currentTotal = body.total;
+  const totalPages = Math.max(1, Math.ceil(currentTotal / currentPageSize));
+  if (currentPage > totalPages) {
+    // The page we asked for no longer exists (e.g. the last remaining row on
+    // the last page was just hidden or voided) — land on the new last page
+    // instead of showing an empty table with an impossible "page X of Y" state.
+    currentPage = totalPages;
+    await loadTransactions(filters);
+    return;
+  }
   currentCategoryTotals = body.categoryTotals;
   currentChartRows = body.chartRows;
   renderTransactions(body.transactions);
@@ -803,16 +812,47 @@ function buildPieSlices(totals, key) {
 function renderPie(containerId, totals, key, titleText) {
   const container = document.getElementById(containerId);
   const { entries, sum } = buildPieSlices(totals, key);
+  container.innerHTML = '';
+
+  const heading = document.createElement('h4');
+  heading.style.margin = '8px 0 4px';
+  heading.textContent = titleText;
+  container.appendChild(heading);
+
   if (sum === 0) {
-    container.innerHTML = `<h4 style="margin:8px 0 4px;">${titleText}</h4><p style="opacity:0.6;">Không có dữ liệu để vẽ biểu đồ.</p>`;
+    const emptyMsg = document.createElement('p');
+    emptyMsg.style.opacity = '0.6';
+    emptyMsg.textContent = 'Không có dữ liệu để vẽ biểu đồ.';
+    container.appendChild(emptyMsg);
     return;
   }
+
   const cx = 90;
   const cy = 90;
   const r = 80;
   let angle = -90;
-  let svg = `<svg viewBox="0 0 180 180" role="img" aria-label="Biểu đồ ${titleText} theo danh mục" style="width: 180px; height: 180px; flex-shrink: 0;">`;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 180 180');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Biểu đồ ${titleText} theo danh mục`);
+  svg.style.width = '180px';
+  svg.style.height = '180px';
+  svg.style.flexShrink = '0';
+
   entries.forEach((e, i) => {
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    if (entries.length === 1) {
+      // A 360° sweep produces coincident start/end points — the arc command
+      // renders with zero width per the SVG spec. Draw a full circle instead.
+      const circle = document.createElementNS(svgNS, 'circle');
+      circle.setAttribute('cx', String(cx));
+      circle.setAttribute('cy', String(cy));
+      circle.setAttribute('r', String(r));
+      circle.setAttribute('fill', color);
+      svg.appendChild(circle);
+      return;
+    }
     const fraction = e.value / sum;
     const sweep = fraction * 360;
     const x1 = cx + r * Math.cos((Math.PI / 180) * angle);
@@ -821,19 +861,43 @@ function renderPie(containerId, totals, key, titleText) {
     const x2 = cx + r * Math.cos((Math.PI / 180) * endAngle);
     const y2 = cy + r * Math.sin((Math.PI / 180) * endAngle);
     const largeArc = sweep > 180 ? 1 : 0;
-    const color = CHART_COLORS[i % CHART_COLORS.length];
-    svg += `<path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z" fill="${color}" />`;
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`);
+    path.setAttribute('fill', color);
+    svg.appendChild(path);
     angle = endAngle;
   });
-  svg += `</svg>`;
 
-  const legend = entries.map((e, i) => {
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex';
+  wrap.style.gap = '16px';
+  wrap.style.flexWrap = 'wrap';
+  wrap.style.alignItems = 'center';
+  wrap.appendChild(svg);
+
+  const legendWrap = document.createElement('div');
+  legendWrap.style.display = 'flex';
+  legendWrap.style.flexDirection = 'column';
+  legendWrap.style.gap = '4px';
+  entries.forEach((e, i) => {
     const color = CHART_COLORS[i % CHART_COLORS.length];
     const pct = ((e.value / sum) * 100).toFixed(1);
-    return `<div style="display:flex;align-items:center;gap:6px;font-size:0.85rem;"><span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;"></span>${categoryLabel(e.slug)} — ${pct}% (${formatVnd(e.value)})</div>`;
-  }).join('');
-
-  container.innerHTML = `<h4 style="margin:8px 0 4px;">${titleText}</h4><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">${svg}<div style="display:flex;flex-direction:column;gap:4px;">${legend}</div></div>`;
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '6px';
+    row.style.fontSize = '0.85rem';
+    const swatch = document.createElement('span');
+    swatch.style.display = 'inline-block';
+    swatch.style.width = '10px';
+    swatch.style.height = '10px';
+    swatch.style.background = color;
+    swatch.style.borderRadius = '2px';
+    row.append(swatch, `${categoryLabel(e.slug)} — ${pct}% (${formatVnd(e.value)})`);
+    legendWrap.appendChild(row);
+  });
+  wrap.appendChild(legendWrap);
+  container.appendChild(wrap);
 }
 
 function renderCategoryPies() {
