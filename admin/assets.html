@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Danh mục tài sản — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Danh mục tài sản</h1>
+    <p id="pageError" class="error"></p>
+    <button type="button" id="openAddAssetBtn" class="hidden">+ Thêm tài sản</button>
+
+    <div class="filters" id="assetFilters">
+      <select id="filterCategory"><option value="">Tất cả danh mục</option></select>
+      <select id="filterLocation"><option value="">Tất cả vị trí</option></select>
+      <select id="filterSourceType">
+        <option value="">Tất cả nguồn</option>
+        <option value="handover_a">Bàn giao (Bên A)</option>
+        <option value="purchased_b">Bên B mua mới</option>
+        <option value="other">Khác</option>
+      </select>
+      <input type="text" id="filterSearch" placeholder="Tìm theo tên, mã, serial..." />
+    </div>
+
+    <div id="assetList" class="booking-list"></div>
+  </div>
+
+  <div id="assetFormOverlay" class="confirm-overlay form-overlay hidden">
+    <div class="confirm-box wide">
+      <h3 id="assetFormTitle">Thêm tài sản</h3>
+      <form id="assetForm">
+        <label>Danh mục
+          <select name="categoryId" required></select>
+        </label>
+        <label>Tên tài sản <input type="text" name="name" required /></label>
+        <label>Hãng/model <input type="text" name="brand" /></label>
+        <label>Số serial <input type="text" name="serialNumber" /></label>
+        <label>Nguồn hình thành
+          <select name="sourceType" required>
+            <option value="handover_a">Bàn giao (Bên A)</option>
+            <option value="purchased_b">Bên B mua mới</option>
+            <option value="other">Khác</option>
+          </select>
+        </label>
+        <label>Ngày tiếp nhận/mua <input type="date" name="acquiredDate" /></label>
+        <label>Giá mua (đ) <input type="number" name="purchasePrice" min="0" step="1000" /></label>
+        <label>Vị trí
+          <select name="locationId"><option value="">Chưa phân bổ vị trí</option></select>
+        </label>
+        <label>Người phụ trách <input type="text" name="holder" /></label>
+        <label id="assetQuantityWrap">Số lượng <input type="number" name="quantity" min="0" step="1" /></label>
+        <label>Tình trạng vật lý
+          <select name="physicalCondition">
+            <option value="chua_danh_gia">Chưa đánh giá</option>
+            <option value="tot">Tốt</option>
+            <option value="kha">Khá</option>
+            <option value="trung_binh">Trung bình</option>
+            <option value="can_sua">Cần sửa</option>
+          </select>
+        </label>
+        <label>Trạng thái hoạt động
+          <select name="operationalStatus">
+            <option value="san_sang">Sẵn sàng</option>
+            <option value="dang_su_dung">Đang sử dụng</option>
+            <option value="ngung_su_dung">Ngừng sử dụng</option>
+            <option value="dang_sua">Đang sửa</option>
+          </select>
+        </label>
+        <label>Vòng đời
+          <select name="lifecycleStatus">
+            <option value="dang_quan_ly">Đang quản lý</option>
+            <option value="da_hoan_tra">Đã hoàn trả</option>
+            <option value="da_thanh_ly">Đã thanh lý</option>
+          </select>
+        </label>
+        <label>Ghi chú <input type="text" name="note" /></label>
+
+        <div id="assetQrSection" class="hidden">
+          <p>Mã nội bộ: <strong id="assetInternalCode"></strong></p>
+          <div id="assetQrCode"></div>
+          <button type="button" id="downloadQrBtn" class="btn-secondary">Tải mã QR</button>
+        </div>
+
+        <div id="assetPhotoSection" class="hidden">
+          <p id="assetPhotoInfo"></p>
+          <input type="file" id="assetPhotoInput" accept="image/jpeg,image/png,image/webp,application/pdf" />
+          <button type="button" id="uploadPhotoBtn" class="btn-secondary">Tải ảnh lên</button>
+          <button type="button" id="deletePhotoBtn" class="btn-secondary hidden">Xoá ảnh</button>
+        </div>
+
+        <button type="submit">Lưu</button>
+        <button type="button" id="assetFormCloseBtn" class="btn-secondary">Đóng</button>
+        <p id="assetFormError" class="error"></p>
+      </form>
+    </div>
+  </div>
+
+  <script src="/admin/lib/qrcode.min.js"></script>
+  <script src="/admin/assets.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
