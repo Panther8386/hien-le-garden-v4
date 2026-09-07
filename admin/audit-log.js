@@ -20,6 +20,10 @@ const ACTION_TYPE_LABELS = {
   dine_in_order_void: 'Huỷ bàn order ăn uống',
   gio_xanh_session_void: 'Huỷ phiên Giờ Xanh',
   record_hide: 'Ẩn/hiện bản ghi',
+  asset_category_create: 'Tạo danh mục tài sản',
+  asset_category_update: 'Sửa danh mục tài sản',
+  asset_location_create: 'Tạo vị trí tài sản',
+  asset_location_update: 'Sửa vị trí tài sản',
 };
 
 const RECORD_HIDE_ENTITY_LABELS = {
