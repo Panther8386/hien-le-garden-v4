@@ -36,6 +36,10 @@ function showOpsError(message) {
 let canManageRoomLayout = false;
 let catalogItems = [];
 
+let bookingHistoryAll = [];
+let bookingHistoryPage = 1;
+const BOOKING_HISTORY_PAGE_SIZE = 10;
+
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
@@ -57,6 +61,20 @@ let catalogItems = [];
     document.getElementById('showHiddenBookingsWrap').classList.remove('hidden');
   }
   document.getElementById('showHiddenBookings').addEventListener('change', loadBookingHistory);
+  document.getElementById('bookingHistorySearch').addEventListener('input', () => {
+    bookingHistoryPage = 1;
+    renderBookingHistoryPage();
+  });
+  document.getElementById('bookingHistoryPrevBtn').addEventListener('click', () => {
+    if (bookingHistoryPage > 1) {
+      bookingHistoryPage -= 1;
+      renderBookingHistoryPage();
+    }
+  });
+  document.getElementById('bookingHistoryNextBtn').addEventListener('click', () => {
+    bookingHistoryPage += 1;
+    renderBookingHistoryPage();
+  });
   await refreshAll();
   await loadLayoutHistory();
 })();
@@ -1193,6 +1211,35 @@ document.getElementById('claimGiftBtn').addEventListener('click', async () => {
   errorEl.textContent = '';
 });
 
+function bookingHistoryActions(actions, b) {
+  if (currentRole !== 'admin') return;
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'btn-secondary table-actions-btn';
+  hideBtn.textContent = b.isHidden ? 'Hiện' : 'Ẩn';
+  hideBtn.addEventListener('click', async () => {
+    let response;
+    try {
+      response = await fetch(`/api/bookings/${b.id}/hide`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hidden: !b.isHidden }),
+      });
+    } catch (err) {
+      showOpsError('Có lỗi khi ẩn/hiện đặt phòng');
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      showOpsError(body.error || 'Có lỗi khi ẩn/hiện đặt phòng');
+      return;
+    }
+    showOpsError('');
+    await loadBookingHistory();
+  });
+  actions.appendChild(hideBtn);
+}
+
 async function loadBookingHistory() {
   const showHidden = currentRole === 'admin' && document.getElementById('showHiddenBookings').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
@@ -1200,33 +1247,26 @@ async function loadBookingHistory() {
     fetchBookings(`status=checked_out${suffix}`),
     fetchBookings(`status=cancelled${suffix}`),
   ]);
-  const all = [...checkedOut, ...cancelled].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  renderList('bookingHistoryList', all, 'Chưa có đặt phòng nào đã trả phòng/huỷ.', (actions, b) => {
-    if (currentRole !== 'admin') return;
-    const hideBtn = document.createElement('button');
-    hideBtn.type = 'button';
-    hideBtn.className = 'btn-secondary table-actions-btn';
-    hideBtn.textContent = b.isHidden ? 'Hiện' : 'Ẩn';
-    hideBtn.addEventListener('click', async () => {
-      let response;
-      try {
-        response = await fetch(`/api/bookings/${b.id}/hide`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hidden: !b.isHidden }),
-        });
-      } catch (err) {
-        showOpsError('Có lỗi khi ẩn/hiện đặt phòng');
-        return;
-      }
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        showOpsError(body.error || 'Có lỗi khi ẩn/hiện đặt phòng');
-        return;
-      }
-      showOpsError('');
-      await loadBookingHistory();
-    });
-    actions.appendChild(hideBtn);
-  });
+  bookingHistoryAll = [...checkedOut, ...cancelled].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  bookingHistoryPage = 1;
+  renderBookingHistoryPage();
+}
+
+function renderBookingHistoryPage() {
+  const term = document.getElementById('bookingHistorySearch').value.trim().toLowerCase();
+  const filtered = term
+    ? bookingHistoryAll.filter((b) => (b.guestName || '').toLowerCase().includes(term) || (b.phone || '').toLowerCase().includes(term))
+    : bookingHistoryAll;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / BOOKING_HISTORY_PAGE_SIZE));
+  if (bookingHistoryPage > totalPages) bookingHistoryPage = totalPages;
+  const offset = (bookingHistoryPage - 1) * BOOKING_HISTORY_PAGE_SIZE;
+  const pageItems = filtered.slice(offset, offset + BOOKING_HISTORY_PAGE_SIZE);
+
+  const emptyText = term ? 'Không tìm thấy kết quả phù hợp.' : 'Chưa có đặt phòng nào đã trả phòng/huỷ.';
+  renderList('bookingHistoryList', pageItems, emptyText, bookingHistoryActions);
+
+  document.getElementById('bookingHistoryPageInfo').textContent = `Trang ${bookingHistoryPage}/${totalPages} (${filtered.length} kết quả)`;
+  document.getElementById('bookingHistoryPrevBtn').disabled = bookingHistoryPage <= 1;
+  document.getElementById('bookingHistoryNextBtn').disabled = bookingHistoryPage >= totalPages;
 }

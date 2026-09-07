@@ -82,7 +82,13 @@
 
     <h2>Lịch sử đặt phòng</h2>
     <label class="checkbox hidden" id="showHiddenBookingsWrap"><input type="checkbox" id="showHiddenBookings" /> Hiển thị các log đã ẩn</label>
+    <input type="text" id="bookingHistorySearch" placeholder="Tìm theo tên hoặc số điện thoại..." />
     <div id="bookingHistoryList" class="booking-list"></div>
+    <div class="filters" id="bookingHistoryPagination">
+      <button type="button" id="bookingHistoryPrevBtn" class="btn-secondary">← Trước</button>
+      <span id="bookingHistoryPageInfo"></span>
+      <button type="button" id="bookingHistoryNextBtn" class="btn-secondary">Sau →</button>
+    </div>
 
     <h2>Trạng thái phòng</h2>
     <div class="room-filters">
@@ -101,6 +107,17 @@
     </div>
     <div id="roomsGrid" class="rooms-grid"></div>
     <div id="roomLayoutHistory" class="room-layout-history"></div>
+
+    <table id="roomStatusLegend" class="legend-table">
+      <tbody>
+        <tr><td><span class="legend-swatch room-empty"></span></td><td>Trống</td></tr>
+        <tr><td><span class="legend-swatch room-booked"></span></td><td>Đã có khách đặt</td></tr>
+        <tr><td><span class="legend-swatch room-booked_deposited"></span></td><td>Đã đặt &amp; có cọc</td></tr>
+        <tr><td><span class="legend-swatch room-occupied"></span></td><td>Đang có khách</td></tr>
+        <tr><td><span class="legend-swatch room-used"></span></td><td>Đã sử dụng</td></tr>
+        <tr><td>🧹</td><td>Cần dọn phòng (hiện chồng lên bất kỳ trạng thái nào)</td></tr>
+      </tbody>
+    </table>
 
     <div id="promoLookupSection">
     <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
