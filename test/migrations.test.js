@@ -522,3 +522,105 @@ describe('migration 0028', () => {
     expect(row.can_add_finance_transaction).toBe(1);
   });
 });
+
+describe('migration 0029', () => {
+  async function seedCategory(managementType) {
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES (?, 'Test Category', 'cái', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(managementType).run();
+    return insert.meta.last_row_id;
+  }
+
+  it('creates an asset with required fields and defaults for the 3 status fields', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    const insert = await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'Giường 1', 'handover_a', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId).run();
+    const row = await env.DB.prepare(`SELECT physical_condition, operational_status, lifecycle_status FROM assets WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ physical_condition: 'chua_danh_gia', operational_status: 'san_sang', lifecycle_status: 'dang_quan_ly' });
+  });
+
+  it('rejects an invalid source_type', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'X', 'invalid', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(categoryId).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid physical_condition', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO assets (category_id, name, source_type, physical_condition, created_by, created_at) VALUES (?, 'X', 'handover_a', 'invalid', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(categoryId).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid operational_status', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO assets (category_id, name, source_type, operational_status, created_by, created_at) VALUES (?, 'X', 'handover_a', 'invalid', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(categoryId).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid lifecycle_status', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO assets (category_id, name, source_type, lifecycle_status, created_by, created_at) VALUES (?, 'X', 'handover_a', 'invalid', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(categoryId).run()
+    ).rejects.toThrow();
+  });
+
+  it('allows a NULL quantity ("Chưa xác định") and a NULL location_id ("Chưa phân bổ vị trí")', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    const insert = await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'X', 'handover_a', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId).run();
+    const row = await env.DB.prepare(`SELECT quantity, location_id FROM assets WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ quantity: null, location_id: null });
+  });
+
+  it('rejects a duplicate internal_code', async () => {
+    const categoryId = await seedCategory('individual_device');
+    await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, internal_code, created_by, created_at) VALUES (?, 'A', 'handover_a', 'TS000001', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO assets (category_id, name, source_type, internal_code, created_by, created_at) VALUES (?, 'B', 'handover_a', 'TS000001', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(categoryId).run()
+    ).rejects.toThrow();
+  });
+
+  it('allows multiple rows with a NULL internal_code (durable_goods/infrastructure never get one)', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'A', 'handover_a', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId).run();
+    const insert2 = await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'B', 'handover_a', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId).run();
+    const row = await env.DB.prepare(`SELECT internal_code FROM assets WHERE id = ?`).bind(insert2.meta.last_row_id).first();
+    expect(row.internal_code).toBeNull();
+  });
+
+  it('links to a real asset_source_rows row via source_row_id', async () => {
+    const categoryId = await seedCategory('individual_device');
+    const docInsert = await env.DB.prepare(
+      `INSERT INTO asset_source_documents (title, created_by, created_at) VALUES ('Test Doc M29', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    const rowInsert = await env.DB.prepare(
+      `INSERT INTO asset_source_rows (source_document_id, source_group_label, stt, raw_name, raw_quantity, created_at) VALUES (?, 'A', 1, 'Điều hoà', '8', '2026-09-07T00:00:00Z')`
+    ).bind(docInsert.meta.last_row_id).run();
+    const insert = await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, source_row_id, created_by, created_at) VALUES (?, 'Điều hoà 1', 'handover_a', ?, 'system', '2026-09-07T00:00:00Z')`
+    ).bind(categoryId, rowInsert.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT source_row_id FROM assets WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.source_row_id).toBe(rowInsert.meta.last_row_id);
+  });
+});
