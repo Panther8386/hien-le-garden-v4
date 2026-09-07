@@ -504,3 +504,21 @@ describe('migration 0027', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('migration 0028', () => {
+  it('adds can_add_finance_transaction to staff_accounts, defaulting to 0', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('mig0028_default', 'x', 'reception', '2026-09-07T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.can_add_finance_transaction).toBe(0);
+  });
+
+  it('allows can_add_finance_transaction to be set to 1', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('mig0028_granted', 'x', 'reception', '2026-09-07T00:00:00Z', 1)`
+    ).run();
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.can_add_finance_transaction).toBe(1);
+  });
+});

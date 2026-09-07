@@ -52,6 +52,26 @@ describe('POST /api/finance/transactions', () => {
     expect(response.status).toBe(403);
   });
 
+  it('lets a reception account with canAddFinanceTransaction=1 create a transaction', async () => {
+    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z', 1)`).run();
+    const grantedToken = await createSession(env.DB, granted.meta.last_row_id);
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('still rejects an observer account even if canAddFinanceTransaction were somehow set to 1 (defense in depth)', async () => {
+    const grantedObserver = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('quan_sat_duoc_cap', 'x', 'observer', '2026-08-01T00:00:00Z', 1)`).run();
+    const grantedToken = await createSession(env.DB, grantedObserver.meta.last_row_id);
+    const response = await createTransaction({
+      request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
+      env,
+    });
+    expect(response.status).toBe(403);
+  });
+
   it('rejects an invalid type (400)', async () => {
     const response = await createTransaction({
       request: authedRequest('https://x/api/finance/transactions', managerToken, 'POST', { type: 'other', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
@@ -214,9 +234,30 @@ describe('GET /api/finance/transactions', () => {
     expect(response.status).toBe(403);
   });
 
-  it('rejects observer (403) — transaction data is off-limits to this role entirely', async () => {
+  it('lets observer see only income ("Thu") rows, ignoring any expense/voided rows', async () => {
     const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', observerToken, 'GET'), env });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
+    expect(body.transactions[0].note).toBe('Bán rau');
+  });
+
+  it('forces type=income for observer even when the client explicitly requests type=expense', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions?type=expense', observerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
+  });
+
+  it('gives observer sumIncome but a permanently-zero sumExpense and income-only categoryTotals/chartRows', async () => {
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', observerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.sumIncome).toBe(3000000);
+    expect(body.sumExpense).toBe(0);
+    expect(Object.keys(body.categoryTotals)).toEqual(['ban_hang']);
+    expect(body.chartRows).toHaveLength(1);
+    expect(body.chartRows[0].type).toBe('income');
   });
 
   it('manager and admin still see both income and expense rows (no regression)', async () => {

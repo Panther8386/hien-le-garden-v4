@@ -4,7 +4,7 @@ const NAV_GROUPS = [
     label: 'Vận hành',
     items: [
       { page: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', roles: ['manager', 'admin'] },
-      { page: 'finance.html', label: 'Sổ thu chi', icon: '💵', roles: ['manager', 'admin'] },
+      { page: 'finance.html', label: 'Sổ thu chi', icon: '💵', roles: ['manager', 'admin', 'observer'] },
       { page: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', roles: ['reception', 'manager', 'admin', 'observer'] },
       { page: 'dine-in-orders.html', label: 'Order ăn uống', icon: '🍽️', roles: ['reception', 'manager', 'admin', 'observer'] },
       { page: 'gio-xanh.html', label: 'Giờ Xanh Hiền Lê', icon: '🌿', roles: ['reception', 'manager', 'admin', 'observer'] },

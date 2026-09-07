@@ -49,3 +49,4 @@
 /observer/change-password      /admin/change-password 200
 /observer/dine-in-orders        /admin/dine-in-orders   200
 /observer/gio-xanh              /admin/gio-xanh         200
+/observer/finance               /admin/finance          200

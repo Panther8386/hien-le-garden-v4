@@ -40,13 +40,16 @@ function coerceRow(r) {
 const VALID_PAGE_SIZES = [10, 25, 50, 100];
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
-  const type = url.searchParams.get('type');
+  // Observer only ever sees the "Thu" (income) side of Sổ thu chi — the server
+  // enforces this regardless of what the client requests, so any attempt to
+  // pass ?type=expense is silently overridden rather than trusted.
+  const type = auth.role === 'observer' ? 'income' : url.searchParams.get('type');
   const category = url.searchParams.get('category');
   const status = url.searchParams.get('status');
   const q = url.searchParams.get('q');
@@ -111,8 +114,14 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
+  // Manager/admin can always add transactions via role. A reception account
+  // can also gain this via the per-user "Thêm giao dịch" permission granted
+  // on the Quản lý user page (mirrors canManageRoomLayout) — observer can
+  // never add transactions, flag or not.
+  const canAdd = auth.role === 'manager' || auth.role === 'admin' || (auth.canAddFinanceTransaction && auth.role !== 'observer');
+  if (!canAdd) return jsonError('Tài khoản không có quyền thêm giao dịch', 403);
 
   let body;
   try {

@@ -65,9 +65,13 @@ describe('GET /api/finance/categories', () => {
     }
   });
 
-  it('rejects observer (403) — category data is off-limits to this role', async () => {
+  it('lets observer list, but only income ("Thu") categories', async () => {
     const response = await listCategories({ request: authedRequest('https://x/api/finance/categories', observerToken, 'GET'), env });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toHaveLength(6);
+    expect(body.every((c) => c.type === 'income')).toBe(true);
+    expect(body.some((c) => c.slug === 'vat_tu')).toBe(false);
   });
 
   it('returns the exact field shape expected by clients', async () => {

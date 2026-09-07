@@ -23,10 +23,14 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
   if (auth instanceof Response) return auth;
 
-  const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ORDER BY type, display_order, id`).all();
+  // Observer only ever sees "Thu" data — hide expense category names too, not
+  // just amounts, so the category filter dropdown has nothing to select that
+  // could never return a result anyway.
+  const where = auth.role === 'observer' ? `WHERE type = 'income'` : '';
+  const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ${where} ORDER BY type, display_order, id`).all();
   return new Response(JSON.stringify(results.map(coerceRow)), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 

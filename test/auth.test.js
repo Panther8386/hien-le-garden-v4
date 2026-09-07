@@ -29,7 +29,18 @@ describe('createSession / getSession', () => {
 
     const token = await createSession(env.DB, 1);
     const session = await getSession(env.DB, token);
-    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', canManageRoomLayout: false });
+    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: false });
+  });
+
+  it('resolves canAddFinanceTransaction true for an account with the flag set', async () => {
+    await env.DB.prepare(
+      `INSERT INTO staff_accounts (id, username, password_hash, role, can_add_finance_transaction, created_at)
+       VALUES (2, 'le_tan_c', 'x', 'reception', 1, '2026-08-01T00:00:00Z')`
+    ).run();
+
+    const token = await createSession(env.DB, 2);
+    const session = await getSession(env.DB, token);
+    expect(session.canAddFinanceTransaction).toBe(true);
   });
 
   it('returns null for an unknown token', async () => {

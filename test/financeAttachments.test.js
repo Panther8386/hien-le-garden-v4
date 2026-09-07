@@ -188,10 +188,24 @@ describe('GET /api/finance/transactions/:id/attachment', () => {
     expect(response.headers.get('Content-Disposition')).toContain('bill.pdf');
   });
 
-  it('rejects observer (403) for any attachment, income or expense', async () => {
+  it('lets observer view the receipt of an income ("Thu") transaction', async () => {
     await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('income-receipt.pdf')), env, params: { id: String(incomeTxId) } });
     const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(incomeTxId) } });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toContain('income-receipt.pdf');
+  });
+
+  it('404s observer on an expense transaction\'s receipt (not 403 — avoids revealing it exists)', async () => {
+    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, managerToken, pdfFile('expense-receipt.pdf')), env, params: { id: String(expenseTxId) } });
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(expenseTxId) } });
+    expect(response.status).toBe(404);
+  });
+
+  it('404s observer on a hidden income transaction\'s receipt', async () => {
+    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('income-receipt.pdf')), env, params: { id: String(incomeTxId) } });
+    await env.DB.prepare(`UPDATE finance_transactions SET voided_at = '2026-09-01T02:00:00Z', voided_by = 'quan_ly_att', is_hidden = 1 WHERE id = ?`).bind(incomeTxId).run();
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, observerToken, 'GET'), env, params: { id: String(incomeTxId) } });
+    expect(response.status).toBe(404);
   });
 
   it('produces a safe, well-formed Content-Disposition for a filename with diacritics and a quote character', async () => {

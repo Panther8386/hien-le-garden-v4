@@ -177,7 +177,7 @@ let currentChartType = 'time';
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
+  const { role, canAddFinanceTransaction } = await res.json();
   currentRole = role;
 
   await loadCategoryMeta();
@@ -185,8 +185,10 @@ let currentChartType = 'time';
   setDefaultTypePreference(defaultTypePreference());
   populateCategorySelect(document.getElementById('filterCategory'), { includeAllOption: true });
 
-  if (currentRole === 'manager' || currentRole === 'admin') {
+  if (currentRole === 'manager' || currentRole === 'admin' || canAddFinanceTransaction) {
     document.getElementById('openAddTransactionBtn').classList.remove('hidden');
+  }
+  if (currentRole === 'manager' || currentRole === 'admin') {
     document.getElementById('openingBalanceEditor').classList.remove('hidden');
   }
 
@@ -198,10 +200,20 @@ let currentChartType = 'time';
     loadTransactions();
   });
 
+  // Observer only ever sees "Thu" data (server-enforced) — the monthly
+  // balance sheet mixes income and expense with no meaningful Thu-only
+  // version, and there's nothing left for the type filter to choose between.
+  if (currentRole === 'observer') {
+    document.getElementById('financeBalanceSection').classList.add('hidden');
+    document.getElementById('filterType').classList.add('hidden');
+  }
+
   resetFinanceForm();
   await loadTransactions();
-  document.getElementById('financeMonthInput').value = currentMonthValue();
-  await refreshFinanceSummary();
+  if (currentRole !== 'observer') {
+    document.getElementById('financeMonthInput').value = currentMonthValue();
+    await refreshFinanceSummary();
+  }
   await refreshStorageWarning();
 })();
 

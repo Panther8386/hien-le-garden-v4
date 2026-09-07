@@ -20,6 +20,10 @@ beforeEach(async () => {
     `INSERT INTO staff_accounts (id, username, password_hash, role, can_manage_room_layout, created_at)
      VALUES (2, 'le_tan_b', ?, 'reception', 1, '2026-08-01T00:00:00Z')`
   ).bind(sharedPasswordHash).run();
+  await env.DB.prepare(
+    `INSERT INTO staff_accounts (id, username, password_hash, role, can_add_finance_transaction, created_at)
+     VALUES (3, 'le_tan_c', ?, 'reception', 1, '2026-08-01T00:00:00Z')`
+  ).bind(sharedPasswordHash).run();
 });
 
 describe('GET /api/auth/me', () => {
@@ -43,7 +47,7 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false });
+    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false, canAddFinanceTransaction: false });
   });
 
   it('returns canManageRoomLayout true for an account with the flag set', async () => {
@@ -60,6 +64,23 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true });
+    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true, canAddFinanceTransaction: false });
+  });
+
+  it('returns canAddFinanceTransaction true for an account with the flag set', async () => {
+    const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'le_tan_c', password: 's3cret-pass' }),
+    });
+    const loginResponse = await login({ request: loginRequest, env });
+    const sessionToken = loginResponse.headers.get('Set-Cookie').match(/session=([^;]+)/)[1];
+
+    const request = new Request('https://crm.hienlegarden.vn/api/auth/me', {
+      headers: { Cookie: `session=${sessionToken}` },
+    });
+    const response = await me({ request, env });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ username: 'le_tan_c', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: true });
   });
 });

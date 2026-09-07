@@ -85,6 +85,28 @@ async function loadUsers() {
     });
     tdLayout.appendChild(layoutCheckbox);
 
+    const tdFinanceTx = document.createElement('td');
+    const financeTxCheckbox = document.createElement('input');
+    financeTxCheckbox.type = 'checkbox';
+    financeTxCheckbox.checked = !!u.canAddFinanceTransaction;
+    financeTxCheckbox.title = 'Thêm giao dịch trong Sổ thu chi';
+    financeTxCheckbox.addEventListener('change', async () => {
+      const response = await fetch(`/api/users/${u.id}/finance-transaction-access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canAddFinanceTransaction: financeTxCheckbox.checked }),
+      });
+      const listError = document.getElementById('listError');
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        listError.textContent = body.error || 'Có lỗi khi cập nhật quyền thêm giao dịch';
+        financeTxCheckbox.checked = !financeTxCheckbox.checked;
+        return;
+      }
+      listError.textContent = '';
+    });
+    tdFinanceTx.appendChild(financeTxCheckbox);
+
     const tdCreated = document.createElement('td');
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
@@ -119,7 +141,7 @@ async function loadUsers() {
     });
     tdActions.appendChild(deleteBtn);
 
-    tr.append(tdName, tdRole, tdLayout, tdCreated, tdActions);
+    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
 }

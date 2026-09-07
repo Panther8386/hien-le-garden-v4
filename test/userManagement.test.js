@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
+import { onRequestPatch as setFinanceTransactionAccess } from '../functions/api/users/[id]/finance-transaction-access.js';
 import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
 import { createSession, verifyPassword } from '../lib/auth.js';
 
@@ -178,6 +179,73 @@ describe('PATCH /api/users/:id/room-layout-access', () => {
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
     expect(row.can_manage_room_layout).toBe(0);
+  });
+});
+
+describe('PATCH /api/users/:id/finance-transaction-access', () => {
+  it('lets a manager grant the flag', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_add_finance_transaction).toBe(1);
+  });
+
+  it('writes an audit_log row with Bật/Tắt values', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ?`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBe('Tắt');
+    expect(row.new_value).toBe('Bật');
+    expect(row.actor).toBe('quan_ly_a');
+  });
+
+  it('lets a manager revoke the flag', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_add_finance_transaction = 1 WHERE id = ?`).bind(receptionId).run();
+    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: false });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_add_finance_transaction).toBe(0);
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const request = authedRequest(`https://x/api/users/${managerBId}/finance-transaction-access`, receptionToken, 'PATCH', { canAddFinanceTransaction: true });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(managerBId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const request = authedRequest('https://x/api/users/999999/finance-transaction-access', managerAToken, 'PATCH', { canAddFinanceTransaction: true });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a non-boolean value (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: 'yes' });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects granting the flag to an observer account (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${observerId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(observerId) } });
+    expect(response.status).toBe(400);
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.can_add_finance_transaction).toBe(0);
+  });
+
+  it('lets a manager revoke the flag on an observer account even though granting is blocked', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_add_finance_transaction = 1 WHERE id = ?`).bind(observerId).run();
+    const request = authedRequest(`https://x/api/users/${observerId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: false });
+    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(observerId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.can_add_finance_transaction).toBe(0);
   });
 });
 
