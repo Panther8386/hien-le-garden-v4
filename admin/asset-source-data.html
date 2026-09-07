@@ -22,9 +22,29 @@
 
     <div class="table-scroll">
       <table id="sourceRowsTable">
-        <thead><tr><th>STT</th><th>Tên tài sản / hạng mục</th><th>ĐVT</th><th>Số lượng</th><th>Tình trạng</th><th>Ghi chú</th></tr></thead>
+        <thead><tr><th>STT</th><th>Tên tài sản / hạng mục</th><th>ĐVT</th><th>Số lượng</th><th>Tình trạng</th><th>Ghi chú</th><th>Đã tạo</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+  </div>
+
+  <div id="reconcileFormOverlay" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <h3>Tạo tài sản từ dòng nguồn</h3>
+      <p id="reconcileRowLabel"></p>
+      <form id="reconcileForm">
+        <label>Danh mục
+          <select name="categoryId" required></select>
+        </label>
+        <label>Vị trí (tuỳ chọn)
+          <select name="locationId"><option value="">Chưa phân bổ vị trí</option></select>
+        </label>
+        <label id="reconcileCountWrap">Số lượng tạo <input type="number" name="count" min="1" step="1" value="1" /></label>
+        <label id="reconcileQuantityWrap" class="hidden">Số lượng <input type="number" name="quantity" min="0" step="1" /></label>
+        <button type="submit">Tạo tài sản</button>
+        <button type="button" id="reconcileFormCloseBtn" class="btn-secondary">Đóng</button>
+        <p id="reconcileFormError" class="error"></p>
+      </form>
     </div>
   </div>
 
