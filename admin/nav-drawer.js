@@ -1,6 +1,13 @@
 // admin/nav-drawer.js
 const NAV_GROUPS = [
   {
+    label: 'Tài sản & Kho',
+    items: [
+      { page: 'asset-config.html', label: 'Danh mục & vị trí', icon: '🗂️', roles: ['reception', 'manager', 'admin', 'observer'] },
+      { page: 'asset-source-data.html', label: 'Hồ sơ nguồn', icon: '📄', roles: ['reception', 'manager', 'admin', 'observer'] },
+    ],
+  },
+  {
     label: 'Vận hành',
     items: [
       { page: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', roles: ['manager', 'admin'] },
@@ -40,7 +47,7 @@ function currentPageFile() {
 function buildDrawer(role, username) {
   const page = currentPageFile();
   const prefix = ROLE_URL_PREFIX[role] || '/reception';
-  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'users.html': 'users', 'change-password.html': 'change-password' };
+  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'users.html': 'users', 'change-password.html': 'change-password', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data' };
   function urlFor(pageFile) {
     if (pageFile === 'reception.html') return prefix;
     return `${prefix}/${pageSlug[pageFile]}`;
