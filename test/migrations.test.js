@@ -398,3 +398,109 @@ describe('migration 0026', () => {
     expect(row.is_hidden).toBe(1);
   });
 });
+
+describe('migration 0027', () => {
+  it('creates asset_categories with is_active defaulting to 1', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('individual_device', 'Điều hoà', 'bộ', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT is_active FROM asset_categories WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.is_active).toBe(1);
+  });
+
+  it('rejects an invalid management_type via the CHECK constraint', async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('invalid_type', 'X', 'cái', 'system', '2026-09-07T00:00:00Z')`
+      ).run()
+    ).rejects.toThrow();
+  });
+
+  it('creates an asset_locations row of type room referencing an existing room', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, room_id, name, created_by, created_at) VALUES ('room', ?, 'Test Room Location', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(roomRow.id).run();
+    const row = await env.DB.prepare(`SELECT location_type, room_id FROM asset_locations WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ location_type: 'room', room_id: roomRow.id });
+  });
+
+  it('rejects a room-type location with no room_id via the CHECK constraint', async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('room', 'X', 'system', '2026-09-07T00:00:00Z')`
+      ).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects a non-room location that has a room_id via the CHECK constraint', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_locations (location_type, room_id, name, created_by, created_at) VALUES ('warehouse', ?, 'X', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(roomRow.id).run()
+    ).rejects.toThrow();
+  });
+
+  it('enforces at most one asset_locations row per room via a partial unique index', async () => {
+    const roomRow = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 LIMIT 1`).first();
+    await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, room_id, name, created_by, created_at) VALUES ('room', ?, 'First', 'system', '2026-09-07T00:00:00Z')`
+    ).bind(roomRow.id).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_locations (location_type, room_id, name, created_by, created_at) VALUES ('room', ?, 'Second', 'system', '2026-09-07T00:00:00Z')`
+      ).bind(roomRow.id).run()
+    ).rejects.toThrow();
+  });
+
+  it('allows multiple warehouse locations with no room_id', async () => {
+    await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'Kho 1', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    const insert2 = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'Kho 2', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT room_id FROM asset_locations WHERE id = ?`).bind(insert2.meta.last_row_id).first();
+    expect(row.room_id).toBeNull();
+  });
+
+  it('creates an asset_source_document and a linked asset_source_row, preserving raw_quantity as text', async () => {
+    const docInsert = await env.DB.prepare(
+      `INSERT INTO asset_source_documents (title, contract_ref, created_by, created_at) VALUES ('Test Doc', '001/TEST', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    const docId = docInsert.meta.last_row_id;
+    await env.DB.prepare(
+      `INSERT INTO asset_source_rows (source_document_id, source_group_label, stt, raw_name, raw_unit, raw_quantity, raw_condition, raw_note, created_at)
+       VALUES (?, 'A. TEST GROUP', 1, 'Test Item', 'cái', '01', 'Tốt', NULL, '2026-09-07T00:00:00Z')`
+    ).bind(docId).run();
+    const row = await env.DB.prepare(`SELECT raw_quantity FROM asset_source_rows WHERE source_document_id = ? AND stt = 1`).bind(docId).first();
+    expect(row.raw_quantity).toBe('01');
+  });
+
+  it('stores a NULL raw_quantity for a source row with no known quantity, never 0', async () => {
+    const docInsert = await env.DB.prepare(
+      `INSERT INTO asset_source_documents (title, created_by, created_at) VALUES ('Test Doc 2', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO asset_source_rows (source_document_id, source_group_label, stt, raw_name, raw_condition, created_at)
+       VALUES (?, 'A. TEST GROUP', 1, 'Unknown Qty Item', 'Tốt', '2026-09-07T00:00:00Z')`
+    ).bind(docInsert.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT raw_quantity FROM asset_source_rows WHERE source_document_id = ? AND stt = 1`).bind(docInsert.meta.last_row_id).first();
+    expect(row.raw_quantity).toBeNull();
+  });
+
+  it('rejects a duplicate (source_document_id, stt) pair via the unique constraint', async () => {
+    const docInsert = await env.DB.prepare(
+      `INSERT INTO asset_source_documents (title, created_by, created_at) VALUES ('Test Doc 3', 'system', '2026-09-07T00:00:00Z')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO asset_source_rows (source_document_id, source_group_label, stt, raw_name, created_at) VALUES (?, 'A', 1, 'X', '2026-09-07T00:00:00Z')`
+    ).bind(docInsert.meta.last_row_id).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_source_rows (source_document_id, source_group_label, stt, raw_name, created_at) VALUES (?, 'A', 1, 'Y', '2026-09-07T00:00:00Z')`
+      ).bind(docInsert.meta.last_row_id).run()
+    ).rejects.toThrow();
+  });
+});
