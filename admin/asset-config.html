@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Danh mục & vị trí — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Danh mục & vị trí</h1>
+    <p id="pageError" class="error"></p>
+
+    <h2>Danh mục tài sản</h2>
+    <button type="button" id="openAddCategoryBtn" class="hidden">+ Thêm danh mục</button>
+    <div id="categoryGroups"></div>
+
+    <div id="categoryFormOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box">
+        <h3 id="categoryFormTitle">Thêm danh mục</h3>
+        <form id="categoryForm">
+          <label>Cách quản lý
+            <select name="managementType" required></select>
+          </label>
+          <label>Tên danh mục <input type="text" name="name" required /></label>
+          <label>Đơn vị tính <input type="text" name="defaultUnit" required /></label>
+          <label>Ghi chú <input type="text" name="note" /></label>
+          <button type="submit">Lưu</button>
+          <button type="button" id="categoryFormCloseBtn" class="btn-secondary">Đóng</button>
+          <p id="categoryFormError" class="error"></p>
+        </form>
+      </div>
+    </div>
+
+    <h2>Vị trí</h2>
+    <div class="filters" id="locationTypeToggle">
+      <button type="button" class="tab-btn active" data-location-type="room">Phòng</button>
+      <button type="button" class="tab-btn" data-location-type="warehouse">Kho</button>
+      <button type="button" class="tab-btn" data-location-type="common_area">Khu vực chung</button>
+    </div>
+    <button type="button" id="openAddLocationBtn" class="hidden">+ Thêm vị trí</button>
+    <div id="locationList" class="booking-list"></div>
+
+    <div id="locationFormOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box">
+        <h3 id="locationFormTitle">Thêm vị trí</h3>
+        <form id="locationForm">
+          <label id="locationRoomWrap" class="hidden">Phòng
+            <select name="roomId"></select>
+          </label>
+          <label>Mã <input type="text" name="code" /></label>
+          <label>Tên hiển thị <input type="text" name="name" required /></label>
+          <label>Ghi chú <input type="text" name="note" /></label>
+          <button type="submit">Lưu</button>
+          <button type="button" id="locationFormCloseBtn" class="btn-secondary">Đóng</button>
+          <p id="locationFormError" class="error"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/asset-config.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
