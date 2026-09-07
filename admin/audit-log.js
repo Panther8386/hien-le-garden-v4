@@ -24,6 +24,8 @@ const ACTION_TYPE_LABELS = {
   asset_category_update: 'Sửa danh mục tài sản',
   asset_location_create: 'Tạo vị trí tài sản',
   asset_location_update: 'Sửa vị trí tài sản',
+  asset_create: 'Tạo tài sản',
+  asset_update: 'Sửa tài sản',
 };
 
 const RECORD_HIDE_ENTITY_LABELS = {
