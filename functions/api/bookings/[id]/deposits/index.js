@@ -42,13 +42,14 @@ export async function onRequestPost({ request, env, params }) {
   ).bind(amount, txNote, now.slice(0, 10), auth.username, now).run();
   const financeTransactionId = txInsert.meta.last_row_id;
 
-  const depositInsert = await env.DB.prepare(
-    `INSERT INTO booking_deposits (booking_id, amount, payment_method, note, finance_transaction_id, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).bind(params.id, amount, paymentMethod, note || null, financeTransactionId, auth.username, now).run();
+  const [depositInsert] = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO booking_deposits (booking_id, amount, payment_method, note, finance_transaction_id, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(params.id, amount, paymentMethod, note || null, financeTransactionId, auth.username, now),
+    env.DB.prepare(`UPDATE bookings SET deposit_amount = deposit_amount + ? WHERE id = ?`).bind(amount, params.id),
+  ]);
   const depositId = depositInsert.meta.last_row_id;
-
-  await env.DB.prepare(`UPDATE bookings SET deposit_amount = deposit_amount + ? WHERE id = ?`).bind(amount, params.id).run();
 
   const updated = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(params.id).first();
 
