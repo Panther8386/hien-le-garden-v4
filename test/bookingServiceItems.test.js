@@ -4,7 +4,7 @@ import { onRequestPost as addServiceItem } from '../functions/api/bookings/[id]/
 import { onRequestPatch as voidServiceItem } from '../functions/api/bookings/[id]/services/[itemId].js';
 import { createSession } from '../lib/auth.js';
 
-let managerToken, receptionToken, observerToken;
+let managerToken, receptionToken, observerToken, adminToken;
 let confirmedBookingId, pendingBookingId, checkedOutBookingId;
 let activeCatalogId, inactiveCatalogId;
 let scheduledCatalogId, scheduledWithTermsCatalogId, slotTemplateId;
@@ -24,6 +24,8 @@ beforeEach(async () => {
   receptionToken = await createSession(env.DB, 2);
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'quan_sat_svc', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 3);
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'admin_svc', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
+  adminToken = await createSession(env.DB, 4);
 
   const confirmed = await env.DB.prepare(
     `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Confirmed Guest', '0900000001', 'triangle', '2099-01-01', '2099-01-03', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
@@ -552,5 +554,65 @@ describe('PATCH /api/bookings/:id/services/:itemId', () => {
       params: { id: String(confirmedBookingId), itemId: '999999' },
     });
     expect(response.status).toBe(404);
+  });
+
+  async function addPaidItem(bookingId = confirmedBookingId) {
+    const txInsert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at) VALUES ('income', 'ban_hang', 30000, 'Cà phê ×1 — Confirmed Guest', '2026-08-01', 'confirmed', 'le_tan_svc', '2026-08-01T00:00:00Z')`
+    ).run();
+    const financeTransactionId = txInsert.meta.last_row_id;
+    const result = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, finance_transaction_id) VALUES (?, ?, 'Cà phê', 30000, 1, 30000, 'posted', 'le_tan_svc', '2026-08-01T00:00:00Z', 'paid', 'cash', ?)`
+    ).bind(bookingId, activeCatalogId, financeTransactionId).run();
+    return { itemId: result.meta.last_row_id, financeTransactionId };
+  }
+
+  it('rejects reception voiding a paid item (403)', async () => {
+    const { itemId } = await addPaidItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(403);
+    const row = await env.DB.prepare(`SELECT status FROM booking_service_items WHERE id = ?`).bind(itemId).first();
+    expect(row.status).toBe('posted');
+  });
+
+  it('rejects manager voiding a paid item (403)', async () => {
+    const { itemId } = await addPaidItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, managerToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets admin void a paid item and auto-voids the linked finance_transactions row', async () => {
+    const { itemId, financeTransactionId } = await addPaidItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, adminToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(200);
+
+    const item = await env.DB.prepare(`SELECT status FROM booking_service_items WHERE id = ?`).bind(itemId).first();
+    expect(item.status).toBe('voided');
+
+    const tx = await env.DB.prepare(`SELECT voided_by, voided_at FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).first();
+    expect(tx.voided_by).toBe('admin_svc');
+    expect(tx.voided_at).not.toBeNull();
+  });
+
+  it('still lets reception void a pending (unpaid) item, unaffected by the new admin gate', async () => {
+    const itemId = await addPostedItem();
+    const response = await voidServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services/${itemId}`, receptionToken, 'PATCH', {}),
+      env,
+      params: { id: String(confirmedBookingId), itemId: String(itemId) },
+    });
+    expect(response.status).toBe(200);
   });
 });

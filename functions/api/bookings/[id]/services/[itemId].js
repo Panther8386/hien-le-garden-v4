@@ -9,7 +9,7 @@ export async function onRequestPatch({ request, env, params }) {
   if (auth instanceof Response) return auth;
 
   const item = await env.DB.prepare(
-    `SELECT bsi.id, bsi.booking_id, bsi.status, bsi.name, bsi.quantity, b.guest_name AS guestName
+    `SELECT bsi.id, bsi.booking_id, bsi.status, bsi.payment_status, bsi.finance_transaction_id, bsi.name, bsi.quantity, b.guest_name AS guestName
      FROM booking_service_items bsi JOIN bookings b ON b.id = bsi.booking_id
      WHERE bsi.id = ?`
   ).bind(params.itemId).first();
@@ -19,11 +19,14 @@ export async function onRequestPatch({ request, env, params }) {
   if (item.status === 'voided') {
     return jsonError('Dòng dịch vụ này đã được huỷ trước đó', 400);
   }
+  if (item.payment_status === 'paid' && auth.role !== 'admin') {
+    return jsonError('Chỉ Admin mới có quyền huỷ dịch vụ đã thanh toán', 403);
+  }
 
   const now = new Date().toISOString();
   const entityLabel = `${item.name} ×${item.quantity} — ${item.guestName}`;
 
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       `UPDATE booking_service_items SET status = 'voided', voided_by = ?, voided_at = ? WHERE id = ?`
     ).bind(auth.username, now, params.itemId),
@@ -31,7 +34,14 @@ export async function onRequestPatch({ request, env, params }) {
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
        VALUES ('service_void', 'service_item', ?, ?, 'posted', 'voided', ?, ?)`
     ).bind(item.id, entityLabel, auth.username, now),
-  ]);
+  ];
+  if (item.payment_status === 'paid') {
+    statements.push(
+      env.DB.prepare(`UPDATE finance_transactions SET voided_by = ?, voided_at = ? WHERE id = ?`)
+        .bind(auth.username, now, item.finance_transaction_id)
+    );
+  }
+  await env.DB.batch(statements);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
