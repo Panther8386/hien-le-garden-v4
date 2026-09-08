@@ -45,6 +45,12 @@ export async function onRequestPost({ request, env, params }) {
   if (isIndividual) {
     const count = body.count !== undefined ? body.count : 1;
     if (!Number.isInteger(count) || count <= 0) return jsonError('Số lượng tạo phải là số nguyên dương', 400);
+    // Bounded independently of the raw_quantity ceiling below, which only applies
+    // when raw_quantity is a known positive integer -- without this, a fat-fingered
+    // count on a NULL-quantity row would loop unboundedly (3 D1 statements each),
+    // risking a subrequest-limit crash mid-loop with the partial assets already
+    // persisted (there is no rollback across the loop's individual inserts).
+    if (count > 200) return jsonError('Không thể tạo quá 200 tài sản trong một lần', 400);
     if (isKnownPositiveInteger && reconciledCount + count > knownQuantity) {
       return jsonError(`Dòng nguồn này chỉ có ${knownQuantity} theo hồ sơ bàn giao, đã đối chiếu ${reconciledCount} — không thể tạo thêm ${count}`, 400);
     }

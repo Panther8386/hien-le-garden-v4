@@ -1,3 +1,5 @@
+-- v4/migrations/0029_asset_inventory_phase3a_assets.sql
+
 CREATE TABLE assets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   category_id INTEGER NOT NULL REFERENCES asset_categories(id),

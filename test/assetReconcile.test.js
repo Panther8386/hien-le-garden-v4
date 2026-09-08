@@ -150,6 +150,18 @@ describe('POST /api/asset-source-rows/:id/reconcile', () => {
     expect(second.status).toBe(201);
   });
 
+  it('rejects a count above the 200 hard cap even when raw_quantity is NULL', async () => {
+    const response = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${unknownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 201 }), env, params: { id: String(unknownRowId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('accepts a count exactly at the 200 hard cap', async () => {
+    const response = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${unknownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 200 }), env, params: { id: String(unknownRowId) } });
+    expect(response.status).toBe(201);
+    const { createdIds } = await response.json();
+    expect(createdIds).toHaveLength(200);
+  });
+
   it('writes an asset_create audit_log row for each created asset', async () => {
     const response = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${knownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 2 }), env, params: { id: String(knownRowId) } });
     const { createdIds } = await response.json();
