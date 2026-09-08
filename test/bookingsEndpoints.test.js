@@ -302,6 +302,47 @@ describe('GET /api/bookings', () => {
   });
 });
 
+describe('GET /api/bookings — deposits', () => {
+  it('includes a deposits array reflecting multiple entries in creation order', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit History Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 50000, paymentMethod: 'transfer' }) }),
+      env,
+      params: { id: String(id) },
+    });
+
+    const response = await listBookings({ request: authedRequest(`https://x/api/bookings?status=confirmed`, managerToken), env });
+    const body = await response.json();
+    const booking = body.find((b) => b.id === id);
+    expect(booking.deposits).toHaveLength(2);
+    expect(booking.deposits[0]).toMatchObject({ amount: 100000, paymentMethod: 'cash' });
+    expect(booking.deposits[1]).toMatchObject({ amount: 50000, paymentMethod: 'transfer' });
+  });
+
+  it('defaults deposits to an empty array when none exist', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('No Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const response = await listBookings({ request: authedRequest(`https://x/api/bookings?status=confirmed`, managerToken), env });
+    const body = await response.json();
+    const booking = body.find((b) => b.id === id);
+    expect(booking.deposits).toEqual([]);
+  });
+});
+
 describe('PATCH /api/bookings/:id/deposit', () => {
   it('lets admin correct a deposit amount directly', async () => {
     const created = await env.DB.prepare(

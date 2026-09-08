@@ -160,5 +160,27 @@ export async function onRequestGet({ request, env }) {
     });
   }
 
+  results.forEach((r) => {
+    r.deposits = [];
+  });
+  if (results.length > 0) {
+    const { results: depositRows } = await env.DB.prepare(
+      `SELECT id, booking_id AS bookingId, amount, payment_method AS paymentMethod, note,
+              created_by AS createdBy, created_at AS createdAt
+       FROM booking_deposits
+       WHERE booking_id IN (SELECT id FROM bookings ${where})
+       ORDER BY created_at ASC, id ASC`
+    ).bind(...params).all();
+
+    const depositsByBooking = {};
+    depositRows.forEach((row) => {
+      if (!depositsByBooking[row.bookingId]) depositsByBooking[row.bookingId] = [];
+      depositsByBooking[row.bookingId].push(row);
+    });
+    results.forEach((r) => {
+      r.deposits = depositsByBooking[r.id] || [];
+    });
+  }
+
   return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
