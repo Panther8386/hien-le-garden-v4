@@ -4,6 +4,7 @@ let categories = [];
 let locations = [];
 let editingAssetId = null;
 let editingManagementType = null;
+let canDeleteAsset = false;
 
 const PHYSICAL_CONDITION_LABELS = { chua_danh_gia: 'Chưa đánh giá', tot: 'Tốt', kha: 'Khá', trung_binh: 'Trung bình', can_sua: 'Cần sửa' };
 const OPERATIONAL_STATUS_LABELS = { san_sang: 'Sẵn sàng', dang_su_dung: 'Đang sử dụng', ngung_su_dung: 'Ngừng sử dụng', dang_sua: 'Đang sửa' };
@@ -26,8 +27,9 @@ function showPageError(message) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
+  const { role, canDeleteAsset: deleteFlag } = await res.json();
   currentRole = role;
+  canDeleteAsset = !!deleteFlag;
 
   if (currentRole === 'admin' || currentRole === 'manager') {
     document.getElementById('openAddAssetBtn').classList.remove('hidden');
@@ -166,15 +168,26 @@ function renderAssetList(assets) {
     line3.textContent = `${a.quantity !== null ? `Số lượng: ${a.quantity}` : 'Số lượng: Chưa xác định'} — ${PHYSICAL_CONDITION_LABELS[a.physicalCondition]} — ${OPERATIONAL_STATUS_LABELS[a.operationalStatus]}`;
     card.appendChild(line3);
 
-    if (currentRole === 'admin' || currentRole === 'manager') {
+    const canEdit = currentRole === 'admin' || currentRole === 'manager';
+    if (canEdit || canDeleteAsset) {
       const actions = document.createElement('div');
       actions.className = 'booking-actions';
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'table-actions-btn';
-      editBtn.textContent = 'Sửa';
-      editBtn.addEventListener('click', () => openEditAsset(a));
-      actions.appendChild(editBtn);
+      if (canEdit) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'table-actions-btn';
+        editBtn.textContent = 'Sửa';
+        editBtn.addEventListener('click', () => openEditAsset(a));
+        actions.appendChild(editBtn);
+      }
+      if (canDeleteAsset) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn-secondary table-actions-btn';
+        deleteBtn.textContent = 'Xoá';
+        deleteBtn.addEventListener('click', () => openDeleteConfirm(a));
+        actions.appendChild(deleteBtn);
+      }
       card.appendChild(actions);
     }
 
@@ -375,5 +388,40 @@ document.getElementById('assetForm').addEventListener('submit', async (event) =>
   }
 
   closeFormOverlay();
+  await loadAssets();
+});
+
+let pendingDeleteAssetId = null;
+
+function openDeleteConfirm(asset) {
+  pendingDeleteAssetId = asset.id;
+  document.getElementById('assetDeleteError').textContent = '';
+  document.getElementById('assetDeleteSummary').textContent = `${asset.name}${asset.internalCode ? ' — ' + asset.internalCode : ''}`;
+  document.getElementById('assetDeleteOverlay').classList.remove('hidden');
+}
+
+function closeDeleteConfirm() {
+  pendingDeleteAssetId = null;
+  document.getElementById('assetDeleteOverlay').classList.add('hidden');
+}
+
+document.getElementById('assetDeleteCancelBtn').addEventListener('click', closeDeleteConfirm);
+
+document.getElementById('assetDeleteConfirmBtn').addEventListener('click', async () => {
+  if (!pendingDeleteAssetId) return;
+  const errorEl = document.getElementById('assetDeleteError');
+  let response;
+  try {
+    response = await fetch(`/api/assets/${pendingDeleteAssetId}`, { method: 'DELETE' });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi xoá tài sản';
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi khi xoá tài sản';
+    return;
+  }
+  closeDeleteConfirm();
   await loadAssets();
 });
