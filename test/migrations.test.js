@@ -739,3 +739,51 @@ describe('migration 0032', () => {
     expect(row.can_delete_asset).toBe(0);
   });
 });
+
+describe('migration 0033', () => {
+  async function seedBooking() {
+    const insert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M33', '0900000033', 'circle', '2026-09-08', '2026-09-09', 'confirmed', 'website', '2026-09-08T00:00:00Z')`
+    ).run();
+    return insert.meta.last_row_id;
+  }
+
+  it('creates booking_deposits with a working relationship to a real booking', async () => {
+    const bookingId = await seedBooking();
+    const insert = await env.DB.prepare(
+      `INSERT INTO booking_deposits (booking_id, amount, payment_method, created_by, created_at) VALUES (?, 200000, 'cash', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(bookingId).run();
+    const row = await env.DB.prepare(`SELECT booking_id, amount, payment_method, note, finance_transaction_id FROM booking_deposits WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ booking_id: bookingId, amount: 200000, payment_method: 'cash', note: null, finance_transaction_id: null });
+  });
+
+  it('rejects a non-positive amount', async () => {
+    const bookingId = await seedBooking();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO booking_deposits (booking_id, amount, payment_method, created_by, created_at) VALUES (?, 0, 'cash', 'system', '2026-09-08T00:00:00Z')`
+      ).bind(bookingId).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid payment_method', async () => {
+    const bookingId = await seedBooking();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO booking_deposits (booking_id, amount, payment_method, created_by, created_at) VALUES (?, 100000, 'bogus', 'system', '2026-09-08T00:00:00Z')`
+      ).bind(bookingId).run()
+    ).rejects.toThrow();
+  });
+
+  it('links to a real finance_transactions row via finance_transaction_id', async () => {
+    const bookingId = await seedBooking();
+    const txInsert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES ('income', 'dich_vu', 200000, '2026-09-08', 'confirmed', 'system', '2026-09-08T00:00:00Z')`
+    ).run();
+    const insert = await env.DB.prepare(
+      `INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at) VALUES (?, 200000, 'transfer', ?, 'system', '2026-09-08T00:00:00Z')`
+    ).bind(bookingId, txInsert.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_deposits WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.finance_transaction_id).toBe(txInsert.meta.last_row_id);
+  });
+});
