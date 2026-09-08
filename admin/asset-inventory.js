@@ -283,7 +283,7 @@ function canTransition(status, role) {
 }
 
 function canWriteLine(status, role) {
-  if (status === 'counting') return true;
+  if (status === 'counting') return role === 'admin' || role === 'manager' || role === 'reception';
   if (status === 'pending_close') return role === 'admin' || role === 'manager';
   return false;
 }
