@@ -629,7 +629,7 @@ describe('migration 0029', () => {
 describe('migration 0030', () => {
   it('adds dine_in_menu_item_id, defaulting to null', async () => {
     const bookingInsert = await env.DB.prepare(
-      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M30', '0900000030', 'vip', '2026-09-08', '2026-09-09', 'confirmed', 'staff', '2026-09-08T00:00:00Z')`
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M30', '0900000030', 'vip', '2026-09-08', '2026-09-09', 'confirmed', 'walk_in', '2026-09-08T00:00:00Z')`
     ).run();
     const result = await env.DB.prepare(
       `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, created_by, created_at) VALUES (?, NULL, 'Test Service', 50000, 1, 50000, 'system', '2026-09-08T00:00:00Z')`
@@ -640,7 +640,7 @@ describe('migration 0030', () => {
 
   it('links to a real dine_in_menu_items row via dine_in_menu_item_id', async () => {
     const bookingInsert = await env.DB.prepare(
-      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M30b', '0900000031', 'vip', '2026-09-08', '2026-09-09', 'confirmed', 'staff', '2026-09-08T00:00:00Z')`
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M30b', '0900000031', 'vip', '2026-09-08', '2026-09-09', 'confirmed', 'walk_in', '2026-09-08T00:00:00Z')`
     ).run();
     const menuInsert = await env.DB.prepare(
       `INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Gà nướng', 'mon_an', 368000, 'MÓN GÀ & CÁ', 0, 1, 'system', '2026-09-08T00:00:00Z')`
