@@ -651,3 +651,81 @@ describe('migration 0030', () => {
     expect(row.dine_in_menu_item_id).toBe(menuInsert.meta.last_row_id);
   });
 });
+
+describe('migration 0031', () => {
+  async function seedCategory(managementType) {
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES (?, 'Test Category M31', 'cái', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(managementType).run();
+    return insert.meta.last_row_id;
+  }
+
+  async function seedLocation() {
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('common_area', 'Test Location M31', 'system', '2026-09-08T00:00:00Z')`
+    ).run();
+    return insert.meta.last_row_id;
+  }
+
+  async function seedAsset(categoryId) {
+    const insert = await env.DB.prepare(
+      `INSERT INTO assets (category_id, name, source_type, created_by, created_at) VALUES (?, 'Test Asset M31', 'handover_a', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(categoryId).run();
+    return insert.meta.last_row_id;
+  }
+
+  it('creates asset_inventory_batches defaulting status to draft', async () => {
+    const locationId = await seedLocation();
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_batches (location_id, label, created_by, created_at) VALUES (?, 'Test Batch', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(locationId).run();
+    const row = await env.DB.prepare(`SELECT status FROM asset_inventory_batches WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.status).toBe('draft');
+  });
+
+  it('creates asset_inventory_lines with a working relationship to a batch and an asset', async () => {
+    const locationId = await seedLocation();
+    const categoryId = await seedCategory('durable_goods');
+    const assetId = await seedAsset(categoryId);
+    const batchInsert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_batches (location_id, label, created_by, created_at) VALUES (?, 'Test Batch', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(locationId).run();
+    const batchId = batchInsert.meta.last_row_id;
+
+    const lineInsert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_lines (batch_id, asset_id, book_quantity) VALUES (?, ?, 5)`
+    ).bind(batchId, assetId).run();
+    const row = await env.DB.prepare(`SELECT batch_id, asset_id, book_quantity, actual_quantity FROM asset_inventory_lines WHERE id = ?`).bind(lineInsert.meta.last_row_id).first();
+    expect(row).toEqual({ batch_id: batchId, asset_id: assetId, book_quantity: 5, actual_quantity: null });
+  });
+
+  it('rejects a duplicate (batch_id, asset_id) pair', async () => {
+    const locationId = await seedLocation();
+    const categoryId = await seedCategory('durable_goods');
+    const assetId = await seedAsset(categoryId);
+    const batchInsert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_batches (location_id, label, created_by, created_at) VALUES (?, 'Test Batch', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(locationId).run();
+    const batchId = batchInsert.meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO asset_inventory_lines (batch_id, asset_id) VALUES (?, ?)`).bind(batchId, assetId).run();
+    await expect(
+      env.DB.prepare(`INSERT INTO asset_inventory_lines (batch_id, asset_id) VALUES (?, ?)`).bind(batchId, assetId).run()
+    ).rejects.toThrow();
+  });
+
+  it('rejects an invalid batch status', async () => {
+    const locationId = await seedLocation();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_inventory_batches (location_id, label, status, created_by, created_at) VALUES (?, 'Test Batch', 'bogus', 'system', '2026-09-08T00:00:00Z')`
+      ).bind(locationId).run()
+    ).rejects.toThrow();
+  });
+
+  it('adds assets.is_deleted, defaulting to 0', async () => {
+    const categoryId = await seedCategory('durable_goods');
+    const assetId = await seedAsset(categoryId);
+    const row = await env.DB.prepare(`SELECT is_deleted FROM assets WHERE id = ?`).bind(assetId).first();
+    expect(row.is_deleted).toBe(0);
+  });
+});
