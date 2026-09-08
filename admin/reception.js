@@ -886,7 +886,7 @@ function computeCheckoutPreview(booking) {
   const leftoverDeposit = Math.max(deposit - roomTotal, 0);
   const servicesDue = Math.max(unpaidServicesTotal - leftoverDeposit, 0);
   const refundAmount = Math.max(leftoverDeposit - unpaidServicesTotal, 0);
-  return { roomDue, servicesDue, refundAmount };
+  return { roomDue, servicesDue, refundAmount, unpaidServicesTotal };
 }
 
 function openCheckoutDialog(booking) {
@@ -895,14 +895,22 @@ function openCheckoutDialog(booking) {
   document.getElementById('checkoutCash').checked = false;
   document.getElementById('checkoutTransfer').checked = false;
 
-  const { roomDue, servicesDue, refundAmount } = computeCheckoutPreview(booking);
+  const { roomDue, servicesDue, refundAmount, unpaidServicesTotal } = computeCheckoutPreview(booking);
   const summary = document.getElementById('checkoutSummary');
   const fields = document.getElementById('checkoutPaymentFields');
+  // Must mirror the server's needsPaymentMethod exactly (functions/api/bookings/[id]/check-out.js):
+  // roomDue>0 || servicesDue>0 || refundAmount>0 || unpaidServicesTotal>0 — the last clause covers a
+  // pending service item fully absorbed by leftover deposit (servicesDue===0) that still needs a
+  // payment_method stamped onto it when it flips to 'paid'.
+  const needsPaymentMethod = roomDue > 0 || servicesDue > 0 || refundAmount > 0 || unpaidServicesTotal > 0;
   if (roomDue + servicesDue > 0) {
     summary.textContent = `Cần thu thêm: ${formatVnd(roomDue + servicesDue)}`;
     fields.classList.remove('hidden');
   } else if (refundAmount > 0) {
     summary.textContent = `Cần hoàn khách: ${formatVnd(refundAmount)}`;
+    fields.classList.remove('hidden');
+  } else if (needsPaymentMethod) {
+    summary.textContent = 'Cọc đã khớp đủ tiền phòng & dịch vụ. Vui lòng chọn hình thức thanh toán để ghi nhận dịch vụ đã thanh toán.';
     fields.classList.remove('hidden');
   } else {
     summary.textContent = 'Cọc đã khớp đủ, không cần thu/hoàn thêm.';
