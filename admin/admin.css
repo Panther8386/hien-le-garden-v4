@@ -310,6 +310,11 @@ th { color: var(--gold); font-weight: 600; }
 .add-service-form .payment-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 .add-service-form .checkbox-label { display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; margin-bottom: 0; }
 .add-service-form > button { width: auto; margin-right: 8px; }
+.add-deposit-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.add-deposit-form input[type="number"] { width: auto; margin-top: 0; }
+.add-deposit-form .checkbox-label { display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; margin-bottom: 0; }
+.deposit-history { margin-top: 4px; font-size: 0.85rem; color: var(--text-muted); }
+.deposit-history p { margin: 2px 0; }
 
 .confirm-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);

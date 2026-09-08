@@ -614,34 +614,77 @@ function renderBookingCard(b) {
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
 
-  if ((b.status === 'pending' || b.status === 'confirmed') && currentRole !== 'observer') {
-    const depositLine = document.createElement('p');
-    const depositInput = document.createElement('input');
-    depositInput.type = 'number';
-    depositInput.min = '0';
-    depositInput.step = '1000';
-    depositInput.value = b.depositAmount || 0;
-    depositInput.style.width = '120px';
-    const depositBtn = document.createElement('button');
-    depositBtn.type = 'button';
-    depositBtn.textContent = 'Lưu cọc';
-    depositBtn.className = 'btn-secondary';
-    depositBtn.addEventListener('click', async () => {
-      if (depositInput.value.trim() === '') {
+  if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && currentRole !== 'observer') {
+    const depositTotalLine = document.createElement('p');
+    const depositTotalStrong = document.createElement('strong');
+    depositTotalStrong.textContent = `Cọc: ${formatVnd(b.depositAmount || 0)}`;
+    depositTotalLine.appendChild(depositTotalStrong);
+    card.appendChild(depositTotalLine);
+
+    const deposits = b.deposits || [];
+    if (deposits.length > 0) {
+      const historyList = document.createElement('div');
+      historyList.className = 'deposit-history';
+      const methodLabels = { cash: 'Tiền mặt', transfer: 'Chuyển khoản' };
+      deposits.forEach((d) => {
+        const line = document.createElement('p');
+        line.textContent = `${formatVnd(d.amount)} · ${methodLabels[d.paymentMethod] || d.paymentMethod} · ${formatDate(d.createdAt)}`;
+        historyList.appendChild(line);
+      });
+      card.appendChild(historyList);
+    }
+
+    const addDepositForm = document.createElement('div');
+    addDepositForm.className = 'add-deposit-form';
+
+    const amountInput = document.createElement('input');
+    amountInput.type = 'number';
+    amountInput.min = '0';
+    amountInput.step = '1000';
+    amountInput.placeholder = 'Số tiền cọc';
+    amountInput.style.width = '140px';
+
+    const cashLabel = document.createElement('label');
+    cashLabel.className = 'checkbox-label';
+    const cashRadio = document.createElement('input');
+    cashRadio.type = 'radio';
+    cashRadio.name = `depositMethod-${b.id}`;
+    cashRadio.value = 'cash';
+    cashLabel.append(cashRadio, ' 💵 Tiền mặt');
+
+    const transferLabel = document.createElement('label');
+    transferLabel.className = 'checkbox-label';
+    const transferRadio = document.createElement('input');
+    transferRadio.type = 'radio';
+    transferRadio.name = `depositMethod-${b.id}`;
+    transferRadio.value = 'transfer';
+    transferLabel.append(transferRadio, ' 🏦 Chuyển khoản');
+
+    const addDepositBtn = document.createElement('button');
+    addDepositBtn.type = 'button';
+    addDepositBtn.textContent = 'Lưu cọc';
+    addDepositBtn.className = 'btn-secondary';
+    addDepositBtn.addEventListener('click', async () => {
+      if (amountInput.value.trim() === '') {
         showOpsError('Vui lòng nhập số tiền cọc');
         return;
       }
-      const amount = Number(depositInput.value);
-      if (!Number.isInteger(amount) || amount < 0) {
-        showOpsError('Số tiền cọc phải là số nguyên không âm');
+      const amount = Number(amountInput.value);
+      if (!Number.isInteger(amount) || amount <= 0) {
+        showOpsError('Số tiền cọc phải là số nguyên dương');
+        return;
+      }
+      const paymentMethod = cashRadio.checked ? 'cash' : (transferRadio.checked ? 'transfer' : null);
+      if (!paymentMethod) {
+        showOpsError('Vui lòng chọn hình thức thanh toán');
         return;
       }
       let response;
       try {
-        response = await fetch(`/api/bookings/${b.id}/deposit`, {
-          method: 'PATCH',
+        response = await fetch(`/api/bookings/${b.id}/deposits`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ depositAmount: amount }),
+          body: JSON.stringify({ amount, paymentMethod }),
         });
       } catch (err) {
         showOpsError('Có lỗi khi lưu tiền cọc');
@@ -653,13 +696,11 @@ function renderBookingCard(b) {
         return;
       }
       showOpsError('');
-      await loadRooms();
+      await refreshAll();
     });
-    depositLine.appendChild(document.createTextNode('Cọc: '));
-    depositLine.appendChild(depositInput);
-    depositLine.appendChild(document.createTextNode(' đ '));
-    depositLine.appendChild(depositBtn);
-    card.appendChild(depositLine);
+
+    addDepositForm.append(amountInput, cashLabel, transferLabel, addDepositBtn);
+    card.appendChild(addDepositForm);
   }
 
   renderServicesSection(b, card);
