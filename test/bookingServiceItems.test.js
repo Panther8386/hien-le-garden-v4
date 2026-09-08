@@ -8,6 +8,7 @@ let managerToken, receptionToken, observerToken;
 let confirmedBookingId, pendingBookingId, checkedOutBookingId;
 let activeCatalogId, inactiveCatalogId;
 let scheduledCatalogId, scheduledWithTermsCatalogId, slotTemplateId;
+let activeMenuItemId, inactiveMenuItemId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -15,6 +16,7 @@ beforeEach(async () => {
   await env.DB.exec('DELETE FROM bookings');
   await env.DB.exec('DELETE FROM booking_service_items');
   await env.DB.exec('DELETE FROM service_catalog');
+  await env.DB.exec('DELETE FROM dine_in_menu_items');
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_svc', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
@@ -67,6 +69,16 @@ beforeEach(async () => {
     `INSERT INTO service_slot_template (service_catalog_id, label, days_of_week, start_time, capacity, is_active, created_at) VALUES (?, 'Suất tối', '6', '19:00', 30, 1, '2026-08-01T00:00:00Z')`
   ).bind(scheduledCatalogId).run();
   slotTemplateId = templateResult.meta.last_row_id;
+
+  const activeMenuItem = await env.DB.prepare(
+    `INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Gà nướng', 'mon_an', 368000, 'MÓN GÀ & CÁ', 0, 1, 'system', '2026-08-01T00:00:00Z')`
+  ).run();
+  activeMenuItemId = activeMenuItem.meta.last_row_id;
+
+  const inactiveMenuItem = await env.DB.prepare(
+    `INSERT INTO dine_in_menu_items (name, category, price, subgroup, display_order, is_active, updated_by, updated_at) VALUES ('Món ngừng bán', 'mon_an', 50000, 'MÓN GÀ & CÁ', 1, 0, 'system', '2026-08-01T00:00:00Z')`
+  ).run();
+  inactiveMenuItemId = inactiveMenuItem.meta.last_row_id;
 });
 
 function authedRequest(url, token, method, body) {
@@ -352,6 +364,70 @@ describe('POST /api/bookings/:id/services', () => {
     expect(response.status).toBe(201);
     const row = await env.DB.prepare(`SELECT terms_accepted_at FROM booking_service_items WHERE booking_id = ? AND service_catalog_id = ?`).bind(confirmedBookingId, scheduledCatalogId).first();
     expect(row.terms_accepted_at).toBeNull();
+  });
+
+  it('rejects a request with neither serviceCatalogId nor dineInMenuItemId (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { unitPrice: 10000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a request with both serviceCatalogId and dineInMenuItemId (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, dineInMenuItemId: activeMenuItemId, unitPrice: 10000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('lets reception add a Menu Quán item with a server-derived name (no scheduling fields)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { dineInMenuItemId: activeMenuItemId, unitPrice: 368000, quantity: 2 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT * FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.dine_in_menu_item_id).toBe(activeMenuItemId);
+    expect(row.service_catalog_id).toBeNull();
+    expect(row.name).toBe('Gà nướng');
+    expect(row.amount).toBe(736000);
+    expect(row.experience_date).toBeNull();
+    expect(row.slot_template_id).toBeNull();
+  });
+
+  it('stores paid TM (cash) for a Menu Quán item', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { dineInMenuItemId: activeMenuItemId, unitPrice: 368000, quantity: 1, paid: true, paymentMethod: 'cash' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT payment_status, payment_method FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(row.payment_status).toBe('paid');
+    expect(row.payment_method).toBe('cash');
+  });
+
+  it('rejects an inactive dineInMenuItemId (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { dineInMenuItemId: inactiveMenuItemId, unitPrice: 50000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a nonexistent dineInMenuItemId (400)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { dineInMenuItemId: 999999, unitPrice: 50000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(400);
   });
 });
 

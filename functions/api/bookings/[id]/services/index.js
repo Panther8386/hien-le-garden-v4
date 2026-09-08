@@ -74,9 +74,11 @@ export async function onRequestPost({ request, env, params }) {
   } catch (err) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
-  const { serviceCatalogId, unitPrice, quantity, paid, paymentMethod, experienceDate, slotTemplateId, termsAccepted } = body || {};
+  const { serviceCatalogId, dineInMenuItemId, unitPrice, quantity, paid, paymentMethod, experienceDate, slotTemplateId, termsAccepted } = body || {};
 
-  if (!Number.isInteger(serviceCatalogId)) {
+  const hasCatalogId = Number.isInteger(serviceCatalogId);
+  const hasMenuItemId = Number.isInteger(dineInMenuItemId);
+  if (hasCatalogId === hasMenuItemId) {
     return jsonError('Vui lòng chọn dịch vụ', 400);
   }
   if (!Number.isInteger(unitPrice) || unitPrice < 0) {
@@ -87,6 +89,31 @@ export async function onRequestPost({ request, env, params }) {
   }
   if (paid === true && paymentMethod !== 'cash' && paymentMethod !== 'transfer') {
     return jsonError('Vui lòng chọn hình thức thanh toán', 400);
+  }
+
+  // Menu Quán items (dine_in_menu_items) have no scheduling/slot concept -- that
+  // machinery below only ever applies to a Bảng giá dịch vụ (service_catalog) item.
+  if (hasMenuItemId) {
+    const menuItem = await env.DB.prepare(
+      `SELECT id, name FROM dine_in_menu_items WHERE id = ? AND is_active = 1`
+    ).bind(dineInMenuItemId).first();
+    if (!menuItem) {
+      return jsonError('Món ăn/thức uống không tồn tại hoặc đã ngừng bán', 400);
+    }
+
+    const amount = unitPrice * quantity;
+    const now = new Date().toISOString();
+    const paymentStatus = paid === true ? 'paid' : 'pending';
+    const resolvedPaymentMethod = paid === true ? paymentMethod : null;
+
+    const result = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, dine_in_menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method)
+       VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?)`
+    )
+      .bind(params.id, menuItem.id, menuItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod)
+      .run();
+
+    return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   }
 
   const catalogItem = await env.DB.prepare(

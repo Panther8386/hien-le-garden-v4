@@ -35,6 +35,14 @@ function showOpsError(message) {
 
 let canManageRoomLayout = false;
 let catalogItems = [];
+let dineMenuItems = [];
+
+const CATALOG_CATEGORY_LABELS = {
+  luu_tru: 'Lưu trú',
+  fnb_hoat_dong: 'F&B & Hoạt động',
+  su_kien_team_building: 'Sự kiện & Team Building',
+};
+const CATALOG_CATEGORY_ORDER = ['luu_tru', 'fnb_hoat_dong', 'su_kien_team_building'];
 
 let bookingHistoryAll = [];
 let bookingHistoryPage = 1;
@@ -50,6 +58,8 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
   currentRole = role;
   canManageRoomLayout = !!layoutFlag;
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
   if (currentRole === 'observer') {
     document.getElementById('newBookingSection').classList.add('hidden');
     document.getElementById('promoLookupSection').classList.add('hidden');
@@ -244,40 +254,108 @@ function renderServicesSection(b, card) {
   card.appendChild(section);
 }
 
+function buildServiceGroups() {
+  const groups = [];
+  CATALOG_CATEGORY_ORDER.forEach((catKey) => {
+    if (catalogItems.some((c) => c.category === catKey)) {
+      groups.push({ kind: 'catalog', key: catKey, label: CATALOG_CATEGORY_LABELS[catKey] });
+    }
+  });
+  const seenSubgroups = new Set();
+  dineMenuItems.forEach((m) => {
+    if (m.subgroup && !seenSubgroups.has(m.subgroup)) {
+      seenSubgroups.add(m.subgroup);
+      groups.push({ kind: 'menu', key: m.subgroup, label: m.subgroup });
+    }
+  });
+  return groups;
+}
+
 function openAddServiceForm(bookingId, section) {
   document.querySelectorAll('.add-service-form').forEach((el) => el.remove());
 
   const form = document.createElement('div');
   form.className = 'add-service-form';
 
-  const select = document.createElement('select');
-  const placeholderOpt = document.createElement('option');
-  placeholderOpt.value = '';
-  placeholderOpt.textContent = '-- Chọn dịch vụ --';
-  select.appendChild(placeholderOpt);
-  catalogItems.forEach((item) => {
+  const groupSelect = document.createElement('select');
+  const groupPlaceholderOpt = document.createElement('option');
+  groupPlaceholderOpt.value = '';
+  groupPlaceholderOpt.textContent = '-- Chọn nhóm --';
+  groupSelect.appendChild(groupPlaceholderOpt);
+  buildServiceGroups().forEach((g, index) => {
     const opt = document.createElement('option');
-    opt.value = item.id;
-    opt.textContent = item.name;
-    opt.dataset.priceMin = item.priceMin != null ? item.priceMin : '';
-    opt.dataset.isScheduled = item.isScheduled ? '1' : '';
-    opt.dataset.termsAndConditions = item.termsAndConditions || '';
-    select.appendChild(opt);
+    opt.value = String(index);
+    opt.textContent = g.label;
+    opt.dataset.kind = g.kind;
+    opt.dataset.key = g.key;
+    groupSelect.appendChild(opt);
   });
+
+  const itemSelect = document.createElement('select');
+
+  function populateItemSelect() {
+    const groupOpt = groupSelect.options[groupSelect.selectedIndex];
+    itemSelect.innerHTML = '';
+    const placeholderOpt = document.createElement('option');
+    placeholderOpt.value = '';
+    placeholderOpt.textContent = '-- Chọn món/dịch vụ --';
+    itemSelect.appendChild(placeholderOpt);
+    if (!groupOpt || !groupOpt.dataset.kind) return;
+
+    if (groupOpt.dataset.kind === 'catalog') {
+      catalogItems.filter((c) => c.category === groupOpt.dataset.key).forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = `catalog:${item.id}`;
+        opt.textContent = item.name;
+        opt.dataset.source = 'catalog';
+        opt.dataset.sourceId = item.id;
+        opt.dataset.priceMin = item.priceMin != null ? item.priceMin : '';
+        opt.dataset.isScheduled = item.isScheduled ? '1' : '';
+        opt.dataset.termsAndConditions = item.termsAndConditions || '';
+        itemSelect.appendChild(opt);
+      });
+    } else {
+      dineMenuItems.filter((m) => m.subgroup === groupOpt.dataset.key).forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = `menu:${item.id}`;
+        opt.textContent = item.name;
+        opt.dataset.source = 'menu';
+        opt.dataset.sourceId = item.id;
+        opt.dataset.priceMin = item.price != null ? item.price : '';
+        opt.dataset.isScheduled = '';
+        opt.dataset.termsAndConditions = '';
+        itemSelect.appendChild(opt);
+      });
+    }
+  }
+  populateItemSelect();
+
+  const groupLabel = document.createElement('label');
+  groupLabel.append('Nhóm', groupSelect);
+
+  const itemLabel = document.createElement('label');
+  itemLabel.append('Món/Dịch vụ', itemSelect);
 
   const priceInput = document.createElement('input');
   priceInput.type = 'number';
   priceInput.min = '0';
   priceInput.step = '1000';
   priceInput.placeholder = 'Giá';
+  const priceLabel = document.createElement('label');
+  priceLabel.append('Giá', priceInput);
 
-  const qtyLabel = document.createElement('span');
-  qtyLabel.textContent = 'Số lượng:';
   const qtyInput = document.createElement('input');
   qtyInput.type = 'number';
   qtyInput.min = '1';
   qtyInput.step = '1';
   qtyInput.value = '1';
+  const qtyLabelTextNode = document.createTextNode('Số lượng');
+  const qtyLabel = document.createElement('label');
+  qtyLabel.append(qtyLabelTextNode, qtyInput);
+
+  const fieldsRow = document.createElement('div');
+  fieldsRow.className = 'form-row-4';
+  fieldsRow.append(groupLabel, itemLabel, priceLabel, qtyLabel);
 
   const experienceDateInput = document.createElement('input');
   experienceDateInput.type = 'date';
@@ -301,7 +379,8 @@ function openAddServiceForm(bookingId, section) {
   termsLabel.append(termsAcceptedCheckbox, ' Đã giải thích & khách đồng ý điều khoản trên');
 
   async function refreshSlotAvailability() {
-    const catalogId = select.value;
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    const catalogId = selectedOpt && selectedOpt.dataset.source === 'catalog' ? selectedOpt.dataset.sourceId : '';
     const date = experienceDateInput.value;
     slotTemplateSelect.innerHTML = '';
     if (!catalogId || !date) {
@@ -333,13 +412,13 @@ function openAddServiceForm(bookingId, section) {
     });
   }
 
-  select.addEventListener('change', () => {
-    const selectedOpt = select.options[select.selectedIndex];
-    priceInput.value = selectedOpt.dataset.priceMin || '';
-    const isScheduled = selectedOpt.dataset.isScheduled === '1';
+  function resetItemDependentFields() {
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    priceInput.value = (selectedOpt && selectedOpt.dataset.priceMin) || '';
+    const isScheduled = !!selectedOpt && selectedOpt.dataset.isScheduled === '1';
     experienceDateInput.style.display = isScheduled ? '' : 'none';
     slotTemplateSelect.style.display = isScheduled ? '' : 'none';
-    qtyLabel.textContent = isScheduled ? 'Số khách:' : 'Số lượng:';
+    qtyLabelTextNode.data = isScheduled ? 'Số khách' : 'Số lượng';
     if (isScheduled) {
       refreshSlotAvailability();
     } else {
@@ -347,13 +426,20 @@ function openAddServiceForm(bookingId, section) {
       termsLabel.style.display = 'none';
       termsAcceptedCheckbox.checked = false;
     }
+  }
+
+  groupSelect.addEventListener('change', () => {
+    populateItemSelect();
+    resetItemDependentFields();
   });
+
+  itemSelect.addEventListener('change', resetItemDependentFields);
 
   experienceDateInput.addEventListener('change', refreshSlotAvailability);
 
   slotTemplateSelect.addEventListener('change', () => {
-    const selectedOpt = select.options[select.selectedIndex];
-    const terms = selectedOpt.dataset.termsAndConditions;
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    const terms = selectedOpt && selectedOpt.dataset.termsAndConditions;
     if (slotTemplateSelect.value && terms) {
       termsDisplay.textContent = terms;
       termsDisplay.style.display = '';
@@ -365,23 +451,28 @@ function openAddServiceForm(bookingId, section) {
     }
   });
 
-  const paidLabel = document.createElement('label');
-  paidLabel.className = 'checkbox-label';
-  const paidCheckbox = document.createElement('input');
-  paidCheckbox.type = 'checkbox';
-  paidLabel.append(paidCheckbox, ' Đã thanh toán');
+  const tmLabel = document.createElement('label');
+  tmLabel.className = 'checkbox-label';
+  const tmCheckbox = document.createElement('input');
+  tmCheckbox.type = 'checkbox';
+  tmLabel.append(tmCheckbox, ' Đã thanh toán TM');
 
-  const methodLabel = document.createElement('label');
-  methodLabel.className = 'checkbox-label';
-  const methodCheckbox = document.createElement('input');
-  methodCheckbox.type = 'checkbox';
-  methodCheckbox.checked = true;
-  methodLabel.append(methodCheckbox, ' Tiền mặt');
-  methodLabel.style.display = 'none';
+  const ckLabel = document.createElement('label');
+  ckLabel.className = 'checkbox-label';
+  const ckCheckbox = document.createElement('input');
+  ckCheckbox.type = 'checkbox';
+  ckLabel.append(ckCheckbox, ' Đã thanh toán CK');
 
-  paidCheckbox.addEventListener('change', () => {
-    methodLabel.style.display = paidCheckbox.checked ? '' : 'none';
+  tmCheckbox.addEventListener('change', () => {
+    if (tmCheckbox.checked) ckCheckbox.checked = false;
   });
+  ckCheckbox.addEventListener('change', () => {
+    if (ckCheckbox.checked) tmCheckbox.checked = false;
+  });
+
+  const paymentRow = document.createElement('div');
+  paymentRow.className = 'payment-row';
+  paymentRow.append(tmLabel, ckLabel);
 
   const confirmBtn = document.createElement('button');
   confirmBtn.type = 'button';
@@ -426,8 +517,8 @@ function openAddServiceForm(bookingId, section) {
   confirmBtn.addEventListener('click', async () => {
     errorEl.textContent = '';
     alternativesEl.innerHTML = '';
-    const serviceCatalogId = Number(select.value);
-    if (!serviceCatalogId) {
+    const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
+    if (!selectedOpt || !selectedOpt.dataset.sourceId) {
       errorEl.textContent = 'Vui lòng chọn dịch vụ';
       return;
     }
@@ -442,7 +533,7 @@ function openAddServiceForm(bookingId, section) {
       return;
     }
 
-    const selectedOpt = select.options[select.selectedIndex];
+    const isCatalog = selectedOpt.dataset.source === 'catalog';
     const isScheduled = selectedOpt.dataset.isScheduled === '1';
     let experienceDate, slotTemplateId, termsAccepted;
     if (isScheduled) {
@@ -461,14 +552,21 @@ function openAddServiceForm(bookingId, section) {
       }
     }
 
-    const paid = paidCheckbox.checked;
-    const paymentMethod = paid ? (methodCheckbox.checked ? 'cash' : 'transfer') : undefined;
+    const paid = tmCheckbox.checked || ckCheckbox.checked;
+    const paymentMethod = tmCheckbox.checked ? 'cash' : (ckCheckbox.checked ? 'transfer' : undefined);
+    const payload = { unitPrice, quantity, paid, paymentMethod, experienceDate, slotTemplateId, termsAccepted };
+    if (isCatalog) {
+      payload.serviceCatalogId = Number(selectedOpt.dataset.sourceId);
+    } else {
+      payload.dineInMenuItemId = Number(selectedOpt.dataset.sourceId);
+    }
+
     let response;
     try {
       response = await fetch(`/api/bookings/${bookingId}/services`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceCatalogId, unitPrice, quantity, paid, paymentMethod, experienceDate, slotTemplateId, termsAccepted }),
+        body: JSON.stringify(payload),
       });
     } catch (err) {
       errorEl.textContent = 'Có lỗi khi thêm dịch vụ';
@@ -484,7 +582,7 @@ function openAddServiceForm(bookingId, section) {
   });
   cancelBtn.addEventListener('click', () => form.remove());
 
-  form.append(select, priceInput, qtyLabel, qtyInput, experienceDateInput, slotTemplateSelect, termsDisplay, termsLabel, paidLabel, methodLabel, confirmBtn, cancelBtn, errorEl, alternativesEl);
+  form.append(fieldsRow, experienceDateInput, slotTemplateSelect, termsDisplay, termsLabel, paymentRow, confirmBtn, cancelBtn, errorEl, alternativesEl);
   section.appendChild(form);
 }
 
