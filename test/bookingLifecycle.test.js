@@ -496,14 +496,15 @@ describe('POST /api/bookings/:id/check-out', () => {
     await checkInBooking({ request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-in`, managerToken), env, params: { id: String(pendingBookingId) } });
 
     const response = await checkOutBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
       env,
       params: { id: String(pendingBookingId) },
     });
     expect(response.status).toBe(200);
 
-    const bookingRow = await env.DB.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
+    const bookingRow = await env.DB.prepare(`SELECT status, checkout_payment_method FROM bookings WHERE id = ?`).bind(pendingBookingId).first();
     expect(bookingRow.status).toBe('checked_out');
+    expect(bookingRow.checkout_payment_method).toBe('cash');
 
     const roomRow = await env.DB.prepare(`SELECT needs_cleaning FROM rooms WHERE id = ?`).bind(circleRoomId).first();
     expect(roomRow.needs_cleaning).toBe(1);
@@ -515,7 +516,7 @@ describe('POST /api/bookings/:id/check-out', () => {
 
     const before = new Date().toISOString();
     const response = await checkOutBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -528,7 +529,7 @@ describe('POST /api/bookings/:id/check-out', () => {
 
   it('rejects checking out a booking that is not checked in', async () => {
     const response = await checkOutBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -537,10 +538,163 @@ describe('POST /api/bookings/:id/check-out', () => {
 
   it('returns 404 for a nonexistent booking', async () => {
     const response = await checkOutBooking({
-      request: authedPost('https://x/api/bookings/999999/check-out', managerToken),
+      request: authedPost('https://x/api/bookings/999999/check-out', managerToken, { paymentMethod: 'cash' }),
       env,
       params: { id: '999999' },
     });
     expect(response.status).toBe(404);
+  });
+
+  async function checkInBookingWithDepositAndServices({ roomType, roomId, nights, depositAmount, pendingServiceAmount, paidServiceAmount }) {
+    const checkIn = '2099-02-01';
+    const checkOutDate = new Date(checkIn);
+    checkOutDate.setUTCDate(checkOutDate.getUTCDate() + nights);
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, deposit_amount, created_at) VALUES ('Checkout Test Guest', '0900000099', ?, ?, ?, ?, 'checked_in', 'website', ?, ?)`
+    ).bind(roomType, roomId, checkIn, checkOutDate.toISOString().slice(0, 10), depositAmount, new Date().toISOString()).run();
+    const bookingId = bookingInsert.meta.last_row_id;
+
+    if (pendingServiceAmount > 0) {
+      await env.DB.prepare(
+        `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status) VALUES (?, 'Dịch vụ chưa trả', ?, 1, ?, 'posted', 'system', '2026-08-01T00:00:00Z', 'pending')`
+      ).bind(bookingId, pendingServiceAmount, pendingServiceAmount).run();
+    }
+    if (paidServiceAmount > 0) {
+      await env.DB.prepare(
+        `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status) VALUES (?, 'Dịch vụ đã trả', ?, 1, ?, 'posted', 'system', '2026-08-01T00:00:00Z', 'paid')`
+      ).bind(bookingId, paidServiceAmount, paidServiceAmount).run();
+    }
+    return bookingId;
+  }
+
+  it('bills the full room total when there is no deposit', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 0, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ ok: true, roomDue: 600000, servicesDue: 0, refundAmount: 0, checkoutPaymentMethod: 'cash' });
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note FROM finance_transactions WHERE note LIKE 'Tiền phòng%'`).first();
+    expect(tx).toEqual({ type: 'income', category: 'dich_vu', amount: 600000, note: 'Tiền phòng — Checkout Test Guest' });
+  });
+
+  it('subtracts the deposit from the room total, billing only the remainder', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 200000, pendingServiceAmount: 0, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'transfer' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body).toEqual({ ok: true, roomDue: 400000, servicesDue: 0, refundAmount: 0, checkoutPaymentMethod: 'transfer' });
+  });
+
+  it('bills unpaid services in full alongside the room total', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 100000, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body).toEqual({ ok: true, roomDue: 600000, servicesDue: 100000, refundAmount: 0, checkoutPaymentMethod: 'cash' });
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note FROM finance_transactions WHERE note LIKE 'Dịch vụ lưu trú%'`).first();
+    expect(tx).toEqual({ type: 'income', category: 'ban_hang', amount: 100000, note: 'Dịch vụ lưu trú — Checkout Test Guest' });
+
+    const item = await env.DB.prepare(`SELECT payment_status, payment_method FROM booking_service_items WHERE booking_id = ? AND name = 'Dịch vụ chưa trả'`).bind(bookingId).first();
+    expect(item).toEqual({ payment_status: 'paid', payment_method: 'cash' });
+  });
+
+  it('a deposit larger than the room total is applied to unpaid services next', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 700000, pendingServiceAmount: 100000, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    // roomTotal 600000 fully covered; 100000 leftover deposit covers all of the 100000 unpaid service
+    expect(body).toEqual({ ok: true, roomDue: 0, servicesDue: 0, refundAmount: 0, checkoutPaymentMethod: 'cash' });
+
+    const item = await env.DB.prepare(`SELECT payment_status FROM booking_service_items WHERE booking_id = ? AND name = 'Dịch vụ chưa trả'`).bind(bookingId).first();
+    expect(item.payment_status).toBe('paid');
+  });
+
+  it('refunds the excess when the deposit exceeds room total plus unpaid services', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 900000, pendingServiceAmount: 100000, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body).toEqual({ ok: true, roomDue: 0, servicesDue: 0, refundAmount: 200000, checkoutPaymentMethod: 'cash' });
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note FROM finance_transactions WHERE note LIKE 'Hoàn cọc%'`).first();
+    expect(tx).toEqual({ type: 'expense', category: 'hoan_coc', amount: 200000, note: 'Hoàn cọc dư — Checkout Test Guest' });
+  });
+
+  it('requires no payment method and creates no finance_transactions rows when the deposit lands exactly on the combined total', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 600000, pendingServiceAmount: 0, paidServiceAmount: 0 });
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken),
+      env,
+      params: { id: String(bookingId) },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ ok: true, roomDue: 0, servicesDue: 0, refundAmount: 0, checkoutPaymentMethod: null });
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    expect(after.n).toBe(before.n);
+
+    const bookingRow = await env.DB.prepare(`SELECT checkout_payment_method FROM bookings WHERE id = ?`).bind(bookingId).first();
+    expect(bookingRow.checkout_payment_method).toBeNull();
+  });
+
+  it('rejects checkout when a payment method is needed but not provided', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 0, paidServiceAmount: 0 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken),
+      env,
+      params: { id: String(bookingId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('leaves an already-paid service item untouched (not re-billed, payment_method unchanged)', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 0, paidServiceAmount: 50000 });
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body.servicesDue).toBe(0);
+
+    const item = await env.DB.prepare(`SELECT payment_status, payment_method FROM booking_service_items WHERE booking_id = ? AND name = 'Dịch vụ đã trả'`).bind(bookingId).first();
+    expect(item).toEqual({ payment_status: 'paid', payment_method: null });
+  });
+
+  it('on a lost race (booking already checked out), returns 409 and cleans up any finance_transactions rows just created', async () => {
+    const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 0, paidServiceAmount: 0 });
+    // Simulate a concurrent request that already checked this booking out between this
+    // request's read and write.
+    await env.DB.prepare(`UPDATE bookings SET status = 'checked_out' WHERE id = ?`).bind(bookingId).run();
+
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    expect(response.status).toBe(400); // status guard fires first (status is no longer 'checked_in') — this exercises the pre-existing early guard, not the race window itself, which is documented as effectively untestable without injecting a fault mid-request (see gio-xanh-sessions close endpoint for the same limitation).
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    expect(after.n).toBe(before.n);
   });
 });
