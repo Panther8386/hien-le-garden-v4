@@ -169,7 +169,7 @@ function renderAssetList(assets) {
     card.appendChild(line3);
 
     const canEdit = currentRole === 'admin' || currentRole === 'manager';
-    if (canEdit || canDeleteAsset) {
+    if (canEdit || (canDeleteAsset && currentRole !== 'observer')) {
       const actions = document.createElement('div');
       actions.className = 'booking-actions';
       if (canEdit) {
@@ -180,7 +180,7 @@ function renderAssetList(assets) {
         editBtn.addEventListener('click', () => openEditAsset(a));
         actions.appendChild(editBtn);
       }
-      if (canDeleteAsset) {
+      if (canDeleteAsset && currentRole !== 'observer') {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn-secondary table-actions-btn';

@@ -28,7 +28,7 @@ export async function onRequestGet({ request, env }) {
      JOIN asset_locations loc ON loc.id = b.location_id
      JOIN assets a ON a.id = l.asset_id
      JOIN asset_categories c ON c.id = a.category_id
-     WHERE b.status = 'closed' AND l.actual_quantity = 0 AND c.management_type IN ('individual_device', 'device_set')
+     WHERE b.status = 'closed' AND l.actual_quantity = 0 AND c.management_type IN ('individual_device', 'device_set') AND a.is_deleted = 0
      ORDER BY b.closed_at DESC`
   ).all();
 

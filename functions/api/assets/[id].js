@@ -74,7 +74,7 @@ export async function onRequestPatch({ request, env, params }) {
 export async function onRequestDelete({ request, env, params }) {
   const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
-  if (!auth.canDeleteAsset) return jsonError('Tài khoản không có quyền xoá tài sản', 403);
+  if (!auth.canDeleteAsset || auth.role === 'observer') return jsonError('Tài khoản không có quyền xoá tài sản', 403);
 
   const existing = await env.DB.prepare(`SELECT id, name, is_deleted FROM assets WHERE id = ?`).bind(params.id).first();
   if (!existing) return jsonError('Không tìm thấy tài sản', 404);

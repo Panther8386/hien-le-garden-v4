@@ -102,7 +102,7 @@ export async function onRequestPatch({ request, env, params }) {
      FROM asset_inventory_lines l
      JOIN assets a ON a.id = l.asset_id
      JOIN asset_categories c ON c.id = a.category_id
-     WHERE l.batch_id = ?`
+     WHERE l.batch_id = ? AND a.is_deleted = 0`
   ).bind(params.id).all();
 
   const statements = [
@@ -121,7 +121,7 @@ export async function onRequestPatch({ request, env, params }) {
       env.DB.prepare(
         `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
          VALUES ('asset_inventory_adjustment', 'asset', ?, ?, ?, ?, ?, ?)`
-      ).bind(line.asset_id, line.asset_name, String(line.asset_quantity), String(line.actual_quantity), auth.username, now)
+      ).bind(line.asset_id, line.asset_name, line.asset_quantity === null ? null : String(line.asset_quantity), String(line.actual_quantity), auth.username, now)
     );
   }
 

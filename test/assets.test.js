@@ -235,6 +235,15 @@ describe('DELETE /api/assets/:id', () => {
     expect(row.is_deleted).toBe(1);
   });
 
+  it('rejects an observer even with canDeleteAsset = 1 (403) -- stale flag from a pre-demotion grant must not survive a demotion', async () => {
+    const assetId = await createTestAsset();
+    const observerRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'quan_sat_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(observerRow.id).run();
+
+    const response = await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, observerToken, 'DELETE'), env, params: { id: String(assetId) } });
+    expect(response.status).toBe(403);
+  });
+
   it('writes an asset_delete audit_log row', async () => {
     const assetId = await createTestAsset();
     const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();

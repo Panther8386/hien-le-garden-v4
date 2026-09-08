@@ -72,7 +72,7 @@ document.querySelectorAll('#inventoryTabToggle .tab-btn').forEach((btn) => {
 async function loadLocations() {
   let response;
   try {
-    response = await fetch('/api/asset-locations');
+    response = await fetch('/api/asset-locations?includeInactive=1');
   } catch (err) {
     return;
   }
@@ -89,6 +89,7 @@ async function loadLocations() {
     filterOpt.textContent = l.name;
     filterSelect.appendChild(filterOpt);
 
+    if (!l.isActive) return; // create-batch form stays active-only
     const formOpt = document.createElement('option');
     formOpt.value = l.id;
     formOpt.textContent = l.name;
