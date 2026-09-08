@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as createBooking, onRequestGet as listBookings } from '../functions/api/bookings/index.js';
 import { onRequestPatch as setDeposit } from '../functions/api/bookings/[id]/deposit.js';
+import { onRequestPost as addDeposit } from '../functions/api/bookings/[id]/deposits/index.js';
 import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 
@@ -302,7 +303,7 @@ describe('GET /api/bookings', () => {
 });
 
 describe('PATCH /api/bookings/:id/deposit', () => {
-  it('lets reception set a deposit amount', async () => {
+  it('lets admin correct a deposit amount directly', async () => {
     const created = await env.DB.prepare(
       `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
        VALUES ('Deposit Test', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
@@ -311,7 +312,7 @@ describe('PATCH /api/bookings/:id/deposit', () => {
 
     const request = new Request(`https://x/api/bookings/${id}/deposit`, {
       method: 'PATCH',
-      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ depositAmount: 200000 }),
     });
     const response = await setDeposit({ request, env, params: { id: String(id) } });
@@ -330,7 +331,7 @@ describe('PATCH /api/bookings/:id/deposit', () => {
 
     const request = new Request(`https://x/api/bookings/${id}/deposit`, {
       method: 'PATCH',
-      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ depositAmount: 200000 }),
     });
     const response = await setDeposit({ request, env, params: { id: String(id) } });
@@ -341,10 +342,29 @@ describe('PATCH /api/bookings/:id/deposit', () => {
     expect(row.entity_label).toBe('Deposit Audit Guest');
     expect(row.old_value).toBe('50000');
     expect(row.new_value).toBe('200000');
-    expect(row.actor).toBe('le_tan_a');
   });
 
-  it('rejects a negative amount (400)', async () => {
+  it('never writes to finance_transactions or booking_deposits', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit No Ledger', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 150000 }),
+    });
+    await setDeposit({ request, env, params: { id: String(id) } });
+
+    const tx = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE note LIKE '%Deposit No Ledger%'`).first();
+    expect(tx.n).toBe(0);
+    const deposits = await env.DB.prepare(`SELECT COUNT(*) AS n FROM booking_deposits WHERE booking_id = ?`).bind(id).first();
+    expect(deposits.n).toBe(0);
+  });
+
+  it('rejects a negative depositAmount (400)', async () => {
     const created = await env.DB.prepare(
       `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
        VALUES ('Deposit Test 2', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
@@ -353,7 +373,7 @@ describe('PATCH /api/bookings/:id/deposit', () => {
 
     const request = new Request(`https://x/api/bookings/${id}/deposit`, {
       method: 'PATCH',
-      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ depositAmount: -1 }),
     });
     const response = await setDeposit({ request, env, params: { id: String(id) } });
@@ -363,11 +383,43 @@ describe('PATCH /api/bookings/:id/deposit', () => {
   it('returns 404 for a nonexistent booking', async () => {
     const request = new Request('https://x/api/bookings/999999/deposit', {
       method: 'PATCH',
-      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ depositAmount: 100000 }),
     });
     const response = await setDeposit({ request, env, params: { id: '999999' } });
     expect(response.status).toBe(404);
+  });
+
+  it('rejects a manager (403)', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Test Manager', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 100000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Test Reception', '090', 'circle', '2026-09-01', '2026-09-02', 'pending', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const request = new Request(`https://x/api/bookings/${id}/deposit`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ depositAmount: 100000 }),
+    });
+    const response = await setDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(403);
   });
 
   it('rejects an observer (403)', async () => {
@@ -393,6 +445,163 @@ describe('PATCH /api/bookings/:id/deposit', () => {
       body: JSON.stringify({ depositAmount: 100000 }),
     });
     const response = await setDeposit({ request, env, params: { id: '1' } });
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('POST /api/bookings/:id/deposits', () => {
+  async function seedBooking(status = 'confirmed') {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Ledger Guest', '090', 'circle', '2026-09-01', '2026-09-02', ?, 'website', '2026-08-27T00:00:00Z')`
+    ).bind(status).run();
+    return created.meta.last_row_id;
+  }
+
+  it('creates a finance_transactions row, a booking_deposits row, and increments deposit_amount', async () => {
+    const id = await seedBooking();
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 200000, paymentMethod: 'transfer' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.newTotal).toBe(200000);
+
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(200000);
+
+    const depositRow = await env.DB.prepare(`SELECT booking_id, amount, payment_method, finance_transaction_id FROM booking_deposits WHERE id = ?`).bind(body.depositId).first();
+    expect(depositRow).toEqual({ booking_id: id, amount: 200000, payment_method: 'transfer', finance_transaction_id: body.financeTransactionId });
+
+    const txRow = await env.DB.prepare(`SELECT type, category, amount, status FROM finance_transactions WHERE id = ?`).bind(body.financeTransactionId).first();
+    expect(txRow).toEqual({ type: 'income', category: 'dich_vu', amount: 200000, status: 'confirmed' });
+  });
+
+  it('accumulates the total across two separate deposits, not overwriting it', async () => {
+    const id = await seedBooking();
+    await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 200000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const second = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 150000, paymentMethod: 'transfer' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const body = await second.json();
+    expect(body.newTotal).toBe(350000);
+
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(350000);
+
+    const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM booking_deposits WHERE booking_id = ?`).bind(id).first();
+    expect(count.n).toBe(2);
+  });
+
+  it('lets a manager and an admin add a deposit too', async () => {
+    const id = await seedBooking();
+    const managerResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${managerToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    expect(managerResponse.status).toBe(201);
+    const adminResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    expect(adminResponse.status).toBe(201);
+  });
+
+  it('rejects an observer (403)', async () => {
+    const id = await seedBooking();
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${observerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a non-positive amount (400)', async () => {
+    const id = await seedBooking();
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 0, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects an invalid paymentMethod (400)', async () => {
+    const id = await seedBooking();
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'bitcoin' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent booking', async () => {
+    const request = new Request('https://x/api/bookings/999999/deposits', {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a cancelled booking (400)', async () => {
+    const id = await seedBooking('cancelled');
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a checked_out booking (400)', async () => {
+    const id = await seedBooking('checked_out');
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('allows a checked_in booking', async () => {
+    const id = await seedBooking('checked_in');
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(201);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const id = await seedBooking();
+    const request = new Request(`https://x/api/bookings/${id}/deposits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
+    });
+    const response = await addDeposit({ request, env, params: { id: String(id) } });
     expect(response.status).toBe(401);
   });
 });
