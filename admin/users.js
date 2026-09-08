@@ -8,6 +8,9 @@
   const { username: currentUsername, role: currentRole } = await res.json();
   window.__currentUsername = currentUsername;
   window.__currentRole = currentRole;
+  if (window.__currentRole !== 'admin') {
+    document.getElementById('deleteAssetColumnHeader').style.display = 'none';
+  }
   loadUsers();
 })();
 
@@ -107,6 +110,32 @@ async function loadUsers() {
     });
     tdFinanceTx.appendChild(financeTxCheckbox);
 
+    const tdDeleteAsset = document.createElement('td');
+    tdDeleteAsset.className = 'delete-asset-cell';
+    if (window.__currentRole === 'admin') {
+      const deleteAssetCheckbox = document.createElement('input');
+      deleteAssetCheckbox.type = 'checkbox';
+      deleteAssetCheckbox.checked = !!u.canDeleteAsset;
+      deleteAssetCheckbox.title = 'Xoá tài sản trong Danh mục tài sản';
+      deleteAssetCheckbox.addEventListener('change', async () => {
+        const response = await fetch(`/api/users/${u.id}/asset-delete-access`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ canDeleteAsset: deleteAssetCheckbox.checked }),
+        });
+        const listError = document.getElementById('listError');
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          listError.textContent = body.error || 'Có lỗi khi cập nhật quyền xoá tài sản';
+          deleteAssetCheckbox.checked = !deleteAssetCheckbox.checked;
+          return;
+        }
+        listError.textContent = '';
+      });
+      tdDeleteAsset.appendChild(deleteAssetCheckbox);
+    }
+    if (window.__currentRole !== 'admin') tdDeleteAsset.style.display = 'none';
+
     const tdCreated = document.createElement('td');
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
@@ -141,7 +170,7 @@ async function loadUsers() {
     });
     tdActions.appendChild(deleteBtn);
 
-    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdCreated, tdActions);
+    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdDeleteAsset, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
 }

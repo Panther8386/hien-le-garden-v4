@@ -729,3 +729,13 @@ describe('migration 0031', () => {
     expect(row.is_deleted).toBe(0);
   });
 });
+
+describe('migration 0032', () => {
+  it('adds can_delete_asset to staff_accounts, defaulting to 0', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('mig0032_default', 'x', 'reception', '2026-09-08T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.can_delete_asset).toBe(0);
+  });
+});

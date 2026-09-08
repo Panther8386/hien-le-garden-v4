@@ -4,6 +4,7 @@ import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
 import { onRequestPatch as setFinanceTransactionAccess } from '../functions/api/users/[id]/finance-transaction-access.js';
+import { onRequestPatch as assetDeleteAccess } from '../functions/api/users/[id]/asset-delete-access.js';
 import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
 import { createSession, verifyPassword } from '../lib/auth.js';
 
@@ -299,5 +300,67 @@ describe('PATCH /api/users/:id/password', () => {
     const request = authedRequest('https://x/api/users/999999/password', adminToken, 'PATCH', { password: 'MatKhauMoi123' });
     const response = await resetPassword({ request, env, params: { id: '999999' } });
     expect(response.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/users/:id/asset-delete-access', () => {
+  it('lets admin grant the permission', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_delete_asset).toBe(1);
+  });
+
+  it('lets admin revoke the permission', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(receptionId).run();
+    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: false });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
+    expect(row.can_delete_asset).toBe(0);
+  });
+
+  it('rejects a manager (403) -- unlike room-layout/finance-transaction access, only admin grants this one', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, managerAToken, 'PATCH', { canDeleteAsset: true });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a reception account (403)', async () => {
+    const request = authedRequest(`https://x/api/users/${managerBId}/asset-delete-access`, receptionToken, 'PATCH', { canDeleteAsset: true });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(managerBId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects granting to an observer target (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${observerId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(observerId) } });
+    expect(response.status).toBe(400);
+    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.can_delete_asset).toBe(0);
+  });
+
+  it('rejects a non-boolean value (400)', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: 'yes' });
+    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const request = authedRequest('https://x/api/users/999999/asset-delete-access', adminToken, 'PATCH', { canDeleteAsset: true });
+    const response = await assetDeleteAccess({ request, env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('writes an account_permission_change audit_log row', async () => {
+    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
+    await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ? ORDER BY id DESC LIMIT 1`).bind(receptionId).first();
+    expect(row.entity_type).toBe('staff_account');
+    expect(row.entity_label).toBe('le_tan_a');
+    expect(row.old_value).toBe('Tắt');
+    expect(row.new_value).toBe('Bật');
+    expect(row.actor).toBe('admin_a');
   });
 });
