@@ -787,3 +787,40 @@ describe('migration 0033', () => {
     expect(row.finance_transaction_id).toBe(txInsert.meta.last_row_id);
   });
 });
+
+describe('migration 0034', () => {
+  it('adds checkout_payment_method to bookings, defaulting to NULL', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M34', '0900000034', 'circle', '2026-09-08', '2026-09-09', 'confirmed', 'website', '2026-09-08T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT checkout_payment_method FROM bookings WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.checkout_payment_method).toBeNull();
+  });
+
+  it('adds finance_transaction_id to booking_service_items, defaulting to NULL, linkable to a real transaction', async () => {
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M34b', '0900000035', 'circle', '2026-09-08', '2026-09-09', 'confirmed', 'website', '2026-09-08T00:00:00Z')`
+    ).run();
+    const bookingId = bookingInsert.meta.last_row_id;
+
+    const itemInsertNoLink = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'system', '2026-09-08T00:00:00Z')`
+    ).bind(bookingId).run();
+    const rowNoLink = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_service_items WHERE id = ?`).bind(itemInsertNoLink.meta.last_row_id).first();
+    expect(rowNoLink.finance_transaction_id).toBeNull();
+
+    const txInsert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES ('income', 'ban_hang', 30000, '2026-09-08', 'confirmed', 'system', '2026-09-08T00:00:00Z')`
+    ).run();
+    const itemInsertLinked = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, finance_transaction_id) VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'system', '2026-09-08T00:00:00Z', ?)`
+    ).bind(bookingId, txInsert.meta.last_row_id).run();
+    const rowLinked = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_service_items WHERE id = ?`).bind(itemInsertLinked.meta.last_row_id).first();
+    expect(rowLinked.finance_transaction_id).toBe(txInsert.meta.last_row_id);
+  });
+
+  it('seeds hoan_coc as an active expense category', async () => {
+    const row = await env.DB.prepare(`SELECT label, type, is_active FROM finance_categories WHERE slug = 'hoan_coc'`).first();
+    expect(row).toEqual({ label: 'Hoàn cọc', type: 'expense', is_active: 1 });
+  });
+});
