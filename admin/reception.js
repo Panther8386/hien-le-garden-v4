@@ -11,6 +11,15 @@ const ROOM_TYPE_LABELS = {
   dormitory: 'Phòng Tập Thể',
 };
 
+const ROOM_TYPE_PRICES = {
+  triangle: 300000,
+  circle: 600000,
+  ede_cozy: 600000,
+  vip: 900000,
+  bungalow: 700000,
+  dormitory: 1200000,
+};
+
 function todayISO() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
@@ -207,7 +216,7 @@ function renderServicesSection(b, card) {
       text.style.opacity = '0.5';
     }
     line.appendChild(text);
-    if (item.status === 'posted' && currentRole !== 'observer') {
+    if (item.status === 'posted' && currentRole !== 'observer' && (item.paymentStatus !== 'paid' || currentRole === 'admin')) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'btn-secondary';
@@ -790,7 +799,7 @@ async function loadDepartures() {
     if (currentRole === 'observer') return;
     const btn = document.createElement('button');
     btn.textContent = 'Check-out';
-    btn.addEventListener('click', () => doBookingAction(b.id, 'check-out'));
+    btn.addEventListener('click', () => openCheckoutDialog(b));
     actions.appendChild(btn);
   });
 }
@@ -862,6 +871,88 @@ async function cancelBooking(id) {
   }
   await refreshAll();
 }
+
+let checkingOutBooking = null;
+
+function computeCheckoutPreview(booking) {
+  const nights = (Date.parse(booking.checkOut) - Date.parse(booking.checkIn)) / 86400000;
+  const roomTotal = nights * (ROOM_TYPE_PRICES[booking.roomType] || 0);
+  const unpaidServicesTotal = (booking.services || [])
+    .filter((s) => s.status === 'posted' && s.paymentStatus === 'pending')
+    .reduce((sum, s) => sum + s.amount, 0);
+  const deposit = booking.depositAmount || 0;
+
+  const roomDue = Math.max(roomTotal - deposit, 0);
+  const leftoverDeposit = Math.max(deposit - roomTotal, 0);
+  const servicesDue = Math.max(unpaidServicesTotal - leftoverDeposit, 0);
+  const refundAmount = Math.max(leftoverDeposit - unpaidServicesTotal, 0);
+  return { roomDue, servicesDue, refundAmount };
+}
+
+function openCheckoutDialog(booking) {
+  checkingOutBooking = booking;
+  document.getElementById('checkoutError').textContent = '';
+  document.getElementById('checkoutCash').checked = false;
+  document.getElementById('checkoutTransfer').checked = false;
+
+  const { roomDue, servicesDue, refundAmount } = computeCheckoutPreview(booking);
+  const summary = document.getElementById('checkoutSummary');
+  const fields = document.getElementById('checkoutPaymentFields');
+  if (roomDue + servicesDue > 0) {
+    summary.textContent = `Cần thu thêm: ${formatVnd(roomDue + servicesDue)}`;
+    fields.classList.remove('hidden');
+  } else if (refundAmount > 0) {
+    summary.textContent = `Cần hoàn khách: ${formatVnd(refundAmount)}`;
+    fields.classList.remove('hidden');
+  } else {
+    summary.textContent = 'Cọc đã khớp đủ, không cần thu/hoàn thêm.';
+    fields.classList.add('hidden');
+  }
+
+  document.getElementById('checkoutOverlay').classList.remove('hidden');
+}
+
+function closeCheckoutDialog() {
+  checkingOutBooking = null;
+  document.getElementById('checkoutOverlay').classList.add('hidden');
+}
+
+document.getElementById('checkoutCancelBtn').addEventListener('click', closeCheckoutDialog);
+
+document.getElementById('checkoutSubmitBtn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('checkoutError');
+  errorEl.textContent = '';
+
+  const fieldsVisible = !document.getElementById('checkoutPaymentFields').classList.contains('hidden');
+  let paymentMethod = null;
+  if (fieldsVisible) {
+    paymentMethod = document.getElementById('checkoutCash').checked ? 'cash' : (document.getElementById('checkoutTransfer').checked ? 'transfer' : null);
+    if (!paymentMethod) {
+      errorEl.textContent = 'Vui lòng chọn hình thức thanh toán';
+      return;
+    }
+  }
+
+  let response;
+  try {
+    response = await fetch(`/api/bookings/${checkingOutBooking.id}/check-out`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentMethod }),
+    });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi xảy ra';
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Có lỗi xảy ra';
+    return;
+  }
+  closeCheckoutDialog();
+  showOpsError('');
+  await refreshAll();
+});
 
 let selectedConfirmRooms = [];
 

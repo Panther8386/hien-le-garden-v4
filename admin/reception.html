@@ -159,6 +159,20 @@
     </div>
   </div>
 
+  <div id="checkoutOverlay" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <h3>Check-out</h3>
+      <p id="checkoutSummary"></p>
+      <div id="checkoutPaymentFields" class="hidden">
+        <label class="checkbox-label"><input type="radio" id="checkoutCash" name="checkoutPaymentMethod" value="cash" /> 💵 Tiền mặt</label>
+        <label class="checkbox-label"><input type="radio" id="checkoutTransfer" name="checkoutPaymentMethod" value="transfer" /> 🏦 Chuyển khoản</label>
+      </div>
+      <button id="checkoutSubmitBtn">Xác nhận Check-out</button>
+      <button id="checkoutCancelBtn" class="btn-secondary">Huỷ</button>
+      <p id="checkoutError" class="error"></p>
+    </div>
+  </div>
+
   <script src="/admin/reception.js"></script>
   <script src="/admin/nav-drawer.js"></script>
 </body>
