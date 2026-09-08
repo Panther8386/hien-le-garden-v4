@@ -98,6 +98,7 @@ describe('migration 0018', () => {
       { slug: 'hien_le_drinks', label: 'Hiền Lê Drinks', type: 'income', is_active: 1 },
       { slug: 'hh_am_thuc_lien_ket', label: 'HH Ẩm thực liên kết', type: 'income', is_active: 1 },
       { slug: 'gio_xanh_hien_le', label: 'Giờ xanh Hiền Lê', type: 'income', is_active: 1 },
+      { slug: 'hoan_coc', label: 'Hoàn cọc', type: 'expense', is_active: 1 },
     ]);
   });
 
