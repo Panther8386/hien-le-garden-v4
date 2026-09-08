@@ -34,6 +34,7 @@
 /manager/asset-config          /admin/asset-config     200
 /manager/asset-source-data     /admin/asset-source-data 200
 /manager/assets                /admin/assets           200
+/manager/asset-inventory       /admin/asset-inventory 200
 
 /reception                    /admin/reception       200
 /reception/customers          /admin/customers       200
@@ -47,6 +48,7 @@
 /reception/asset-config        /admin/asset-config     200
 /reception/asset-source-data   /admin/asset-source-data 200
 /reception/assets               /admin/assets           200
+/reception/asset-inventory     /admin/asset-inventory 200
 
 /observer                     /admin/reception       200
 /observer/customers            /admin/customers       200
@@ -59,3 +61,4 @@
 /observer/asset-config         /admin/asset-config     200
 /observer/asset-source-data    /admin/asset-source-data 200
 /observer/assets                /admin/assets           200
+/observer/asset-inventory      /admin/asset-inventory 200

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Kiểm kê tài sản — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <h1>Kiểm kê tài sản</h1>
+    <p id="pageError" class="error"></p>
+
+    <div class="filters" id="inventoryTabToggle">
+      <button type="button" class="tab-btn active" data-tab="batches">Các đợt kiểm kê</button>
+      <button type="button" class="tab-btn" data-tab="missing">Thiết bị không tìm thấy</button>
+    </div>
+
+    <div id="batchesTab">
+      <button type="button" id="openCreateBatchBtn" class="hidden">+ Tạo đợt kiểm kê</button>
+
+      <div class="filters" id="batchFilters">
+        <select id="batchFilterLocation"><option value="">Tất cả vị trí</option></select>
+        <select id="batchFilterStatus">
+          <option value="">Tất cả trạng thái</option>
+          <option value="draft">Nháp</option>
+          <option value="counting">Đang kiểm kê</option>
+          <option value="pending_close">Chờ chốt</option>
+          <option value="closed">Đã chốt</option>
+        </select>
+      </div>
+
+      <div id="batchList" class="booking-list"></div>
+      <div class="filters" id="batchPagination">
+        <button type="button" id="batchPrevBtn" class="btn-secondary">← Trước</button>
+        <span id="batchPageInfo"></span>
+        <button type="button" id="batchNextBtn" class="btn-secondary">Sau →</button>
+      </div>
+    </div>
+
+    <div id="missingTab" class="hidden">
+      <div id="missingList" class="booking-list"></div>
+      <div class="filters" id="missingPagination">
+        <button type="button" id="missingPrevBtn" class="btn-secondary">← Trước</button>
+        <span id="missingPageInfo"></span>
+        <button type="button" id="missingNextBtn" class="btn-secondary">Sau →</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="createBatchOverlay" class="confirm-overlay form-overlay hidden">
+    <div class="confirm-box">
+      <h3>Tạo đợt kiểm kê</h3>
+      <form id="createBatchForm">
+        <label>Vị trí
+          <select name="locationId" required></select>
+        </label>
+        <label>Tên đợt (để trống sẽ tự đặt) <input type="text" name="label" /></label>
+        <label>Ghi chú <input type="text" name="note" /></label>
+        <button type="submit">Tạo</button>
+        <button type="button" id="createBatchCancelBtn" class="btn-secondary">Đóng</button>
+        <p id="createBatchError" class="error"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="batchDetailOverlay" class="confirm-overlay form-overlay hidden">
+    <div class="confirm-box wide">
+      <h3 id="batchDetailTitle"></h3>
+      <p id="batchDetailMeta"></p>
+      <div id="batchDetailActions"></div>
+      <p id="batchDetailError" class="error"></p>
+      <div class="table-scroll">
+        <table id="batchLinesTable">
+          <thead><tr><th>Tài sản</th><th>Số sách</th><th>Số thực tế</th><th>Tình trạng</th><th>Ảnh</th><th>Ghi chú</th><th>Đề nghị xử lý</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <button type="button" id="batchDetailCloseBtn" class="btn-secondary">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/admin/asset-inventory.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
