@@ -60,7 +60,7 @@ export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
   if (auth instanceof Response) return auth;
 
-  const booking = await env.DB.prepare(`SELECT id, status FROM bookings WHERE id = ?`).bind(params.id).first();
+  const booking = await env.DB.prepare(`SELECT id, status, guest_name FROM bookings WHERE id = ?`).bind(params.id).first();
   if (!booking) {
     return jsonError('Không tìm thấy đặt phòng', 404);
   }
@@ -106,12 +106,38 @@ export async function onRequestPost({ request, env, params }) {
     const paymentStatus = paid === true ? 'paid' : 'pending';
     const resolvedPaymentMethod = paid === true ? paymentMethod : null;
 
-    const result = await env.DB.prepare(
-      `INSERT INTO booking_service_items (booking_id, dine_in_menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method)
-       VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?)`
-    )
-      .bind(params.id, menuItem.id, menuItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod)
-      .run();
+    let financeTransactionId = null;
+    if (paid === true) {
+      const note = `${menuItem.name} ×${quantity} — ${booking.guest_name}`;
+      try {
+        const txInsert = await env.DB.prepare(
+          `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+           VALUES ('income', 'ban_hang', ?, ?, ?, 'confirmed', ?, ?)`
+        ).bind(amount, note, now.slice(0, 10), auth.username, now).run();
+        financeTransactionId = txInsert.meta.last_row_id;
+      } catch (err) {
+        return jsonError('Có lỗi khi ghi nhận thanh toán dịch vụ, vui lòng thử lại', 500);
+      }
+    }
+
+    let result;
+    try {
+      result = await env.DB.prepare(
+        `INSERT INTO booking_service_items (booking_id, dine_in_menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, finance_transaction_id)
+         VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)`
+      )
+        .bind(params.id, menuItem.id, menuItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod, financeTransactionId)
+        .run();
+    } catch (err) {
+      if (financeTransactionId) {
+        try {
+          await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).run();
+        } catch (cleanupErr) {
+          // Bỏ qua lỗi dọn dẹp — không để nó che lấp lỗi gốc bên dưới.
+        }
+      }
+      return jsonError('Có lỗi khi thêm dịch vụ, vui lòng thử lại', 500);
+    }
 
     return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   }
@@ -164,28 +190,55 @@ export async function onRequestPost({ request, env, params }) {
   const resolvedPaymentMethod = paid === true ? paymentMethod : null;
   const resolvedTermsAcceptedAt = template && catalogItem.termsAndConditions && termsAccepted === true ? now : null;
 
-  const result = await env.DB.prepare(
-    `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, experience_date, slot_template_id, experience_slot_label, experience_start_time, terms_accepted_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      params.id,
-      catalogItem.id,
-      catalogItem.name,
-      unitPrice,
-      quantity,
-      amount,
-      auth.username,
-      now,
-      paymentStatus,
-      resolvedPaymentMethod,
-      template ? experienceDate : null,
-      template ? slotTemplateId : null,
-      template ? template.label : null,
-      template ? template.start_time : null,
-      resolvedTermsAcceptedAt
+  let financeTransactionId = null;
+  if (paid === true) {
+    const note = `${catalogItem.name} ×${quantity} — ${booking.guest_name}`;
+    try {
+      const txInsert = await env.DB.prepare(
+        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+         VALUES ('income', 'ban_hang', ?, ?, ?, 'confirmed', ?, ?)`
+      ).bind(amount, note, now.slice(0, 10), auth.username, now).run();
+      financeTransactionId = txInsert.meta.last_row_id;
+    } catch (err) {
+      return jsonError('Có lỗi khi ghi nhận thanh toán dịch vụ, vui lòng thử lại', 500);
+    }
+  }
+
+  let result;
+  try {
+    result = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, experience_date, slot_template_id, experience_slot_label, experience_start_time, terms_accepted_at, finance_transaction_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run();
+      .bind(
+        params.id,
+        catalogItem.id,
+        catalogItem.name,
+        unitPrice,
+        quantity,
+        amount,
+        auth.username,
+        now,
+        paymentStatus,
+        resolvedPaymentMethod,
+        template ? experienceDate : null,
+        template ? slotTemplateId : null,
+        template ? template.label : null,
+        template ? template.start_time : null,
+        resolvedTermsAcceptedAt,
+        financeTransactionId
+      )
+      .run();
+  } catch (err) {
+    if (financeTransactionId) {
+      try {
+        await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).run();
+      } catch (cleanupErr) {
+        // Bỏ qua lỗi dọn dẹp — không để nó che lấp lỗi gốc bên dưới.
+      }
+    }
+    return jsonError('Có lỗi khi thêm dịch vụ, vui lòng thử lại', 500);
+  }
 
   return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

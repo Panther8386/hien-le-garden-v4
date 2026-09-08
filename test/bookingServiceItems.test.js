@@ -429,6 +429,51 @@ describe('POST /api/bookings/:id/services', () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it('records a finance_transactions income row immediately for a paid catalog-item service', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 2, paid: true, paymentMethod: 'cash' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+
+    const item = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(item.finance_transaction_id).not.toBeNull();
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note, status FROM finance_transactions WHERE id = ?`).bind(item.finance_transaction_id).first();
+    expect(tx).toEqual({ type: 'income', category: 'ban_hang', amount: 60000, note: 'Cà phê ×2 — Confirmed Guest', status: 'confirmed' });
+  });
+
+  it('records a finance_transactions income row immediately for a paid Menu Quán item', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { dineInMenuItemId: activeMenuItemId, unitPrice: 368000, quantity: 1, paid: true, paymentMethod: 'transfer' }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+
+    const item = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(item.finance_transaction_id).not.toBeNull();
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note FROM finance_transactions WHERE id = ?`).bind(item.finance_transaction_id).first();
+    expect(tx).toEqual({ type: 'income', category: 'ban_hang', amount: 368000, note: 'Gà nướng ×1 — Confirmed Guest' });
+  });
+
+  it('creates no finance_transactions row when paid is false or omitted', async () => {
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 30000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    expect(after.n).toBe(before.n);
+
+    const item = await env.DB.prepare(`SELECT finance_transaction_id FROM booking_service_items WHERE booking_id = ?`).bind(confirmedBookingId).first();
+    expect(item.finance_transaction_id).toBeNull();
+  });
 });
 
 describe('PATCH /api/bookings/:id/services/:itemId', () => {
