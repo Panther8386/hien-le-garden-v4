@@ -33,7 +33,7 @@ export async function onRequestPost({ request, env, params }) {
 
   const isIndividual = INDIVIDUAL_MANAGEMENT_TYPES.includes(category.management_type);
   const { reconciled_count: reconciledCount } = await env.DB.prepare(
-    `SELECT COALESCE(SUM(quantity), 0) AS reconciled_count FROM assets WHERE source_row_id = ?`
+    `SELECT COALESCE(SUM(quantity), 0) AS reconciled_count FROM assets WHERE source_row_id = ? AND is_deleted = 0`
   ).bind(params.id).first();
 
   const knownQuantity = sourceRow.raw_quantity !== null ? Number(sourceRow.raw_quantity) : null;

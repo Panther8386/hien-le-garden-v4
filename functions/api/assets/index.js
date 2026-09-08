@@ -34,6 +34,7 @@ function coerceRow(r) {
     createdAt: r.created_at,
     updatedBy: r.updated_by,
     updatedAt: r.updated_at,
+    isDeleted: !!r.is_deleted,
   };
 }
 
@@ -47,9 +48,11 @@ export async function onRequestGet({ request, env }) {
   const sourceType = url.searchParams.get('sourceType');
   const managementType = url.searchParams.get('managementType');
   const q = url.searchParams.get('q');
+  const includeDeleted = url.searchParams.get('includeDeleted') === '1' && (auth.role === 'admin' || auth.role === 'manager');
 
   const clauses = [];
   const params = [];
+  if (!includeDeleted) clauses.push('a.is_deleted = 0');
   if (categoryId) { clauses.push('a.category_id = ?'); params.push(Number(categoryId)); }
   if (locationId) { clauses.push('a.location_id = ?'); params.push(Number(locationId)); }
   if (sourceType) { clauses.push('a.source_type = ?'); params.push(sourceType); }

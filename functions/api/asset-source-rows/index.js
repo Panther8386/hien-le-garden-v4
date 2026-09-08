@@ -31,7 +31,7 @@ export async function onRequestGet({ request, env }) {
   if (!Number.isInteger(documentId)) return jsonError('documentId không hợp lệ', 400);
 
   const { results } = await env.DB.prepare(
-    `SELECT r.*, (SELECT COALESCE(SUM(quantity), 0) FROM assets WHERE assets.source_row_id = r.id) AS reconciled_count
+    `SELECT r.*, (SELECT COALESCE(SUM(quantity), 0) FROM assets WHERE assets.source_row_id = r.id AND assets.is_deleted = 0) AS reconciled_count
      FROM asset_source_rows r WHERE r.source_document_id = ? ORDER BY r.stt`
   ).bind(documentId).all();
 

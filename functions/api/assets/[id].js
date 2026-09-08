@@ -18,6 +18,7 @@ export async function onRequestPatch({ request, env, params }) {
     `SELECT a.*, c.management_type FROM assets a JOIN asset_categories c ON c.id = a.category_id WHERE a.id = ?`
   ).bind(params.id).first();
   if (!existing) return jsonError('Không tìm thấy tài sản', 404);
+  if (existing.is_deleted) return jsonError('Tài sản này đã bị xoá', 400);
 
   let body;
   try {
@@ -65,6 +66,27 @@ export async function onRequestPatch({ request, env, params }) {
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
        VALUES ('asset_update', 'asset', ?, ?, ?, ?, ?, ?)`
     ).bind(params.id, name.trim(), existing.name, name.trim(), auth.username, now),
+  ]);
+
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+export async function onRequestDelete({ request, env, params }) {
+  const auth = await requireAuth(request, env, null);
+  if (auth instanceof Response) return auth;
+  if (!auth.canDeleteAsset) return jsonError('Tài khoản không có quyền xoá tài sản', 403);
+
+  const existing = await env.DB.prepare(`SELECT id, name, is_deleted FROM assets WHERE id = ?`).bind(params.id).first();
+  if (!existing) return jsonError('Không tìm thấy tài sản', 404);
+  if (existing.is_deleted) return jsonError('Tài sản này đã bị xoá', 400);
+
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE assets SET is_deleted = 1, updated_by = ?, updated_at = ? WHERE id = ?`).bind(auth.username, now, params.id),
+    env.DB.prepare(
+      `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
+       VALUES ('asset_delete', 'asset', ?, ?, NULL, NULL, ?, ?)`
+    ).bind(params.id, existing.name, auth.username, now),
   ]);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });

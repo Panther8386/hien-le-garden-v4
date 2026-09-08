@@ -178,3 +178,34 @@ describe('POST /api/asset-source-rows/:id/reconcile', () => {
     expect(after).toEqual(before);
   });
 });
+
+describe('is_deleted exclusion from reconciliation', () => {
+  it('reconciledCount (GET /api/asset-source-rows) drops after the reconciled asset is soft-deleted', async () => {
+    const created = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${knownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 1 }), env, params: { id: String(knownRowId) } });
+    const { createdIds } = await created.json();
+
+    const beforeDelete = await listSourceRows({ request: authedRequest(`https://x/api/asset-source-rows?documentId=${documentId}`, adminToken, 'GET'), env });
+    const rowBefore = (await beforeDelete.json()).find((r) => r.id === knownRowId);
+    expect(rowBefore.reconciledCount).toBe(1);
+
+    await env.DB.prepare(`UPDATE assets SET is_deleted = 1 WHERE id = ?`).bind(createdIds[0]).run();
+
+    const afterDelete = await listSourceRows({ request: authedRequest(`https://x/api/asset-source-rows?documentId=${documentId}`, adminToken, 'GET'), env });
+    const rowAfter = (await afterDelete.json()).find((r) => r.id === knownRowId);
+    expect(rowAfter.reconciledCount).toBe(0);
+  });
+
+  it('frees the reconcile ceiling once the previously-reconciled asset is soft-deleted', async () => {
+    // knownRowId has raw_quantity '3' -- reconcile all 3, confirm blocked, delete 1, confirm unblocked
+    const first = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${knownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 3 }), env, params: { id: String(knownRowId) } });
+    const { createdIds } = await first.json();
+
+    const blocked = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${knownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 1 }), env, params: { id: String(knownRowId) } });
+    expect(blocked.status).toBe(400);
+
+    await env.DB.prepare(`UPDATE assets SET is_deleted = 1 WHERE id = ?`).bind(createdIds[0]).run();
+
+    const unblocked = await reconcileRow({ request: authedRequest(`https://x/api/asset-source-rows/${knownRowId}/reconcile`, adminToken, 'POST', { categoryId: individualCategoryId, count: 1 }), env, params: { id: String(knownRowId) } });
+    expect(unblocked.status).toBe(201);
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listAssets, onRequestPost as createAsset } from '../functions/api/assets/index.js';
-import { onRequestPatch as patchAsset } from '../functions/api/assets/[id].js';
+import { onRequestPatch as patchAsset, onRequestDelete as deleteAsset } from '../functions/api/assets/[id].js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
@@ -206,5 +206,94 @@ describe('PATCH /api/assets/:id', () => {
     const audit = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'asset_update' AND entity_id = ?`).bind(bulkAssetId).first();
     expect(audit.old_value).toBe('Giường C');
     expect(audit.new_value).toBe('Giường C - sửa');
+  });
+});
+
+describe('DELETE /api/assets/:id', () => {
+  async function createTestAsset() {
+    const response = await createAsset({
+      request: authedRequest('https://x/api/assets', adminToken, 'POST', { categoryId: bulkCategoryId, name: 'Test Delete Asset', sourceType: 'handover_a', quantity: 2 }),
+      env,
+    });
+    return (await response.json()).id;
+  }
+
+  it('rejects any role without canDeleteAsset (403), including admin', async () => {
+    const assetId = await createTestAsset();
+    const response = await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets any role with canDeleteAsset delete, regardless of role -- reception here', async () => {
+    const assetId = await createTestAsset();
+    const receptionRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'le_tan_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(receptionRow.id).run();
+
+    const response = await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, receptionToken, 'DELETE'), env, params: { id: String(assetId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT is_deleted FROM assets WHERE id = ?`).bind(assetId).first();
+    expect(row.is_deleted).toBe(1);
+  });
+
+  it('writes an asset_delete audit_log row', async () => {
+    const assetId = await createTestAsset();
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+
+    await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+    const audit = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'asset_delete' AND entity_id = ?`).bind(assetId).first();
+    expect(audit.entity_label).toBe('Test Delete Asset');
+    expect(audit.actor).toBe('admin_as');
+  });
+
+  it('404s for a nonexistent asset', async () => {
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+    const response = await deleteAsset({ request: authedRequest('https://x/api/assets/999999', adminToken, 'DELETE'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('400s when the asset is already deleted', async () => {
+    const assetId = await createTestAsset();
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+    await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+
+    const response = await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+    expect(response.status).toBe(400);
+  });
+
+  it('excludes a deleted asset from GET /api/assets by default', async () => {
+    const assetId = await createTestAsset();
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+    await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+
+    const response = await listAssets({ request: authedRequest('https://x/api/assets', adminToken, 'GET'), env });
+    const body = await response.json();
+    expect(body.find((a) => a.id === assetId)).toBeUndefined();
+  });
+
+  it('includeDeleted=1 shows it again for admin/manager but is silently ignored for reception', async () => {
+    const assetId = await createTestAsset();
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+    await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+
+    const asAdmin = await listAssets({ request: authedRequest('https://x/api/assets?includeDeleted=1', adminToken, 'GET'), env });
+    expect((await asAdmin.json()).find((a) => a.id === assetId)).toBeDefined();
+
+    const asReception = await listAssets({ request: authedRequest('https://x/api/assets?includeDeleted=1', receptionToken, 'GET'), env });
+    expect((await asReception.json()).find((a) => a.id === assetId)).toBeUndefined();
+  });
+
+  it('rejects PATCH on a deleted asset (400)', async () => {
+    const assetId = await createTestAsset();
+    const adminRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'admin_as'`).first();
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(adminRow.id).run();
+    await deleteAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'DELETE'), env, params: { id: String(assetId) } });
+
+    const response = await patchAsset({ request: authedRequest(`https://x/api/assets/${assetId}`, adminToken, 'PATCH', { name: 'Renamed' }), env, params: { id: String(assetId) } });
+    expect(response.status).toBe(400);
   });
 });
