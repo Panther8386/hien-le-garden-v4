@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listRooms } from '../functions/api/rooms/index.js';
 import { onRequestPost as cleanRoom } from '../functions/api/rooms/[id]/clean.js';
+import { onRequestPatch as setRoomPrice } from '../functions/api/rooms/[id]/price.js';
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
 import { onRequestGet as getLayoutLog } from '../functions/api/rooms/layout-log.js';
 import { createSession } from '../lib/auth.js';
@@ -130,6 +131,23 @@ describe('GET /api/rooms', () => {
     const response = await listRooms({ request: authedRequest('https://x/api/rooms?date=2026-09-20'), env });
     const body = await response.json();
     expect(body.find((r) => r.id === room.id).status).toBe('empty');
+  });
+
+  it('returns priceWeekday/priceWeekend as null before any price is set', async () => {
+    const response = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
+    const body = await response.json();
+    expect(body.every((r) => r.priceWeekday === null && r.priceWeekend === null)).toBe(true);
+  });
+
+  it('reflects a room\'s configured price in both the bare and date-scoped response', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'vip' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+
+    const bare = await listRooms({ request: authedRequest('https://x/api/rooms'), env }).then((r) => r.json());
+    expect(bare.find((r) => r.id === room.id)).toMatchObject({ priceWeekday: 700000, priceWeekend: 900000 });
+
+    const scoped = await listRooms({ request: authedRequest('https://x/api/rooms?date=2026-09-11'), env }).then((r) => r.json());
+    expect(scoped.find((r) => r.id === room.id)).toMatchObject({ priceWeekday: 700000, priceWeekend: 900000 });
   });
 });
 
@@ -288,6 +306,93 @@ describe('GET /api/rooms/layout-log', () => {
 
   it('rejects unauthenticated requests', async () => {
     const response = await getLayoutLog({ request: new Request('https://x/api/rooms/layout-log'), env });
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('PATCH /api/rooms/:id/price', () => {
+  it('lets an admin set both prices', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    const response = await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, adminToken, 'PATCH', { priceWeekday: 700000, priceWeekend: 900000 }),
+      env,
+      params: { id: String(room.id) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT price_weekday, price_weekend FROM rooms WHERE id = ?`).bind(room.id).first();
+    expect(row).toEqual({ price_weekday: 700000, price_weekend: 900000 });
+  });
+
+  it('leaves a field unchanged when omitted from the body', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+    await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, adminToken, 'PATCH', { priceWeekday: 750000 }),
+      env,
+      params: { id: String(room.id) },
+    });
+    const row = await env.DB.prepare(`SELECT price_weekday, price_weekend FROM rooms WHERE id = ?`).bind(room.id).first();
+    expect(row).toEqual({ price_weekday: 750000, price_weekend: 900000 });
+  });
+
+  it('clears a price back to null when the field is explicitly sent as null', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+    await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, adminToken, 'PATCH', { priceWeekday: null, priceWeekend: null }),
+      env,
+      params: { id: String(room.id) },
+    });
+    const row = await env.DB.prepare(`SELECT price_weekday, price_weekend FROM rooms WHERE id = ?`).bind(room.id).first();
+    expect(row).toEqual({ price_weekday: null, price_weekend: null });
+  });
+
+  it('rejects a non-admin (403)', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    const response = await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, managerToken, 'PATCH', { priceWeekday: 700000 }),
+      env,
+      params: { id: String(room.id) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a negative price (400)', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    const response = await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, adminToken, 'PATCH', { priceWeekday: -1 }),
+      env,
+      params: { id: String(room.id) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a non-integer price (400)', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    const response = await setRoomPrice({
+      request: authedBody(`https://x/api/rooms/${room.id}/price`, adminToken, 'PATCH', { priceWeekend: 12.5 }),
+      env,
+      params: { id: String(room.id) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent room', async () => {
+    const response = await setRoomPrice({
+      request: authedBody('https://x/api/rooms/999999/price', adminToken, 'PATCH', { priceWeekday: 700000 }),
+      env,
+      params: { id: '999999' },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms LIMIT 1`).first();
+    const response = await setRoomPrice({
+      request: new Request(`https://x/api/rooms/${room.id}/price`, { method: 'PATCH', body: JSON.stringify({ priceWeekday: 700000 }) }),
+      env,
+      params: { id: String(room.id) },
+    });
     expect(response.status).toBe(401);
   });
 });

@@ -8,7 +8,8 @@ export async function onRequestGet({ request, env }) {
   const date = url.searchParams.get('date');
 
   const { results: rooms } = await env.DB.prepare(
-    `SELECT id, name, room_type AS roomType, needs_cleaning AS needsCleaning FROM rooms WHERE is_active = 1 ORDER BY display_order, id`
+    `SELECT id, name, room_type AS roomType, needs_cleaning AS needsCleaning, price_weekday AS priceWeekday, price_weekend AS priceWeekend
+     FROM rooms WHERE is_active = 1 ORDER BY display_order, id`
   ).all();
 
   if (!date) {
@@ -22,6 +23,8 @@ export async function onRequestGet({ request, env }) {
       name: r.name,
       roomType: r.roomType,
       status: r.needsCleaning ? 'needs_cleaning' : occupiedIds.has(r.id) ? 'occupied' : 'empty',
+      priceWeekday: r.priceWeekday,
+      priceWeekend: r.priceWeekend,
     }));
 
     return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -53,6 +56,8 @@ export async function onRequestGet({ request, env }) {
       roomType: r.roomType,
       status,
       needsCleaning: !!r.needsCleaning,
+      priceWeekday: r.priceWeekday,
+      priceWeekend: r.priceWeekend,
     };
   });
 
