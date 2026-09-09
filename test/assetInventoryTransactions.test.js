@@ -5,7 +5,7 @@ import { onRequestDelete as voidTransaction } from '../functions/api/asset-inven
 import { createSession } from '../lib/auth.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
-let consumableCategoryId, linenCategoryId, durableGoodsCategoryId;
+let consumableCategoryId, linenCategoryId, durableGoodsCategoryId, foodCategoryId;
 let warehouseAId, warehouseBId;
 
 function authedRequest(url, token, method, body) {
@@ -44,6 +44,8 @@ beforeEach(async () => {
   linenCategoryId = cat2.meta.last_row_id;
   const cat3 = await env.DB.prepare(`INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('durable_goods', 'Giường', 'cái', 'admin_it', '2026-09-09T00:00:00Z')`).run();
   durableGoodsCategoryId = cat3.meta.last_row_id;
+  const cat4 = await env.DB.prepare(`INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('food_beverage', 'Tôm đông lạnh', 'kg', 'admin_it', '2026-09-09T00:00:00Z')`).run();
+  foodCategoryId = cat4.meta.last_row_id;
 
   const locA = await env.DB.prepare(`INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'BP - Buồng phòng', 'admin_it', '2026-09-09T00:00:00Z')`).run();
   warehouseAId = locA.meta.last_row_id;
@@ -127,6 +129,42 @@ describe('POST /api/asset-inventory-transactions — single', () => {
     });
     expect(response.status).toBe(401);
   });
+
+  it('accepts a valid lotId for a food_beverage category', async () => {
+    const lot = await env.DB.prepare(
+      `INSERT INTO asset_inventory_food_lots (category_id, location_id, created_by, created_at) VALUES (?, ?, 'admin_it', '2026-09-09T00:00:00Z')`
+    ).bind(foodCategoryId, warehouseAId).run();
+    const lotId = lot.meta.last_row_id;
+
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: foodCategoryId, locationId: warehouseAId, lotId, movementType: 'opening', quantity: 5 }),
+      env,
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT COALESCE(SUM(quantity_delta), 0) AS total FROM asset_inventory_transactions WHERE lot_id = ? AND voided_at IS NULL`).bind(lotId).first();
+    expect(row.total).toBe(5);
+  });
+
+  it('rejects a lotId on a non-food_beverage category', async () => {
+    const lot = await env.DB.prepare(
+      `INSERT INTO asset_inventory_food_lots (category_id, location_id, created_by, created_at) VALUES (?, ?, 'admin_it', '2026-09-09T00:00:00Z')`
+    ).bind(foodCategoryId, warehouseAId).run();
+    const lotId = lot.meta.last_row_id;
+
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, lotId, movementType: 'opening', quantity: 5 }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent lotId', async () => {
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: foodCategoryId, locationId: warehouseAId, lotId: 999999, movementType: 'opening', quantity: 5 }),
+      env,
+    });
+    expect(response.status).toBe(404);
+  });
 });
 
 describe('POST /api/asset-inventory-transactions — transfer', () => {
@@ -199,6 +237,21 @@ describe('POST /api/asset-inventory-transactions — linenTransition', () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it('rejects a linen transition that would push the source status negative', async () => {
+    await env.DB.prepare(
+      `INSERT INTO asset_inventory_transactions (category_id, location_id, movement_type, linen_status, quantity_delta, unit, created_by, created_at) VALUES (?, ?, 'opening', 'sach', 3, 'cái', 'admin_it', '2026-09-09T00:00:00Z')`
+    ).bind(linenCategoryId, warehouseAId).run();
+
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'linenTransition', categoryId: linenCategoryId, locationId: warehouseAId, fromStatus: 'sach', toStatus: 'cap_dung', quantity: 5 }),
+      env,
+    });
+    expect(response.status).toBe(400);
+
+    const row = await env.DB.prepare(`SELECT COALESCE(SUM(quantity_delta), 0) AS total FROM asset_inventory_transactions WHERE category_id = ? AND location_id = ? AND linen_status = 'cap_dung' AND voided_at IS NULL`).bind(linenCategoryId, warehouseAId).first();
+    expect(row.total).toBe(0); // the paired positive row must never have been written
+  });
 });
 
 describe('GET /api/asset-inventory-transactions', () => {
@@ -211,6 +264,16 @@ describe('GET /api/asset-inventory-transactions', () => {
     const body = await response.json();
     expect(body).toHaveLength(1);
     expect(body[0].movementType).toBe('consume');
+  });
+
+  it('filters by categoryId and locationId', async () => {
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 5 }), env });
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: linenCategoryId, locationId: warehouseBId, movementType: 'opening', quantity: 5 }), env });
+
+    const response = await listTransactions({ request: authedRequest(`https://x/api/asset-inventory-transactions?categoryId=${consumableCategoryId}&locationId=${warehouseAId}`, managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].categoryId).toBe(consumableCategoryId);
   });
 });
 
@@ -250,5 +313,13 @@ describe('DELETE /api/asset-inventory-transactions/:id (void)', () => {
     const [{ id }] = await listResponse.json();
     const response = await voidTransaction({ request: authedRequest(`https://x/api/asset-inventory-transactions/${id}`, observerToken, 'DELETE'), env, params: { id: String(id) } });
     expect(response.status).toBe(403);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const post = await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10 }), env });
+    const listResponse = await listTransactions({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'GET'), env });
+    const [{ id }] = await listResponse.json();
+    const response = await voidTransaction({ request: new Request(`https://x/api/asset-inventory-transactions/${id}`, { method: 'DELETE' }), env, params: { id: String(id) } });
+    expect(response.status).toBe(401);
   });
 });
