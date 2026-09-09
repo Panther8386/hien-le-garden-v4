@@ -825,3 +825,30 @@ describe('migration 0034', () => {
     expect(row).toEqual({ label: 'Hoàn cọc', type: 'expense', is_active: 1 });
   });
 });
+
+describe('migration 0035', () => {
+  it('adds refund_finance_transaction_id to bookings, defaulting to NULL, linkable to a real transaction', async () => {
+    const bookingInsertNoLink = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M35', '0900000036', 'circle', '2026-09-09', '2026-09-10', 'confirmed', 'website', '2026-09-09T00:00:00Z')`
+    ).run();
+    const rowNoLink = await env.DB.prepare(`SELECT refund_finance_transaction_id FROM bookings WHERE id = ?`).bind(bookingInsertNoLink.meta.last_row_id).first();
+    expect(rowNoLink.refund_finance_transaction_id).toBeNull();
+
+    const txInsert = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES ('expense', 'hoan_coc', 50000, '2026-09-09', 'confirmed', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const bookingInsertLinked = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, refund_finance_transaction_id) VALUES ('Test Guest M35b', '0900000037', 'circle', '2026-09-09', '2026-09-10', 'cancelled', 'website', '2026-09-09T00:00:00Z', ?)`
+    ).bind(txInsert.meta.last_row_id).run();
+    const rowLinked = await env.DB.prepare(`SELECT refund_finance_transaction_id FROM bookings WHERE id = ?`).bind(bookingInsertLinked.meta.last_row_id).first();
+    expect(rowLinked.refund_finance_transaction_id).toBe(txInsert.meta.last_row_id);
+  });
+
+  it('adds cancel_refund_payment_method to bookings, defaulting to NULL', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M35c', '0900000038', 'circle', '2026-09-09', '2026-09-10', 'confirmed', 'website', '2026-09-09T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT cancel_refund_payment_method FROM bookings WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.cancel_refund_payment_method).toBeNull();
+  });
+});
