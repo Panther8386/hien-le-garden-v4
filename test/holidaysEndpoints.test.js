@@ -110,6 +110,16 @@ describe('PATCH /api/holidays/:id', () => {
     });
     expect(response.status).toBe(404);
   });
+
+  it('rejects a non-admin (403)', async () => {
+    const existing = await env.DB.prepare(`SELECT id FROM holidays WHERE name = 'Quốc khánh'`).first();
+    const response = await patchHoliday({
+      request: authedRequest(`https://x/api/holidays/${existing.id}`, receptionToken, 'PATCH', { name: 'Should not apply' }),
+      env,
+      params: { id: String(existing.id) },
+    });
+    expect(response.status).toBe(403);
+  });
 });
 
 describe('DELETE /api/holidays/:id', () => {
