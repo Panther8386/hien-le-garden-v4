@@ -28,6 +28,7 @@ const ACTION_TYPE_LABELS = {
   asset_update: 'Sửa tài sản',
   asset_delete: 'Xoá tài sản',
   asset_inventory_adjustment: 'Điều chỉnh số lượng qua kiểm kê',
+  deposit_delete: 'Xoá cọc',
 };
 
 const RECORD_HIDE_ENTITY_LABELS = {
@@ -43,7 +44,7 @@ function formatVnd(n) {
 
 function formatValue(actionType, value) {
   if (value == null) return '';
-  if (actionType === 'deposit_change' && /^\d+$/.test(value)) return formatVnd(value);
+  if ((actionType === 'deposit_change' || actionType === 'deposit_delete') && /^\d+$/.test(value)) return formatVnd(value);
   return value;
 }
 
