@@ -10,6 +10,7 @@
   window.__currentRole = currentRole;
   if (window.__currentRole !== 'admin') {
     document.getElementById('deleteAssetColumnHeader').style.display = 'none';
+    document.getElementById('deleteDepositColumnHeader').style.display = 'none';
   }
   loadUsers();
 })();
@@ -136,6 +137,32 @@ async function loadUsers() {
     }
     if (window.__currentRole !== 'admin') tdDeleteAsset.style.display = 'none';
 
+    const tdDeleteDeposit = document.createElement('td');
+    tdDeleteDeposit.className = 'delete-deposit-cell';
+    if (window.__currentRole === 'admin') {
+      const deleteDepositCheckbox = document.createElement('input');
+      deleteDepositCheckbox.type = 'checkbox';
+      deleteDepositCheckbox.checked = !!u.canDeleteDeposit;
+      deleteDepositCheckbox.title = 'Xoá cọc trong lịch sử cọc của đặt phòng';
+      deleteDepositCheckbox.addEventListener('change', async () => {
+        const response = await fetch(`/api/users/${u.id}/deposit-delete-access`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ canDeleteDeposit: deleteDepositCheckbox.checked }),
+        });
+        const listError = document.getElementById('listError');
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          listError.textContent = body.error || 'Có lỗi khi cập nhật quyền xoá cọc';
+          deleteDepositCheckbox.checked = !deleteDepositCheckbox.checked;
+          return;
+        }
+        listError.textContent = '';
+      });
+      tdDeleteDeposit.appendChild(deleteDepositCheckbox);
+    }
+    if (window.__currentRole !== 'admin') tdDeleteDeposit.style.display = 'none';
+
     const tdCreated = document.createElement('td');
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
@@ -170,7 +197,7 @@ async function loadUsers() {
     });
     tdActions.appendChild(deleteBtn);
 
-    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdDeleteAsset, tdCreated, tdActions);
+    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdDeleteAsset, tdDeleteDeposit, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
 }

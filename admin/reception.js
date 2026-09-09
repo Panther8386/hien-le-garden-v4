@@ -43,6 +43,7 @@ function showOpsError(message) {
 }
 
 let canManageRoomLayout = false;
+let canDeleteDeposit = false;
 let catalogItems = [];
 let dineMenuItems = [];
 
@@ -63,9 +64,10 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
     window.location.href = '/admin';
     return;
   }
-  const { role, canManageRoomLayout: layoutFlag } = await res.json();
+  const { role, canManageRoomLayout: layoutFlag, canDeleteDeposit: deleteDepositFlag } = await res.json();
   currentRole = role;
   canManageRoomLayout = !!layoutFlag;
+  canDeleteDeposit = !!deleteDepositFlag;
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
@@ -637,7 +639,33 @@ function renderBookingCard(b) {
       const methodLabels = { cash: 'Tiền mặt', transfer: 'Chuyển khoản' };
       deposits.forEach((d) => {
         const line = document.createElement('p');
-        line.textContent = `${formatVnd(d.amount)} · ${methodLabels[d.paymentMethod] || d.paymentMethod} · ${formatDate(d.createdAt)}`;
+        const text = document.createElement('span');
+        text.textContent = `${formatVnd(d.amount)} · ${methodLabels[d.paymentMethod] || d.paymentMethod} · ${formatDate(d.createdAt)}`;
+        line.appendChild(text);
+        if (canDeleteDeposit && currentRole !== 'observer') {
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'btn-secondary';
+          deleteBtn.textContent = 'Xoá';
+          deleteBtn.addEventListener('click', async () => {
+            if (!confirm('Xoá dòng cọc này?')) return;
+            let response;
+            try {
+              response = await fetch(`/api/bookings/${b.id}/deposits/${d.id}`, { method: 'DELETE' });
+            } catch (err) {
+              showOpsError('Có lỗi khi xoá cọc');
+              return;
+            }
+            if (!response.ok) {
+              const errBody = await response.json().catch(() => ({}));
+              showOpsError(errBody.error || 'Có lỗi khi xoá cọc');
+              return;
+            }
+            showOpsError('');
+            await refreshAll();
+          });
+          line.appendChild(deleteBtn);
+        }
         historyList.appendChild(line);
       });
       card.appendChild(historyList);
