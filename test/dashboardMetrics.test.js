@@ -229,4 +229,44 @@ describe('getMonthSummary', () => {
     const january = await getMonthSummary(env, '2027-01');
     expect(january.roomRevenueVnd).toBe(4 * 600000);
   });
+
+  it('bills a booking\'s nights inside the month at each night\'s own configured weekday/weekend rate', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'circle' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+    // Thu 2026-09-10 .. Sat 2026-09-12 = 2 nights: Thu (weekday), Fri (weekend)
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', ?, '2026-09-10', '2026-09-12', 'confirmed', 'website', '2026-09-01T00:00:00Z')`
+    ).bind(room.id).run();
+
+    const summary = await getMonthSummary(env, '2026-09');
+    expect(summary.roomRevenueVnd).toBe(700000 + 900000);
+  });
+
+  it('clamps a configured-price booking at the month boundary, billing only the in-month nights at their own rate', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'circle' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+    // Stay: Wed 2026-08-31 .. Fri 2026-09-04 (2026-09 has 3 in-month nights: Tue 09-01, Wed 09-02, Thu 09-03, all weekday)
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', ?, '2026-08-31', '2026-09-04', 'confirmed', 'website', '2026-08-01T00:00:00Z')`
+    ).bind(room.id).run();
+
+    const september = await getMonthSummary(env, '2026-09');
+    expect(september.roomRevenueVnd).toBe(3 * 700000);
+  });
+
+  it('bills a holiday night inside the reported month at the weekend rate', async () => {
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE room_type = 'circle' ORDER BY id LIMIT 1`).first();
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(room.id).run();
+    await env.DB.prepare(`INSERT INTO holidays (name, start_date, end_date, updated_by, updated_at) VALUES ('Test Holiday', '2026-09-08', '2026-09-08', 'seed', '2026-08-01T00:00:00Z')`).run();
+    // Mon 2026-09-07 .. Wed 2026-09-09 = 2 nights: Mon (weekday), Tue=holiday (weekend rate)
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, created_at)
+       VALUES ('A', '090', 'circle', ?, '2026-09-07', '2026-09-09', 'confirmed', 'website', '2026-09-01T00:00:00Z')`
+    ).bind(room.id).run();
+
+    const summary = await getMonthSummary(env, '2026-09');
+    expect(summary.roomRevenueVnd).toBe(700000 + 900000);
+  });
 });
