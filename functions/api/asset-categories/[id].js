@@ -24,16 +24,20 @@ export async function onRequestPatch({ request, env, params }) {
   const defaultUnit = 'defaultUnit' in body ? body.defaultUnit : existing.default_unit;
   const note = 'note' in body ? body.note : existing.note;
   const isActive = 'isActive' in body ? body.isActive : !!existing.is_active;
+  const purchaseUnit = 'purchaseUnit' in body ? body.purchaseUnit : existing.purchase_unit;
+  const purchaseUnitFactor = 'purchaseUnitFactor' in body ? body.purchaseUnitFactor : existing.purchase_unit_factor;
 
   if (typeof name !== 'string' || name.trim() === '') return jsonError('Vui lòng nhập tên danh mục', 400);
   if (typeof defaultUnit !== 'string' || defaultUnit.trim() === '') return jsonError('Vui lòng nhập đơn vị tính', 400);
   if (typeof isActive !== 'boolean') return jsonError('Trạng thái không hợp lệ', 400);
+  if (purchaseUnit !== null && (typeof purchaseUnit !== 'string' || purchaseUnit.trim() === '')) return jsonError('Đơn vị mua không hợp lệ', 400);
+  if (purchaseUnitFactor !== null && !(typeof purchaseUnitFactor === 'number' && purchaseUnitFactor > 0)) return jsonError('Hệ số quy đổi phải là số dương', 400);
 
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE asset_categories SET name = ?, default_unit = ?, note = ?, is_active = ?, updated_by = ?, updated_at = ? WHERE id = ?`
-    ).bind(name.trim(), defaultUnit.trim(), note || null, isActive ? 1 : 0, auth.username, now, params.id),
+      `UPDATE asset_categories SET name = ?, default_unit = ?, note = ?, is_active = ?, purchase_unit = ?, purchase_unit_factor = ?, updated_by = ?, updated_at = ? WHERE id = ?`
+    ).bind(name.trim(), defaultUnit.trim(), note || null, isActive ? 1 : 0, purchaseUnit || null, purchaseUnitFactor ?? null, auth.username, now, params.id),
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
        VALUES ('asset_category_update', 'asset_category', ?, ?, ?, ?, ?, ?)`

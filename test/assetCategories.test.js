@@ -59,6 +59,15 @@ describe('GET /api/asset-categories', () => {
     expect(body).toHaveLength(1);
     expect(body[0].isActive).toBe(false);
   });
+
+  it('includes purchaseUnit/purchaseUnitFactor in the response', async () => {
+    await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, purchase_unit, purchase_unit_factor, created_by, created_at) VALUES ('consumable', 'Bia lon', 'lon', 'thùng', 24, 'admin_ac', '2026-09-09T00:00:00Z')`
+    ).run();
+    const response = await listCategories({ request: authedRequest('https://x/api/asset-categories', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body[0]).toMatchObject({ purchaseUnit: 'thùng', purchaseUnitFactor: 24 });
+  });
 });
 
 describe('POST /api/asset-categories', () => {
@@ -93,6 +102,27 @@ describe('POST /api/asset-categories', () => {
     const audit = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'asset_category_create' AND entity_id = ?`).bind(body.id).first();
     expect(audit.entity_type).toBe('asset_category');
     expect(audit.entity_label).toBe('Điều hoà');
+  });
+
+  it('accepts an optional purchaseUnit/purchaseUnitFactor pair', async () => {
+    const response = await createCategory({
+      request: authedRequest('https://x/api/asset-categories', adminToken, 'POST', { managementType: 'consumable', name: 'Nước suối', defaultUnit: 'chai', purchaseUnit: 'thùng', purchaseUnitFactor: 24 }),
+      env,
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    const row = await env.DB.prepare(`SELECT purchase_unit, purchase_unit_factor FROM asset_categories WHERE id = ?`).bind(body.id).first();
+    expect(row).toEqual({ purchase_unit: 'thùng', purchase_unit_factor: 24 });
+  });
+
+  it('defaults purchaseUnit/purchaseUnitFactor to null when omitted', async () => {
+    const response = await createCategory({
+      request: authedRequest('https://x/api/asset-categories', adminToken, 'POST', { managementType: 'consumable', name: 'Giấy vệ sinh', defaultUnit: 'cuộn' }),
+      env,
+    });
+    const body = await response.json();
+    const row = await env.DB.prepare(`SELECT purchase_unit, purchase_unit_factor FROM asset_categories WHERE id = ?`).bind(body.id).first();
+    expect(row).toEqual({ purchase_unit: null, purchase_unit_factor: null });
   });
 });
 
@@ -138,5 +168,37 @@ describe('PATCH /api/asset-categories/:id', () => {
     await patchCategory({ request: authedRequest(`https://x/api/asset-categories/${categoryId}`, adminToken, 'PATCH', { isActive: true }), env, params: { id: String(categoryId) } });
     row = await env.DB.prepare(`SELECT is_active FROM asset_categories WHERE id = ?`).bind(categoryId).first();
     expect(row.is_active).toBe(1);
+  });
+});
+
+describe('PATCH /api/asset-categories/:id with purchase unit fields', () => {
+  it('lets an admin set purchaseUnit/purchaseUnitFactor on an existing category', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('consumable', 'Dầu gội', 'chai', 'admin_ac', '2026-09-09T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const response = await patchCategory({
+      request: authedRequest(`https://x/api/asset-categories/${id}`, adminToken, 'PATCH', { purchaseUnit: 'thùng', purchaseUnitFactor: 12 }),
+      env,
+      params: { id: String(id) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT purchase_unit, purchase_unit_factor FROM asset_categories WHERE id = ?`).bind(id).first();
+    expect(row).toEqual({ purchase_unit: 'thùng', purchase_unit_factor: 12 });
+  });
+
+  it('clears purchaseUnit/purchaseUnitFactor back to null when explicitly sent as null', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, purchase_unit, purchase_unit_factor, created_by, created_at) VALUES ('consumable', 'Sữa tắm', 'chai', 'thùng', 12, 'admin_ac', '2026-09-09T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const response = await patchCategory({
+      request: authedRequest(`https://x/api/asset-categories/${id}`, adminToken, 'PATCH', { purchaseUnit: null, purchaseUnitFactor: null }),
+      env,
+      params: { id: String(id) },
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT purchase_unit, purchase_unit_factor FROM asset_categories WHERE id = ?`).bind(id).first();
+    expect(row).toEqual({ purchase_unit: null, purchase_unit_factor: null });
   });
 });

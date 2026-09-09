@@ -12,6 +12,8 @@ function coerceRow(r) {
     managementType: r.management_type,
     name: r.name,
     defaultUnit: r.default_unit,
+    purchaseUnit: r.purchase_unit,
+    purchaseUnitFactor: r.purchase_unit_factor,
     isActive: !!r.is_active,
     displayOrder: r.display_order,
     note: r.note,
@@ -47,17 +49,23 @@ export async function onRequestPost({ request, env }) {
   } catch (err) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
-  const { managementType, name, defaultUnit, note } = body || {};
+  const { managementType, name, defaultUnit, note, purchaseUnit, purchaseUnitFactor } = body || {};
 
   if (!VALID_MANAGEMENT_TYPES.includes(managementType)) return jsonError('Cách quản lý không hợp lệ', 400);
   if (typeof name !== 'string' || name.trim() === '') return jsonError('Vui lòng nhập tên danh mục', 400);
   if (typeof defaultUnit !== 'string' || defaultUnit.trim() === '') return jsonError('Vui lòng nhập đơn vị tính', 400);
+  if (purchaseUnit !== undefined && purchaseUnit !== null && (typeof purchaseUnit !== 'string' || purchaseUnit.trim() === '')) {
+    return jsonError('Đơn vị mua không hợp lệ', 400);
+  }
+  if (purchaseUnitFactor !== undefined && purchaseUnitFactor !== null && !(typeof purchaseUnitFactor === 'number' && purchaseUnitFactor > 0)) {
+    return jsonError('Hệ số quy đổi phải là số dương', 400);
+  }
 
   const now = new Date().toISOString();
   const insert = await env.DB.prepare(
-    `INSERT INTO asset_categories (management_type, name, default_unit, note, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(managementType, name.trim(), defaultUnit.trim(), note || null, auth.username, now).run();
+    `INSERT INTO asset_categories (management_type, name, default_unit, note, purchase_unit, purchase_unit_factor, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(managementType, name.trim(), defaultUnit.trim(), note || null, purchaseUnit || null, purchaseUnitFactor ?? null, auth.username, now).run();
   const newId = insert.meta.last_row_id;
 
   await env.DB.prepare(
