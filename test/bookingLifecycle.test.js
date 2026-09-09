@@ -358,7 +358,7 @@ describe('POST /api/bookings/:id/cancel', () => {
     await env.DB.prepare(`UPDATE bookings SET deposit_amount = 100000 WHERE id = ?`).bind(pendingBookingId).run();
 
     const response = await cancelBooking({
-      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken, { reason: 'Khách đổi lịch' }),
+      request: authedPost(`https://x/api/bookings/${pendingBookingId}/cancel`, managerToken, { reason: 'Khách đổi lịch', paymentMethod: 'cash' }),
       env,
       params: { id: String(pendingBookingId) },
     });
@@ -463,7 +463,7 @@ describe('POST /api/bookings/:id/cancel', () => {
 
     const booking = await createConfirmedBookingWithDeposit({ checkIn: checkInStr, depositAmount: 300000 });
     const response = await cancelBooking({
-      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken, { paymentMethod: 'transfer' }),
       env,
       params: { id: String(booking.id) },
     });
@@ -487,6 +487,104 @@ describe('POST /api/bookings/:id/cancel', () => {
     const body = await response.json();
     expect(body.refundPercentApplied).toBe(0);
     expect(body.refundAmount).toBe(0);
+  });
+
+  it('creates a finance_transactions expense row and links it on the booking when refundAmount > 0', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (0, 50, 'seed', '2026-08-01T00:00:00Z')`).run();
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 200000 });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.refundAmount).toBe(100000);
+
+    const row = await env.DB.prepare(`SELECT refund_finance_transaction_id, cancel_refund_payment_method FROM bookings WHERE id = ?`).bind(booking.id).first();
+    expect(row.refund_finance_transaction_id).not.toBeNull();
+    expect(row.cancel_refund_payment_method).toBe('cash');
+
+    const tx = await env.DB.prepare(`SELECT type, category, amount, note FROM finance_transactions WHERE id = ?`).bind(row.refund_finance_transaction_id).first();
+    expect(tx).toEqual({ type: 'expense', category: 'hoan_coc', amount: 100000, note: 'Hoàn cọc huỷ đặt phòng — Refund Test Guest' });
+  });
+
+  it('creates no finance_transactions row and leaves the new columns NULL when refundAmount is 0', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 200000 });
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(200);
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    expect(after.n).toBe(before.n);
+
+    const row = await env.DB.prepare(`SELECT refund_finance_transaction_id, cancel_refund_payment_method FROM bookings WHERE id = ?`).bind(booking.id).first();
+    expect(row.refund_finance_transaction_id).toBeNull();
+    expect(row.cancel_refund_payment_method).toBeNull();
+  });
+
+  it('rejects cancellation needing a payment method when none is supplied (400)', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (0, 50, 'seed', '2026-08-01T00:00:00Z')`).run();
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 200000 });
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(400);
+
+    const row = await env.DB.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(booking.id).first();
+    expect(row.status).toBe('confirmed');
+  });
+
+  it('on a lost race (booking already cancelled), returns 400 and creates no finance_transactions row', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    await env.DB.prepare(`INSERT INTO cancellation_policy_tier (min_days_before_checkin, refund_percent, updated_by, updated_at) VALUES (0, 50, 'seed', '2026-08-01T00:00:00Z')`).run();
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 200000 });
+    await env.DB.prepare(`UPDATE bookings SET status = 'cancelled' WHERE id = ?`).bind(booking.id).run();
+
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(400); // status guard fires first — same documented limitation as Phase 2's checkout race test; a genuinely concurrent race is exercised in production, not by a single-threaded test
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions`).first();
+    expect(after.n).toBe(before.n);
+  });
+
+  it('leaves a service item on the cancelled booking untouched, paid or pending', async () => {
+    await env.DB.exec('DELETE FROM cancellation_policy_tier');
+    const booking = await createConfirmedBookingWithDeposit({ checkIn: '2099-01-15', depositAmount: 0 });
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status) VALUES (?, 'Dịch vụ pending', 50000, 1, 50000, 'posted', 'system', '2026-08-01T00:00:00Z', 'pending')`
+    ).bind(booking.id).run();
+    await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status) VALUES (?, 'Dịch vụ paid', 30000, 1, 30000, 'posted', 'system', '2026-08-01T00:00:00Z', 'paid')`
+    ).bind(booking.id).run();
+
+    const response = await cancelBooking({
+      request: authedPost(`https://x/api/bookings/${booking.id}/cancel`, receptionToken),
+      env,
+      params: { id: String(booking.id) },
+    });
+    expect(response.status).toBe(200);
+
+    const rows = await env.DB.prepare(`SELECT name, status, payment_status FROM booking_service_items WHERE booking_id = ? ORDER BY id`).bind(booking.id).all();
+    expect(rows.results).toEqual([
+      { name: 'Dịch vụ pending', status: 'posted', payment_status: 'pending' },
+      { name: 'Dịch vụ paid', status: 'posted', payment_status: 'paid' },
+    ]);
   });
 });
 
