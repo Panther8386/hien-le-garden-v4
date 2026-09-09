@@ -936,6 +936,13 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi xảy ra';
+    if (body.error === 'Vui lòng chọn hình thức thanh toán') {
+      // Server computed a nonzero refund from fresh tiers while our cached tiers said 0% (policy
+      // changed elsewhere while this dialog was open). Drop the stale cache so the next open
+      // re-fetches, and reveal the radios now so the operator can pick one without closing/reopening.
+      cachedCancellationTiers = null;
+      document.getElementById('cancelPaymentFields').classList.remove('hidden');
+    }
     return;
   }
   closeCancelDialog();
