@@ -852,3 +852,24 @@ describe('migration 0035', () => {
     expect(row.cancel_refund_payment_method).toBeNull();
   });
 });
+
+describe('migration 0036', () => {
+  it('adds can_delete_deposit to staff_accounts, defaulting to 0', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('mig0036_default', 'x', 'reception', '2026-09-09T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT can_delete_deposit FROM staff_accounts WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.can_delete_deposit).toBe(0);
+  });
+
+  it('adds voided_by and voided_at to booking_deposits, defaulting to NULL', async () => {
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Test Guest M36', '0900000039', 'circle', '2026-09-09', '2026-09-10', 'confirmed', 'website', '2026-09-09T00:00:00Z')`
+    ).run();
+    const depositInsert = await env.DB.prepare(
+      `INSERT INTO booking_deposits (booking_id, amount, payment_method, created_by, created_at) VALUES (?, 100000, 'cash', 'system', '2026-09-09T00:00:00Z')`
+    ).bind(bookingInsert.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT voided_by, voided_at FROM booking_deposits WHERE id = ?`).bind(depositInsert.meta.last_row_id).first();
+    expect(row).toEqual({ voided_by: null, voided_at: null });
+  });
+});
