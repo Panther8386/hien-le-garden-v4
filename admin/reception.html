@@ -173,6 +173,20 @@
     </div>
   </div>
 
+  <div id="cancelOverlay" class="confirm-overlay hidden">
+    <div class="confirm-box">
+      <h3>Huỷ đặt phòng</h3>
+      <p id="cancelSummary"></p>
+      <div id="cancelPaymentFields" class="hidden">
+        <label class="checkbox-label"><input type="radio" id="cancelCash" name="cancelPaymentMethod" value="cash" /> 💵 Tiền mặt</label>
+        <label class="checkbox-label"><input type="radio" id="cancelTransfer" name="cancelPaymentMethod" value="transfer" /> 🏦 Chuyển khoản</label>
+      </div>
+      <button id="cancelSubmitBtn">Xác nhận Huỷ</button>
+      <button id="cancelCancelBtn" class="btn-secondary">Đóng</button>
+      <p id="cancelError" class="error"></p>
+    </div>
+  </div>
+
   <script src="/admin/reception.js"></script>
   <script src="/admin/nav-drawer.js"></script>
 </body>

@@ -774,7 +774,7 @@ async function loadArrivals() {
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Hủy đặt phòng';
     cancelBtn.className = 'btn-secondary';
-    cancelBtn.addEventListener('click', () => cancelBooking(b.id));
+    cancelBtn.addEventListener('click', () => openCancelDialog(b));
     actions.appendChild(cancelBtn);
   });
 }
@@ -788,7 +788,7 @@ async function loadUpcomingConfirmed() {
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Hủy đặt phòng';
     cancelBtn.className = 'btn-secondary';
-    cancelBtn.addEventListener('click', () => cancelBooking(b.id));
+    cancelBtn.addEventListener('click', () => openCancelDialog(b));
     actions.appendChild(cancelBtn);
   });
 }
@@ -850,27 +850,98 @@ async function rejectBooking(id) {
   await loadPending();
 }
 
-async function cancelBooking(id) {
+function daysBeforeCheckin(checkIn) {
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const [y, m, d] = checkIn.split('-').map(Number);
+  const checkInUTC = Date.UTC(y, m - 1, d);
+  return Math.floor((checkInUTC - todayUTC) / 86400000);
+}
+
+let cancellingBooking = null;
+let cachedCancellationTiers = null;
+
+async function loadCancellationTiers() {
+  if (cachedCancellationTiers) return cachedCancellationTiers;
+  try {
+    const response = await fetch('/api/cancellation-policy');
+    cachedCancellationTiers = response.ok ? await response.json() : [];
+  } catch (err) {
+    cachedCancellationTiers = [];
+  }
+  return cachedCancellationTiers;
+}
+
+function findRefundPercent(tiers, daysBefore) {
+  const match = tiers.find((t) => t.minDaysBeforeCheckin <= daysBefore);
+  return match ? match.refundPercent : 0;
+}
+
+async function openCancelDialog(booking) {
+  cancellingBooking = booking;
+  document.getElementById('cancelError').textContent = '';
+  document.getElementById('cancelCash').checked = false;
+  document.getElementById('cancelTransfer').checked = false;
+
+  const tiers = await loadCancellationTiers();
+  const daysBefore = daysBeforeCheckin(booking.checkIn);
+  const refundPercent = findRefundPercent(tiers, daysBefore);
+  const refundAmount = Math.round((booking.depositAmount || 0) * refundPercent / 100);
+
+  const summary = document.getElementById('cancelSummary');
+  const fields = document.getElementById('cancelPaymentFields');
+  if (refundAmount > 0) {
+    summary.textContent = `Hoàn cọc: ${refundPercent}% (${formatVnd(refundAmount)})`;
+    fields.classList.remove('hidden');
+  } else {
+    summary.textContent = 'Không hoàn cọc (theo chính sách huỷ hiện tại).';
+    fields.classList.add('hidden');
+  }
+
+  document.getElementById('cancelOverlay').classList.remove('hidden');
+}
+
+function closeCancelDialog() {
+  cancellingBooking = null;
+  document.getElementById('cancelOverlay').classList.add('hidden');
+}
+
+document.getElementById('cancelCancelBtn').addEventListener('click', closeCancelDialog);
+
+document.getElementById('cancelSubmitBtn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('cancelError');
+  errorEl.textContent = '';
+
+  const fieldsVisible = !document.getElementById('cancelPaymentFields').classList.contains('hidden');
+  let paymentMethod = null;
+  if (fieldsVisible) {
+    paymentMethod = document.getElementById('cancelCash').checked ? 'cash' : (document.getElementById('cancelTransfer').checked ? 'transfer' : null);
+    if (!paymentMethod) {
+      errorEl.textContent = 'Vui lòng chọn hình thức thanh toán';
+      return;
+    }
+  }
+
   let response;
   try {
-    response = await fetch(`/api/bookings/${id}/cancel`, { method: 'POST' });
+    response = await fetch(`/api/bookings/${cancellingBooking.id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentMethod }),
+    });
   } catch (err) {
-    showOpsError('Có lỗi xảy ra');
+    errorEl.textContent = 'Có lỗi xảy ra';
     return;
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    showOpsError(body.error || 'Có lỗi xảy ra');
+    errorEl.textContent = body.error || 'Có lỗi xảy ra';
     return;
   }
-  const result = await response.json().catch(() => ({}));
-  if (result.refundAmount > 0) {
-    showOpsError(`Đã huỷ đặt phòng. Hoàn cọc đề xuất: ${result.refundPercentApplied}% (~${result.refundAmount.toLocaleString('vi-VN')} đ)`);
-  } else {
-    showOpsError('');
-  }
+  closeCancelDialog();
+  showOpsError('');
   await refreshAll();
-}
+});
 
 let checkingOutBooking = null;
 
