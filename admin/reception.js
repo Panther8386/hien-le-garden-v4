@@ -140,8 +140,18 @@ async function refreshAll() {
 }
 
 async function loadPricingCaches() {
-  cachedRooms = await fetch('/api/rooms').then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  cachedHolidays = await fetch('/api/holidays').then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  try {
+    const [rooms, holidays] = await Promise.all([
+      fetch('/api/rooms').then((r) => (r.ok ? r.json() : Promise.reject(new Error('rooms')))),
+      fetch('/api/holidays').then((r) => (r.ok ? r.json() : Promise.reject(new Error('holidays')))),
+    ]);
+    cachedRooms = rooms;
+    cachedHolidays = holidays;
+  } catch (err) {
+    cachedRooms = [];
+    cachedHolidays = [];
+    showOpsError('Không tải được giá phòng/ngày lễ — bảng giá tạm dùng giá chung theo loại phòng.');
+  }
 }
 
 async function loadReminders() {

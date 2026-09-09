@@ -25,6 +25,14 @@ describe('priceForNight', () => {
     expect(priceForNight('2026-09-11', unconfiguredRoom, noHolidays)).toBe(900000);
   });
 
+  it('falls back only for the tier that is null, using the configured value for the other tier', () => {
+    const partiallyConfigured = { roomType: 'vip', priceWeekday: 700000, priceWeekend: null };
+    // 2026-09-08 is a Tuesday (weekday tier) — uses the configured 700000
+    expect(priceForNight('2026-09-08', partiallyConfigured, noHolidays)).toBe(700000);
+    // 2026-09-11 is a Friday (weekend tier) — priceWeekend is null, falls back to vip's flat rate 900000
+    expect(priceForNight('2026-09-11', partiallyConfigured, noHolidays)).toBe(900000);
+  });
+
   it('bills a holiday date at the weekend rate even when it falls on a weekday', () => {
     // 2026-09-08 is a Tuesday; put it inside a holiday range
     const holidays = [{ startDate: '2026-09-07', endDate: '2026-09-09' }];
