@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestPost as createBooking, onRequestGet as listBookings } from '../functions/api/bookings/index.js';
 import { onRequestPatch as setDeposit } from '../functions/api/bookings/[id]/deposit.js';
 import { onRequestPost as addDeposit } from '../functions/api/bookings/[id]/deposits/index.js';
+import { onRequestDelete as deleteDeposit } from '../functions/api/bookings/[id]/deposits/[depositId].js';
 import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 
@@ -643,6 +644,216 @@ describe('POST /api/bookings/:id/deposits', () => {
       body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }),
     });
     const response = await addDeposit({ request, env, params: { id: String(id) } });
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
+  async function seedBooking(status = 'confirmed') {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Deposit Delete Guest', '090', 'circle', '2026-09-01', '2026-09-02', ?, 'website', '2026-08-27T00:00:00Z')`
+    ).bind(status).run();
+    return created.meta.last_row_id;
+  }
+
+  async function grantDeleteDeposit(staffId) {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(staffId).run();
+  }
+
+  async function addDepositAndReturn(bookingId, amount, paymentMethod = 'cash') {
+    const response = await addDeposit({
+      request: new Request(`https://x/api/bookings/${bookingId}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount, paymentMethod }) }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    return response.json();
+  }
+
+  it('voids the deposit and its finance_transactions row, decrementing deposit_amount', async () => {
+    await grantDeleteDeposit(3); // receptionToken belongs to staff id 3, seeded in beforeEach
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000, 'transfer');
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(200);
+
+    const depositRow = await env.DB.prepare(`SELECT voided_by, voided_at FROM booking_deposits WHERE id = ?`).bind(created.depositId).first();
+    expect(depositRow.voided_by).toBe('le_tan_a');
+    expect(depositRow.voided_at).not.toBeNull();
+
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(0);
+
+    const txRow = await env.DB.prepare(`SELECT voided_by, voided_at FROM finance_transactions WHERE id = ?`).bind(created.financeTransactionId).first();
+    expect(txRow.voided_by).toBe('le_tan_a');
+    expect(txRow.voided_at).not.toBeNull();
+  });
+
+  it('deleting one of two deposits only reduces deposit_amount by that one amount', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const first = await addDepositAndReturn(id, 200000);
+    await addDepositAndReturn(id, 150000);
+
+    await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${first.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(first.depositId) },
+    });
+
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(150000);
+  });
+
+  it('writes a deposit_delete audit_log row', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+
+    await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+
+    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'deposit_delete' AND entity_id = ?`).bind(created.depositId).first();
+    expect(row.entity_type).toBe('booking_deposit');
+    expect(row.entity_label).toBe('Deposit Delete Guest');
+    expect(row.old_value).toBe('200000');
+    expect(row.new_value).toBeNull();
+    expect(row.actor).toBe('le_tan_a');
+  });
+
+  it('rejects an account without the flag (403)', async () => {
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(403);
+
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(200000);
+  });
+
+  it('rejects an observer even if the flag were somehow set (403)', async () => {
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(2).run(); // observerToken belongs to staff id 2
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${observerToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects deleting on a checked_out booking (400), touches nothing', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+    await env.DB.prepare(`UPDATE bookings SET status = 'checked_out' WHERE id = ?`).bind(id).run();
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(400);
+
+    const depositRow = await env.DB.prepare(`SELECT voided_at FROM booking_deposits WHERE id = ?`).bind(created.depositId).first();
+    expect(depositRow.voided_at).toBeNull();
+  });
+
+  it('rejects deleting on a cancelled booking (400)', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+    await env.DB.prepare(`UPDATE bookings SET status = 'cancelled' WHERE id = ?`).bind(id).run();
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('allows deleting on a checked_in booking', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking('checked_in');
+    const created = await addDepositAndReturn(id, 200000);
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects double-deleting the same deposit (400)', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+    await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 404 when the deposit does not belong to the booking in the URL', async () => {
+    await grantDeleteDeposit(3);
+    const idA = await seedBooking();
+    const idB = await seedBooking();
+    const created = await addDepositAndReturn(idA, 200000);
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${idB}/deposits/${created.depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(idB), depositId: String(created.depositId) },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for a nonexistent deposit id', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/999999`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: '999999' },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 200000);
+
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${created.depositId}`, { method: 'DELETE' }),
+      env,
+      params: { id: String(id), depositId: String(created.depositId) },
+    });
     expect(response.status).toBe(401);
   });
 });
