@@ -171,6 +171,8 @@ function openEditCategory(c) {
   form.querySelector('[name="name"]').value = c.name;
   form.querySelector('[name="defaultUnit"]').value = c.defaultUnit;
   form.querySelector('[name="note"]').value = c.note || '';
+  form.querySelector('[name="purchaseUnit"]').value = c.purchaseUnit || '';
+  form.querySelector('[name="purchaseUnitFactor"]').value = c.purchaseUnitFactor != null ? c.purchaseUnitFactor : '';
   form.dataset.editingId = c.id;
   document.getElementById('categoryFormTitle').textContent = 'Sửa danh mục';
   document.getElementById('categoryFormError').textContent = '';
@@ -198,18 +200,26 @@ document.getElementById('categoryForm').addEventListener('submit', async (event)
   const errorEl = document.getElementById('categoryFormError');
   errorEl.textContent = '';
 
+  const purchaseUnit = form.querySelector('[name="purchaseUnit"]').value.trim();
+  const purchaseUnitFactorRaw = form.querySelector('[name="purchaseUnitFactor"]').value;
+  const purchaseUnitFactor = purchaseUnitFactorRaw === '' ? null : Number(purchaseUnitFactorRaw);
+
   const editingId = form.dataset.editingId;
   const payload = editingId
     ? {
         name: form.querySelector('[name="name"]').value,
         defaultUnit: form.querySelector('[name="defaultUnit"]').value,
         note: form.querySelector('[name="note"]').value,
+        purchaseUnit: purchaseUnit || null,
+        purchaseUnitFactor,
       }
     : {
         managementType: form.querySelector('[name="managementType"]').value,
         name: form.querySelector('[name="name"]').value,
         defaultUnit: form.querySelector('[name="defaultUnit"]').value,
         note: form.querySelector('[name="note"]').value,
+        purchaseUnit: purchaseUnit || null,
+        purchaseUnitFactor,
       };
 
   let response;
