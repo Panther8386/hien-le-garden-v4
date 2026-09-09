@@ -665,6 +665,55 @@ describe('POST /api/bookings/:id/check-out', () => {
     return bookingId;
   }
 
+  async function checkInBookingWithDates({ roomType, roomId, checkIn, checkOut }) {
+    const bookingInsert = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, room_id, check_in, check_out, status, source, deposit_amount, created_at) VALUES ('Pricing Test Guest', '0900000098', ?, ?, ?, ?, 'checked_in', 'website', 0, ?)`
+    ).bind(roomType, roomId, checkIn, checkOut, new Date().toISOString()).run();
+    return bookingInsert.meta.last_row_id;
+  }
+
+  it('bills a stay crossing weekday into weekend nights at each night\'s own configured rate', async () => {
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(otherCircleRoomId).run();
+    // Thu 2026-09-10 check-in .. Sat 2026-09-12 check-out = 2 nights: Thu (weekday=700000), Fri (weekend=900000)
+    const bookingId = await checkInBookingWithDates({ roomType: 'circle', roomId: otherCircleRoomId, checkIn: '2026-09-10', checkOut: '2026-09-12' });
+
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body.roomDue).toBe(700000 + 900000);
+  });
+
+  it('falls back to the flat room-type rate when the room has no configured prices', async () => {
+    // otherCircleRoomId has NULL price_weekday/price_weekend by default; circle flat rate is 600000
+    const bookingId = await checkInBookingWithDates({ roomType: 'circle', roomId: otherCircleRoomId, checkIn: '2026-09-10', checkOut: '2026-09-12' });
+
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body.roomDue).toBe(2 * 600000);
+  });
+
+  it('bills a night inside an admin-defined holiday range at the weekend rate even on a weekday', async () => {
+    await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(otherCircleRoomId).run();
+    await env.DB.prepare(`INSERT INTO holidays (name, start_date, end_date, updated_by, updated_at) VALUES ('Test Holiday', '2026-09-08', '2026-09-08', 'seed', '2026-08-01T00:00:00Z')`).run();
+    // Mon 2026-09-07 .. Wed 2026-09-09 = 2 nights: Mon (weekday), Tue=holiday (weekend rate)
+    const bookingId = await checkInBookingWithDates({ roomType: 'circle', roomId: otherCircleRoomId, checkIn: '2026-09-07', checkOut: '2026-09-09' });
+
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    const body = await response.json();
+    expect(body.roomDue).toBe(700000 + 900000);
+  });
+
   it('bills the full room total when there is no deposit', async () => {
     const bookingId = await checkInBookingWithDepositAndServices({ roomType: 'circle', roomId: otherCircleRoomId, nights: 1, depositAmount: 0, pendingServiceAmount: 0, paidServiceAmount: 0 });
     const response = await checkOutBooking({

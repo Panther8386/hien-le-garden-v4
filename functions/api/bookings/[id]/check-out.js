@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
-import { ROOM_TYPES } from '../../../../lib/roomTypes.js';
+import { computeRoomTotal } from '../../../../lib/roomPricing.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -12,7 +12,10 @@ export async function onRequestPost({ request, env, params }) {
   if (auth instanceof Response) return auth;
 
   const booking = await env.DB.prepare(
-    `SELECT id, status, room_id, room_type, check_in, check_out, guest_name, deposit_amount FROM bookings WHERE id = ?`
+    `SELECT bk.id, bk.status, bk.room_id, bk.room_type, bk.check_in, bk.check_out, bk.guest_name, bk.deposit_amount,
+            r.price_weekday AS priceWeekday, r.price_weekend AS priceWeekend
+     FROM bookings bk LEFT JOIN rooms r ON r.id = bk.room_id
+     WHERE bk.id = ?`
   ).bind(params.id).first();
   if (!booking) {
     return jsonError('Không tìm thấy đặt phòng', 404);
@@ -30,8 +33,14 @@ export async function onRequestPost({ request, env, params }) {
   body = body || {};
   const { paymentMethod } = body;
 
-  const nights = (Date.parse(booking.check_out) - Date.parse(booking.check_in)) / 86400000;
-  const roomTotal = nights * ROOM_TYPES[booking.room_type].priceVnd;
+  const { results: holidayRows } = await env.DB.prepare(
+    `SELECT start_date AS startDate, end_date AS endDate FROM holidays`
+  ).all();
+  const roomTotal = computeRoomTotal(
+    booking.check_in, booking.check_out,
+    { roomType: booking.room_type, priceWeekday: booking.priceWeekday, priceWeekend: booking.priceWeekend },
+    holidayRows
+  );
 
   const unpaidRow = await env.DB.prepare(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM booking_service_items WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending'`
