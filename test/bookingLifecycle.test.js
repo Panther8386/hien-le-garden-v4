@@ -699,6 +699,21 @@ describe('POST /api/bookings/:id/check-out', () => {
     expect(body.roomDue).toBe(2 * 600000);
   });
 
+  it('falls back to the flat room-type rate when the booking has no room_id at all', async () => {
+    // No specific room assigned (room_id NULL) — the LEFT JOIN must not turn this into a 404 or crash;
+    // it must fall back to the flat circle rate for every night, same as a real room with NULL prices.
+    const bookingId = await checkInBookingWithDates({ roomType: 'circle', roomId: null, checkIn: '2026-09-10', checkOut: '2026-09-12' });
+
+    const response = await checkOutBooking({
+      request: authedPost(`https://x/api/bookings/${bookingId}/check-out`, managerToken, { paymentMethod: 'cash' }),
+      env,
+      params: { id: String(bookingId) },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.roomDue).toBe(2 * 600000);
+  });
+
   it('bills a night inside an admin-defined holiday range at the weekend rate even on a weekday', async () => {
     await env.DB.prepare(`UPDATE rooms SET price_weekday = 700000, price_weekend = 900000 WHERE id = ?`).bind(otherCircleRoomId).run();
     await env.DB.prepare(`INSERT INTO holidays (name, start_date, end_date, updated_by, updated_at) VALUES ('Test Holiday', '2026-09-08', '2026-09-08', 'seed', '2026-08-01T00:00:00Z')`).run();
