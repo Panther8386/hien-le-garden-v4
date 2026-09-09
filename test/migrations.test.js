@@ -873,3 +873,19 @@ describe('migration 0036', () => {
     expect(row).toEqual({ voided_by: null, voided_at: null });
   });
 });
+
+describe('migration 0037', () => {
+  it('adds price_weekday and price_weekend to rooms, defaulting to NULL', async () => {
+    const room = await env.DB.prepare(`SELECT id, price_weekday, price_weekend FROM rooms LIMIT 1`).first();
+    expect(room.price_weekday).toBeNull();
+    expect(room.price_weekend).toBeNull();
+  });
+
+  it('creates the holidays table', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO holidays (name, start_date, end_date, updated_by, updated_at) VALUES ('Tết Dương lịch', '2027-01-01', '2027-01-01', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT name, start_date, end_date FROM holidays WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ name: 'Tết Dương lịch', start_date: '2027-01-01', end_date: '2027-01-01' });
+  });
+});
