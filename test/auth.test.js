@@ -29,7 +29,7 @@ describe('createSession / getSession', () => {
 
     const token = await createSession(env.DB, 1);
     const session = await getSession(env.DB, token);
-    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false });
+    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false });
   });
 
   it('resolves canAddFinanceTransaction true for an account with the flag set', async () => {

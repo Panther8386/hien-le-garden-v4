@@ -47,7 +47,7 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false });
+    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false });
   });
 
   it('returns canManageRoomLayout true for an account with the flag set', async () => {
@@ -64,7 +64,7 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true, canAddFinanceTransaction: false, canDeleteAsset: false });
+    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false });
   });
 
   it('returns canAddFinanceTransaction true for an account with the flag set', async () => {
@@ -81,6 +81,6 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_c', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: true, canDeleteAsset: false });
+    expect(await response.json()).toEqual({ username: 'le_tan_c', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: true, canDeleteAsset: false, canDeleteDeposit: false });
   });
 });

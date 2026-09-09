@@ -10,7 +10,7 @@ export async function onRequestGet({ request, env }) {
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
-    `SELECT id, username, role, can_manage_room_layout AS canManageRoomLayout, can_add_finance_transaction AS canAddFinanceTransaction, can_delete_asset AS canDeleteAsset, created_at AS createdAt FROM staff_accounts ORDER BY username`
+    `SELECT id, username, role, can_manage_room_layout AS canManageRoomLayout, can_add_finance_transaction AS canAddFinanceTransaction, can_delete_asset AS canDeleteAsset, can_delete_deposit AS canDeleteDeposit, created_at AS createdAt FROM staff_accounts ORDER BY username`
   ).all();
 
   return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
