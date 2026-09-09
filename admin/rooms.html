@@ -1,0 +1,56 @@
+<!-- v4/admin/rooms.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Quản lý phòng — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Quản lý phòng</h1>
+    <p>Giá phòng theo từng phòng (T2–T5 và T6–CN) và lịch ngày lễ hằng năm — ngày lễ được tính theo giá T6–CN.</p>
+
+    <h2>Giá phòng</h2>
+    <p id="roomsListError" class="error"></p>
+    <div class="table-scroll">
+      <table id="roomsTable">
+        <thead><tr><th>Tên phòng</th><th>Loại phòng</th><th>Giá T2–T5</th><th>Giá T6–CN</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2>Ngày lễ</h2>
+    <form id="holidayForm" class="hidden">
+      <input type="hidden" name="id" />
+      <label>Tên ngày lễ <input type="text" name="name" required /></label>
+      <label>Từ ngày <input type="date" name="startDate" required /></label>
+      <label>Đến ngày <input type="date" name="endDate" required /></label>
+      <button type="submit" id="holidaySubmitBtn">Thêm ngày lễ</button>
+      <button type="button" id="holidayCancelBtn" class="btn-secondary">Huỷ</button>
+      <p id="holidayFormError" class="error"></p>
+    </form>
+
+    <button type="button" id="addHolidayBtn" class="hidden">+ Thêm ngày lễ</button>
+
+    <p id="holidaysListError" class="error"></p>
+    <p id="holidaysEmptyState" class="hidden">Chưa cấu hình ngày lễ nào.</p>
+    <div class="table-scroll">
+      <table id="holidaysTable">
+        <thead><tr><th>Tên ngày lễ</th><th>Từ ngày</th><th>Đến ngày</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/admin/rooms.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
