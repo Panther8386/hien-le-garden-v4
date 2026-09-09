@@ -889,3 +889,59 @@ describe('migration 0037', () => {
     expect(row).toEqual({ name: 'Tết Dương lịch', start_date: '2027-01-01', end_date: '2027-01-01' });
   });
 });
+
+describe('migration 0038', () => {
+  it('adds purchase_unit and purchase_unit_factor to asset_categories, defaulting to NULL', async () => {
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('consumable', 'Mig0038 Test', 'cái', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const row = await env.DB.prepare(`SELECT purchase_unit, purchase_unit_factor FROM asset_categories WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ purchase_unit: null, purchase_unit_factor: null });
+  });
+});
+
+describe('migration 0039', () => {
+  it('creates the asset_inventory_food_lots table', async () => {
+    const category = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('food_beverage', 'Mig0039 Test', 'kg', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const location = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'Mig0039 Kho', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_food_lots (category_id, location_id, received_date, expiry_date, created_by, created_at) VALUES (?, ?, '2026-09-09', '2026-09-15', 'system', '2026-09-09T00:00:00Z')`
+    ).bind(category.meta.last_row_id, location.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT expiry_date FROM asset_inventory_food_lots WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row.expiry_date).toBe('2026-09-15');
+  });
+});
+
+describe('migration 0040', () => {
+  it('creates the asset_inventory_transactions table with the full movement_type enum', async () => {
+    const category = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('consumable', 'Mig0040 Test', 'gói', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const location = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'Mig0040 Kho', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const insert = await env.DB.prepare(
+      `INSERT INTO asset_inventory_transactions (category_id, location_id, movement_type, quantity_delta, unit, created_by, created_at) VALUES (?, ?, 'opening', 10, 'gói', 'system', '2026-09-09T00:00:00Z')`
+    ).bind(category.meta.last_row_id, location.meta.last_row_id).run();
+    const row = await env.DB.prepare(`SELECT quantity_delta, linen_status, lot_id, voided_by, voided_at FROM asset_inventory_transactions WHERE id = ?`).bind(insert.meta.last_row_id).first();
+    expect(row).toEqual({ quantity_delta: 10, linen_status: null, lot_id: null, voided_by: null, voided_at: null });
+  });
+
+  it('rejects an invalid movement_type', async () => {
+    const category = await env.DB.prepare(
+      `INSERT INTO asset_categories (management_type, name, default_unit, created_by, created_at) VALUES ('consumable', 'Mig0040 Test2', 'gói', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    const location = await env.DB.prepare(
+      `INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('warehouse', 'Mig0040 Kho2', 'system', '2026-09-09T00:00:00Z')`
+    ).run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO asset_inventory_transactions (category_id, location_id, movement_type, quantity_delta, unit, created_by, created_at) VALUES (?, ?, 'not_a_real_type', 10, 'gói', 'system', '2026-09-09T00:00:00Z')`
+      ).bind(category.meta.last_row_id, location.meta.last_row_id).run()
+    ).rejects.toThrow();
+  });
+});
