@@ -342,6 +342,33 @@ describe('GET /api/bookings — deposits', () => {
     const booking = body.find((b) => b.id === id);
     expect(booking.deposits).toEqual([]);
   });
+
+  it('excludes a voided deposit from the array', async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Voided Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+
+    const depositResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const { depositId } = await depositResponse.json();
+
+    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(3).run();
+    await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+
+    const response = await listBookings({ request: authedRequest(`https://x/api/bookings?status=confirmed`, managerToken), env });
+    const body = await response.json();
+    const booking = body.find((b) => b.id === id);
+    expect(booking.deposits).toEqual([]);
+  });
 });
 
 describe('PATCH /api/bookings/:id/deposit', () => {
