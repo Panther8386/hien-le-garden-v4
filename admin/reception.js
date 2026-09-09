@@ -20,6 +20,41 @@ const ROOM_TYPE_PRICES = {
   dormitory: 1200000,
 };
 
+let cachedRooms = [];
+let cachedHolidays = [];
+
+function isWeekendDow(dateStr) {
+  const dow = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 5 || dow === 6; // Sun, Fri, Sat
+}
+
+function isHolidayDate(dateStr, holidays) {
+  return holidays.some((h) => dateStr >= h.startDate && dateStr <= h.endDate);
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function priceForNightClient(dateStr, room, roomType, holidays) {
+  const isWeekend = isWeekendDow(dateStr) || isHolidayDate(dateStr, holidays);
+  const fallback = ROOM_TYPE_PRICES[roomType] || 0;
+  const configured = room ? (isWeekend ? room.priceWeekend : room.priceWeekday) : null;
+  return configured != null ? configured : fallback;
+}
+
+function computeRoomTotalClient(startDate, endDate, room, roomType, holidays) {
+  let total = 0;
+  let d = startDate;
+  while (d < endDate) {
+    total += priceForNightClient(d, room, roomType, holidays);
+    d = addDays(d, 1);
+  }
+  return total;
+}
+
 function todayISO() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
@@ -101,7 +136,12 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
 })();
 
 async function refreshAll() {
-  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadBookingHistory(), loadRooms(), loadReminders()]);
+  await Promise.all([loadPending(), loadArrivals(), loadDepartures(), loadUpcomingConfirmed(), loadInhouse(), loadBookingHistory(), loadRooms(), loadReminders(), loadPricingCaches()]);
+}
+
+async function loadPricingCaches() {
+  cachedRooms = await fetch('/api/rooms').then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  cachedHolidays = await fetch('/api/holidays').then((r) => (r.ok ? r.json() : [])).catch(() => []);
 }
 
 async function loadReminders() {
@@ -981,8 +1021,8 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
 let checkingOutBooking = null;
 
 function computeCheckoutPreview(booking) {
-  const nights = (Date.parse(booking.checkOut) - Date.parse(booking.checkIn)) / 86400000;
-  const roomTotal = nights * (ROOM_TYPE_PRICES[booking.roomType] || 0);
+  const room = cachedRooms.find((r) => r.id === booking.roomId) || null;
+  const roomTotal = computeRoomTotalClient(booking.checkIn, booking.checkOut, room, booking.roomType, cachedHolidays);
   const unpaidServicesTotal = (booking.services || [])
     .filter((s) => s.status === 'posted' && s.paymentStatus === 'pending')
     .reduce((sum, s) => sum + s.amount, 0);
