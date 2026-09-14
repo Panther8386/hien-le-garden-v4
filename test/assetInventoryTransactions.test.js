@@ -165,6 +165,37 @@ describe('POST /api/asset-inventory-transactions — single', () => {
     });
     expect(response.status).toBe(404);
   });
+
+  it('requires a linenStatus for a linen category', async () => {
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: linenCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10 }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('seeds an initial linen balance at the chosen status, enabling a later transition', async () => {
+    const openResponse = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: linenCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10, linenStatus: 'sach' }),
+      env,
+    });
+    expect(openResponse.status).toBe(201);
+
+    const transitionResponse = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', receptionToken, 'POST', { action: 'linenTransition', categoryId: linenCategoryId, locationId: warehouseAId, fromStatus: 'sach', toStatus: 'cap_dung', quantity: 4 }),
+      env,
+    });
+    expect(transitionResponse.status).toBe(201);
+    expect(await currentStock(linenCategoryId, warehouseAId)).toBe(10);
+  });
+
+  it('rejects a linenStatus on a non-linen category', async () => {
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10, linenStatus: 'sach' }),
+      env,
+    });
+    expect(response.status).toBe(400);
+  });
 });
 
 describe('POST /api/asset-inventory-transactions — transfer', () => {
@@ -321,5 +352,43 @@ describe('DELETE /api/asset-inventory-transactions/:id (void)', () => {
     const [{ id }] = await listResponse.json();
     const response = await voidTransaction({ request: new Request(`https://x/api/asset-inventory-transactions/${id}`, { method: 'DELETE' }), env, params: { id: String(id) } });
     expect(response.status).toBe(401);
+  });
+});
+
+describe('DELETE /api/asset-inventory-transactions/:id — pairing and negative-stock guards', () => {
+  it('rejects voiding one half of a transfer pair', async () => {
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 20 }), env });
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'transfer', categoryId: consumableCategoryId, fromLocationId: warehouseAId, toLocationId: warehouseBId, quantity: 8 }), env });
+
+    const listResponse = await listTransactions({ request: authedRequest(`https://x/api/asset-inventory-transactions?movementType=transfer_out`, managerToken, 'GET'), env });
+    const [{ id }] = await listResponse.json();
+
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/asset-inventory-transactions/${id}`, managerToken, 'DELETE'), env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+    expect(await currentStock(consumableCategoryId, warehouseAId)).toBe(12);
+    expect(await currentStock(consumableCategoryId, warehouseBId)).toBe(8);
+  });
+
+  it('rejects voiding an inflow that would drive stock negative', async () => {
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10 }), env });
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'consume', quantity: 8 }), env });
+
+    const listResponse = await listTransactions({ request: authedRequest(`https://x/api/asset-inventory-transactions?movementType=opening`, managerToken, 'GET'), env });
+    const [{ id }] = await listResponse.json();
+
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/asset-inventory-transactions/${id}`, managerToken, 'DELETE'), env, params: { id: String(id) } });
+    expect(response.status).toBe(400);
+    expect(await currentStock(consumableCategoryId, warehouseAId)).toBe(2);
+  });
+
+  it('allows voiding an inflow when it would not drive stock negative', async () => {
+    await postTransaction({ request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 10 }), env });
+
+    const listResponse = await listTransactions({ request: authedRequest(`https://x/api/asset-inventory-transactions?movementType=opening`, managerToken, 'GET'), env });
+    const [{ id }] = await listResponse.json();
+
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/asset-inventory-transactions/${id}`, receptionToken, 'DELETE'), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
+    expect(await currentStock(consumableCategoryId, warehouseAId)).toBe(0);
   });
 });

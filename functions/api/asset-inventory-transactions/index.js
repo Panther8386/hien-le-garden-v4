@@ -8,6 +8,7 @@ const KHO_MANAGEMENT_TYPES = ['consumable', 'spare_part', 'food_beverage', 'line
 const SINGLE_MOVEMENT_TYPES = ['opening', 'purchase', 'consume', 'serve', 'repair_use', 'repair_return', 'damage', 'loss', 'expired', 'adjustment', 'return_out_of_scope'];
 const POSITIVE_SINGLE_TYPES = ['opening', 'purchase', 'repair_return'];
 const NEGATIVE_SINGLE_TYPES = ['consume', 'serve', 'repair_use', 'damage', 'loss', 'expired', 'return_out_of_scope'];
+const LINEN_STATUSES = ['sach', 'cap_dung', 'ban', 'dang_giat'];
 const LINEN_TRANSITIONS = {
   'sach->cap_dung': 'issue',
   'cap_dung->ban': 'soil',
@@ -127,7 +128,7 @@ export async function onRequestPost({ request, env }) {
   const now = new Date().toISOString();
 
   if (body.action === 'single') {
-    const { categoryId, locationId, lotId, movementType, quantity, direction, referenceType, referenceId, recipient, reason, note } = body;
+    const { categoryId, locationId, lotId, movementType, quantity, direction, linenStatus, referenceType, referenceId, recipient, reason, note } = body;
     if (!SINGLE_MOVEMENT_TYPES.includes(movementType)) return jsonError('Loại giao dịch không hợp lệ', 400);
     if (!Number.isFinite(quantity) || quantity <= 0) return jsonError('Số lượng phải là số dương', 400);
     const category = await loadCategory(env, categoryId);
@@ -139,6 +140,11 @@ export async function onRequestPost({ request, env }) {
       if (category.management_type !== 'food_beverage') return jsonError('Chỉ thực phẩm/thức uống mới có lô', 400);
       const lot = await env.DB.prepare(`SELECT id FROM asset_inventory_food_lots WHERE id = ?`).bind(lotId).first();
       if (!lot) return jsonError('Không tìm thấy lô', 404);
+    }
+    if (category.management_type === 'linen') {
+      if (!LINEN_STATUSES.includes(linenStatus)) return jsonError('Vui lòng chọn trạng thái đồ vải', 400);
+    } else if (linenStatus != null) {
+      return jsonError('Chỉ danh mục đồ vải luân chuyển mới có trạng thái', 400);
     }
     if ((referenceType != null) !== (referenceId != null)) return jsonError('referenceType và referenceId phải đi cùng nhau', 400);
 
@@ -152,7 +158,7 @@ export async function onRequestPost({ request, env }) {
       signedQuantity = direction === 'decrease' ? -quantity : quantity;
     }
 
-    const p = { categoryId, locationId, lotId: lotId ?? null, movementType, quantityDelta: signedQuantity, unit: category.default_unit, referenceType, referenceId, recipient, reason, note, actor: auth.username, now };
+    const p = { categoryId, locationId, lotId: lotId ?? null, movementType, linenStatus: linenStatus ?? null, quantityDelta: signedQuantity, unit: category.default_unit, referenceType, referenceId, recipient, reason, note, actor: auth.username, now };
     if (signedQuantity < 0) {
       const ok = await insertOutGuarded(env, p);
       if (!ok) return jsonError('Không đủ tồn kho', 400);

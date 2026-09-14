@@ -57,6 +57,19 @@ describe('GET /api/asset-inventory-food-lots', () => {
     const response = await listLots({ request: new Request('https://x/api/asset-inventory-food-lots'), env });
     expect(response.status).toBe(401);
   });
+
+  it('filters to lots expiring within N days when expiringWithinDays is set', async () => {
+    const soon = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    const far = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    await env.DB.prepare(`INSERT INTO asset_inventory_food_lots (category_id, location_id, expiry_date, created_by, created_at) VALUES (?, ?, ?, 'admin_fl', '2026-09-09T00:00:00Z')`).bind(foodCategoryId, locationId, soon).run();
+    await env.DB.prepare(`INSERT INTO asset_inventory_food_lots (category_id, location_id, expiry_date, created_by, created_at) VALUES (?, ?, ?, 'admin_fl', '2026-09-09T00:00:00Z')`).bind(foodCategoryId, locationId, far).run();
+    await env.DB.prepare(`INSERT INTO asset_inventory_food_lots (category_id, location_id, expiry_date, created_by, created_at) VALUES (?, ?, NULL, 'admin_fl', '2026-09-09T00:00:00Z')`).bind(foodCategoryId, locationId).run();
+
+    const response = await listLots({ request: authedRequest('https://x/api/asset-inventory-food-lots?expiringWithinDays=7', managerToken, 'GET'), env });
+    const body = await response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].expiryDate).toBe(soon);
+  });
 });
 
 describe('POST /api/asset-inventory-food-lots', () => {

@@ -25,11 +25,20 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const categoryId = url.searchParams.get('categoryId');
   const locationId = url.searchParams.get('locationId');
+  const expiringWithinDays = url.searchParams.get('expiringWithinDays');
 
   const clauses = [];
   const params = [];
   if (categoryId) { clauses.push('category_id = ?'); params.push(Number(categoryId)); }
   if (locationId) { clauses.push('location_id = ?'); params.push(Number(locationId)); }
+  if (expiringWithinDays) {
+    const days = Number(expiringWithinDays);
+    if (Number.isFinite(days) && days >= 0) {
+      const cutoff = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+      clauses.push('expiry_date IS NOT NULL AND expiry_date <= ?');
+      params.push(cutoff);
+    }
+  }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
   const { results } = await env.DB.prepare(

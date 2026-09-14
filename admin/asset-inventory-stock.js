@@ -21,6 +21,8 @@ const MOVEMENT_TYPE_LABELS = {
 
 const LINEN_PREVIOUS_STATUS = { cap_dung: 'sach', ban: 'cap_dung', dang_giat: 'ban', sach: 'dang_giat' };
 
+const PAIRED_MOVEMENT_TYPES = ['transfer_out', 'transfer_in', 'issue', 'soil', 'send_wash', 'return'];
+
 function formatQty(n) {
   return Number(n).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 }
@@ -56,6 +58,7 @@ function showPageError(message) {
   document.getElementById('filterManagementType').addEventListener('change', loadStock);
   document.getElementById('filterLocation').addEventListener('change', loadStock);
   document.getElementById('searchBox').addEventListener('input', renderStockTable);
+  document.getElementById('expiringSoonToggle').addEventListener('change', loadFoodLots);
 })();
 
 function populateLocationFilter() {
@@ -76,7 +79,13 @@ async function loadStock() {
   if (managementType) params.set('managementType', managementType);
   if (locationId) params.set('locationId', locationId);
 
-  const response = await fetch(`/api/asset-inventory-stock?${params}`);
+  let response;
+  try {
+    response = await fetch(`/api/asset-inventory-stock?${params}`);
+  } catch (err) {
+    showPageError('Có lỗi khi tải tồn kho');
+    return;
+  }
   if (!response.ok) {
     showPageError('Có lỗi khi tải tồn kho');
     return;
@@ -129,8 +138,17 @@ async function openTransactionHistory(stockRow) {
   const section = document.getElementById('transactionHistorySection');
   section.classList.remove('hidden');
   const params = new URLSearchParams({ categoryId: stockRow.categoryId, locationId: stockRow.locationId });
-  const response = await fetch(`/api/asset-inventory-transactions?${params}`);
-  if (!response.ok) return;
+  let response;
+  try {
+    response = await fetch(`/api/asset-inventory-transactions?${params}`);
+  } catch (err) {
+    showPageError('Có lỗi khi tải lịch sử phiếu');
+    return;
+  }
+  if (!response.ok) {
+    showPageError('Có lỗi khi tải lịch sử phiếu');
+    return;
+  }
   const entries = await response.json();
   const tbody = document.querySelector('#transactionHistoryTable tbody');
   tbody.innerHTML = '';
@@ -149,16 +167,24 @@ async function openTransactionHistory(stockRow) {
     const tdActor = document.createElement('td');
     tdActor.textContent = entry.createdBy;
     const tdActions = document.createElement('td');
-    if (currentRole !== 'observer' && !entry.voidedAt) {
+    if (currentRole !== 'observer' && !entry.voidedAt && !PAIRED_MOVEMENT_TYPES.includes(entry.movementType)) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'table-actions-btn';
       voidBtn.textContent = 'Huỷ';
       voidBtn.addEventListener('click', async () => {
-        const r = await fetch(`/api/asset-inventory-transactions/${entry.id}`, { method: 'DELETE' });
+        let r;
+        try {
+          r = await fetch(`/api/asset-inventory-transactions/${entry.id}`, { method: 'DELETE' });
+        } catch (err) {
+          showPageError('Có lỗi khi huỷ giao dịch');
+          return;
+        }
         if (r.ok) {
           await openTransactionHistory(stockRow);
           await loadStock();
+        } else {
+          showPageError('Có lỗi khi huỷ giao dịch');
         }
       });
       tdActions.appendChild(voidBtn);
@@ -174,11 +200,21 @@ document.getElementById('closeHistoryBtn').addEventListener('click', () => {
 });
 
 async function loadFoodLots() {
+  const expiringOnly = document.getElementById('expiringSoonToggle').checked;
   const foodCategoryIds = categories.filter((c) => c.managementType === 'food_beverage').map((c) => c.id);
   const rows = [];
   for (const categoryId of foodCategoryIds) {
-    const response = await fetch(`/api/asset-inventory-food-lots?categoryId=${categoryId}`);
+    const qs = new URLSearchParams({ categoryId });
+    if (expiringOnly) qs.set('expiringWithinDays', '7');
+    let response;
+    try {
+      response = await fetch(`/api/asset-inventory-food-lots?${qs}`);
+    } catch (err) {
+      showPageError('Có lỗi khi tải lô thực phẩm');
+      return;
+    }
     if (response.ok) rows.push(...(await response.json()));
+    else showPageError('Có lỗi khi tải lô thực phẩm');
   }
   const tbody = document.querySelector('#foodLotsTable tbody');
   tbody.innerHTML = '';
@@ -261,13 +297,22 @@ async function updateTransactionFormFields() {
 
   const categoryId = Number(document.getElementById('transactionCategorySelect').value);
   const category = categories.find((c) => c.id === categoryId);
+
+  const isSingleLinen = !isTransfer && !isLinen && category && category.managementType === 'linen';
+  document.getElementById('linenSingleStatusField').classList.toggle('hidden', !isSingleLinen);
+
   const isFood = category && category.managementType === 'food_beverage' && !isTransfer && !isLinen;
   document.getElementById('lotField').classList.toggle('hidden', !isFood);
   if (isFood) {
     const lotSelect = document.getElementById('lotSelect');
     lotSelect.innerHTML = '<option value="">Không dùng lô</option>';
-    const response = await fetch(`/api/asset-inventory-food-lots?categoryId=${categoryId}`);
-    if (response.ok) {
+    let response;
+    try {
+      response = await fetch(`/api/asset-inventory-food-lots?categoryId=${categoryId}`);
+    } catch (err) {
+      response = null;
+    }
+    if (response && response.ok) {
       const lots = await response.json();
       lots.forEach((lot) => {
         const opt = document.createElement('option');
@@ -276,6 +321,15 @@ async function updateTransactionFormFields() {
         lotSelect.appendChild(opt);
       });
     }
+  } else {
+    document.getElementById('lotSelect').innerHTML = '<option value="">Không dùng lô</option>';
+  }
+
+  const showPurchaseUnit = category && category.purchaseUnit && category.purchaseUnitFactor && !isTransfer && !isLinen;
+  document.getElementById('purchaseUnitField').classList.toggle('hidden', !showPurchaseUnit);
+  if (showPurchaseUnit) {
+    document.getElementById('purchaseUnitLabel').textContent = `1 ${category.purchaseUnit} = ${category.purchaseUnitFactor} ${category.defaultUnit}`;
+    document.getElementById('purchaseUnitToggle').checked = false;
   }
 }
 
@@ -298,10 +352,19 @@ document.getElementById('transactionForm').addEventListener('submit', async (eve
   const shape = document.getElementById('movementTypeSelect').value;
   const categoryId = Number(form.querySelector('[name="categoryId"]').value);
   const locationId = Number(form.querySelector('[name="locationId"]').value);
-  const quantity = Number(form.querySelector('[name="quantity"]').value);
+  const category = categories.find((c) => c.id === categoryId);
+  let quantity = Number(form.querySelector('[name="quantity"]').value);
+  let note = form.querySelector('[name="note"]').value || undefined;
+
+  const purchaseUnitToggle = document.getElementById('purchaseUnitToggle');
+  if (!document.getElementById('purchaseUnitField').classList.contains('hidden') && purchaseUnitToggle.checked && category && category.purchaseUnitFactor) {
+    const purchaseCount = quantity;
+    quantity = quantity * category.purchaseUnitFactor;
+    note = `${purchaseCount} ${category.purchaseUnit} = ${quantity} ${category.defaultUnit}${note ? ' — ' + note : ''}`;
+  }
+
   const recipient = form.querySelector('[name="recipient"]').value || undefined;
   const reason = form.querySelector('[name="reason"]').value || undefined;
-  const note = form.querySelector('[name="note"]').value || undefined;
 
   let payload;
   if (shape === 'transfer') {
@@ -315,13 +378,22 @@ document.getElementById('transactionForm').addEventListener('submit', async (eve
     payload = { action: 'single', categoryId, locationId, movementType, quantity, recipient, reason, note };
     if (lotIdRaw) payload.lotId = Number(lotIdRaw);
     if (movementType === 'adjustment') payload.direction = form.querySelector('[name="direction"]').value;
+    if (category && category.managementType === 'linen') {
+      payload.linenStatus = form.querySelector('[name="linenStatus"]').value;
+    }
   }
 
-  const response = await fetch('/api/asset-inventory-transactions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  let response;
+  try {
+    response = await fetch('/api/asset-inventory-transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi ghi phiếu';
+    return;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi ghi phiếu';
@@ -373,11 +445,17 @@ document.getElementById('lotForm').addEventListener('submit', async (event) => {
     note: form.querySelector('[name="note"]').value || undefined,
   };
 
-  const response = await fetch('/api/asset-inventory-food-lots', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  let response;
+  try {
+    response = await fetch('/api/asset-inventory-food-lots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    errorEl.textContent = 'Có lỗi khi lưu lô';
+    return;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi khi lưu lô';

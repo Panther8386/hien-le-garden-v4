@@ -55,6 +55,7 @@
 
     <div id="foodLotsSection" class="hidden">
       <h2>Lô thực phẩm</h2>
+      <label><input type="checkbox" id="expiringSoonToggle" /> Chỉ hiện sắp hết hạn (7 ngày)</label>
       <button type="button" id="openLotFormBtn" class="hidden">+ Nhập lô mới</button>
       <div class="table-scroll">
         <table id="foodLotsTable">
@@ -64,7 +65,7 @@
       </div>
     </div>
 
-    <div id="transactionFormOverlay" class="confirm-overlay hidden">
+    <div id="transactionFormOverlay" class="confirm-overlay form-overlay hidden">
       <div class="confirm-box">
         <h3>Ghi phiếu</h3>
         <form id="transactionForm">
@@ -91,6 +92,14 @@
               <option value="sach">Sạch</option>
             </select>
           </label>
+          <label id="linenSingleStatusField" class="hidden">Trạng thái
+            <select name="linenStatus" id="linenSingleStatusSelect">
+              <option value="sach">Sạch</option>
+              <option value="cap_dung">Cấp dùng</option>
+              <option value="ban">Bẩn</option>
+              <option value="dang_giat">Đang giặt</option>
+            </select>
+          </label>
           <label id="directionField" class="hidden">Hướng điều chỉnh
             <select name="direction">
               <option value="increase">Tăng</option>
@@ -98,6 +107,9 @@
             </select>
           </label>
           <label>Số lượng <input type="number" name="quantity" min="0" step="any" required /></label>
+          <label id="purchaseUnitField" class="hidden">
+            <input type="checkbox" id="purchaseUnitToggle" /> Nhập theo đơn vị mua (<span id="purchaseUnitLabel"></span>)
+          </label>
           <label>Người nhận (tuỳ chọn) <input type="text" name="recipient" /></label>
           <label>Lý do (tuỳ chọn) <input type="text" name="reason" /></label>
           <label>Ghi chú (tuỳ chọn) <input type="text" name="note" /></label>
@@ -108,7 +120,7 @@
       </div>
     </div>
 
-    <div id="lotFormOverlay" class="confirm-overlay hidden">
+    <div id="lotFormOverlay" class="confirm-overlay form-overlay hidden">
       <div class="confirm-box">
         <h3>Nhập lô mới</h3>
         <form id="lotForm">
