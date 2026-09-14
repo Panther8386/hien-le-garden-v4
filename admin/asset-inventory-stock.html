@@ -1,0 +1,135 @@
+<!-- v4/admin/asset-inventory-stock.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Kho — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Kho</h1>
+    <p>Vật tư tiêu hao, phụ tùng, thực phẩm/thức uống, đồ vải luân chuyển — tồn tính từ tổng giao dịch đã ghi sổ.</p>
+
+    <div>
+      <label>Nhóm quản lý
+        <select id="filterManagementType">
+          <option value="">Tất cả</option>
+          <option value="consumable">Vật tư tiêu hao</option>
+          <option value="spare_part">Phụ tùng</option>
+          <option value="food_beverage">Thực phẩm/thức uống</option>
+          <option value="linen">Đồ vải luân chuyển</option>
+        </select>
+      </label>
+      <label>Vị trí <select id="filterLocation"><option value="">Tất cả</option></select></label>
+      <input type="text" id="searchBox" placeholder="Tìm theo tên danh mục..." />
+    </div>
+
+    <button type="button" id="openTransactionFormBtn" class="hidden">+ Ghi phiếu</button>
+
+    <p id="stockError" class="error"></p>
+    <div class="table-scroll">
+      <table id="stockTable">
+        <thead><tr><th>Danh mục</th><th>Vị trí</th><th>Tồn</th><th>Đơn vị</th><th>Sạch</th><th>Cấp dùng</th><th>Bẩn</th><th>Đang giặt</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="transactionHistorySection" class="hidden">
+      <h2>Lịch sử phiếu</h2>
+      <button type="button" id="closeHistoryBtn" class="btn-secondary">Đóng</button>
+      <div class="table-scroll">
+        <table id="transactionHistoryTable">
+          <thead><tr><th>Thời gian</th><th>Loại</th><th>Số lượng</th><th>Lý do/ghi chú</th><th>Người ghi</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="foodLotsSection" class="hidden">
+      <h2>Lô thực phẩm</h2>
+      <button type="button" id="openLotFormBtn" class="hidden">+ Nhập lô mới</button>
+      <div class="table-scroll">
+        <table id="foodLotsTable">
+          <thead><tr><th>Danh mục</th><th>Vị trí</th><th>Ngày nhận</th><th>Hạn dùng</th><th>Ghi chú</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="transactionFormOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box">
+        <h3>Ghi phiếu</h3>
+        <form id="transactionForm">
+          <label>Loại giao dịch
+            <select name="movementType" id="movementTypeSelect"></select>
+          </label>
+          <label>Danh mục
+            <select name="categoryId" id="transactionCategorySelect" required></select>
+          </label>
+          <label>Vị trí <span id="transferLabel1">(nguồn)</span>
+            <select name="locationId" id="transactionLocationSelect" required></select>
+          </label>
+          <label id="toLocationField" class="hidden">Vị trí đích
+            <select name="toLocationId" id="toLocationSelect"></select>
+          </label>
+          <label id="lotField" class="hidden">Lô (tuỳ chọn, sắp theo hạn dùng gần nhất)
+            <select name="lotId" id="lotSelect"><option value="">Không dùng lô</option></select>
+          </label>
+          <label id="linenStatusField" class="hidden">Trạng thái đích
+            <select name="toStatus" id="toStatusSelect">
+              <option value="cap_dung">Cấp dùng</option>
+              <option value="ban">Bẩn</option>
+              <option value="dang_giat">Đang giặt</option>
+              <option value="sach">Sạch</option>
+            </select>
+          </label>
+          <label id="directionField" class="hidden">Hướng điều chỉnh
+            <select name="direction">
+              <option value="increase">Tăng</option>
+              <option value="decrease">Giảm</option>
+            </select>
+          </label>
+          <label>Số lượng <input type="number" name="quantity" min="0" step="any" required /></label>
+          <label>Người nhận (tuỳ chọn) <input type="text" name="recipient" /></label>
+          <label>Lý do (tuỳ chọn) <input type="text" name="reason" /></label>
+          <label>Ghi chú (tuỳ chọn) <input type="text" name="note" /></label>
+          <button type="submit">Ghi phiếu</button>
+          <button type="button" id="transactionFormCloseBtn" class="btn-secondary">Đóng</button>
+          <p id="transactionFormError" class="error"></p>
+        </form>
+      </div>
+    </div>
+
+    <div id="lotFormOverlay" class="confirm-overlay hidden">
+      <div class="confirm-box">
+        <h3>Nhập lô mới</h3>
+        <form id="lotForm">
+          <label>Danh mục thực phẩm
+            <select name="categoryId" id="lotCategorySelect" required></select>
+          </label>
+          <label>Vị trí
+            <select name="locationId" id="lotLocationSelect" required></select>
+          </label>
+          <label>Ngày nhận (tuỳ chọn) <input type="date" name="receivedDate" /></label>
+          <label>Hạn dùng (tuỳ chọn) <input type="date" name="expiryDate" /></label>
+          <label>Ghi chú <input type="text" name="note" /></label>
+          <button type="submit">Lưu</button>
+          <button type="button" id="lotFormCloseBtn" class="btn-secondary">Đóng</button>
+          <p id="lotFormError" class="error"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/asset-inventory-stock.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>

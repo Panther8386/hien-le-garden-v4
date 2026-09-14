@@ -7,6 +7,7 @@ const NAV_GROUPS = [
       { page: 'asset-source-data.html', label: 'Hồ sơ nguồn', icon: '📄', roles: ['reception', 'manager', 'admin', 'observer'] },
       { page: 'assets.html', label: 'Danh mục tài sản', icon: '🏷️', roles: ['reception', 'manager', 'admin', 'observer'] },
       { page: 'asset-inventory.html', label: 'Kiểm kê tài sản', icon: '📦', roles: ['reception', 'manager', 'admin', 'observer'] },
+      { page: 'asset-inventory-stock.html', label: 'Kho', icon: '📦', roles: ['reception', 'manager', 'admin', 'observer'] },
     ],
   },
   {
@@ -50,7 +51,7 @@ function currentPageFile() {
 function buildDrawer(role, username) {
   const page = currentPageFile();
   const prefix = ROLE_URL_PREFIX[role] || '/reception';
-  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory' };
+  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
   function urlFor(pageFile) {
     if (pageFile === 'reception.html') return prefix;
     return `${prefix}/${pageSlug[pageFile]}`;
