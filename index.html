@@ -123,6 +123,23 @@
   }
   </script>
 
+  <!-- ===== GA4 (Google tag, production-only) ===== -->
+  <script>
+    if (window.location.hostname === 'hienlegarden.vn') {
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function(){dataLayer.push(arguments);};
+      var gaScript = document.createElement('script');
+      gaScript.async = true;
+      gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-YQ118MYYRYS';
+      document.head.appendChild(gaScript);
+      gtag('js', new Date());
+      gtag('config', 'G-YQ118MYYRYS');
+    } else {
+      window.gtag = function(){};
+    }
+  </script>
+  <script src="/assets/analytics.js" defer></script>
+
   <!-- ===== FONTS ===== -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4025,6 +4042,10 @@
         const body = await response.json().catch(() => ({}));
         errorEl.textContent = body.error || 'Có lỗi khi gửi yêu cầu, vui lòng thử lại.';
         return;
+      }
+
+      if (typeof window.hlgTrackBookingClick === 'function') {
+        window.hlgTrackBookingClick();
       }
 
       const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000);

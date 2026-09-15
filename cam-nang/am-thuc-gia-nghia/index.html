@@ -55,6 +55,23 @@
   }
   </script>
 
+  <!-- ===== GA4 (Google tag, production-only) ===== -->
+  <script>
+    if (window.location.hostname === 'hienlegarden.vn') {
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function(){dataLayer.push(arguments);};
+      var gaScript = document.createElement('script');
+      gaScript.async = true;
+      gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-YQ118MYYRYS';
+      document.head.appendChild(gaScript);
+      gtag('js', new Date());
+      gtag('config', 'G-YQ118MYYRYS');
+    } else {
+      window.gtag = function(){};
+    }
+  </script>
+  <script src="/assets/analytics.js" defer></script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
