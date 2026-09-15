@@ -49,7 +49,7 @@
     "@graph": [
       {
         "@type": "LodgingBusiness",
-        "@id": "https://hienlegarden.vn/#lodging",
+        "@id": "https://hienlegarden.vn/#lodgingbusiness",
         "name": "Hiền Lê Garden Farmstay",
         "alternateName": "Hiền Lê Garden",
         "description": "Khu nghỉ dưỡng boutique bên hồ tại Gia Nghĩa, Lâm Đồng. 6 loại phòng đặc trưng, BBQ lửa trại, cà phê vườn, view hồ tuyệt đẹp.",
@@ -64,11 +64,8 @@
           "postalCode": "65116",
           "addressCountry": "VN"
         },
-        "geo": { "@type": "GeoCoordinates", "latitude": 11.9465, "longitude": 108.4419 },
-        "starRating": { "@type": "Rating", "ratingValue": "4" },
-        "priceRange": "$$",
+        "geo": { "@type": "GeoCoordinates", "latitude": 11.990400, "longitude": 107.650356 },
         "currenciesAccepted": "VND",
-        "paymentAccepted": "Cash, Bank Transfer, Momo, ZaloPay",
         "checkinTime": "14:00",
         "checkoutTime": "12:00",
         "amenityFeature": [
@@ -78,17 +75,27 @@
           { "@type": "LocationFeatureSpecification", "name": "Wifi miễn phí", "value": true },
           { "@type": "LocationFeatureSpecification", "name": "Bãi đỗ xe", "value": true },
           { "@type": "LocationFeatureSpecification", "name": "Khu vui chơi trẻ em", "value": true }
-        ],
-        "aggregateRating": {
-          "@type": "AggregateRating",
-          "ratingValue": "4.8",
-          "reviewCount": "47",
-          "bestRating": "5",
-          "worstRating": "1"
-        }
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://hienlegarden.vn/#website",
+        "url": "https://hienlegarden.vn/",
+        "name": "Hiền Lê Garden",
+        "publisher": { "@id": "https://hienlegarden.vn/#lodgingbusiness" }
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://hienlegarden.vn/#webpage",
+        "url": "https://hienlegarden.vn/",
+        "name": "Hiền Lê Garden Farmstay — Nghỉ dưỡng bên hồ tại Gia Nghĩa, Lâm Đồng",
+        "isPartOf": { "@id": "https://hienlegarden.vn/#website" },
+        "about": { "@id": "https://hienlegarden.vn/#lodgingbusiness" }
       },
       {
         "@type": "FAQPage",
+        "@id": "https://hienlegarden.vn/#faq",
+        "mainEntityOfPage": { "@id": "https://hienlegarden.vn/#webpage" },
         "mainEntity": [
           {
             "@type": "Question",
@@ -3602,7 +3609,7 @@
         99: ['⛈️','Giông + mưa đá to'],
       };
       try {
-        const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=11.9465&longitude=108.4419&current=temperature_2m,weathercode,relative_humidity_2m,windspeed_10m&timezone=Asia%2FHo_Chi_Minh');
+        const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=11.990400&longitude=107.650356&current=temperature_2m,weathercode,relative_humidity_2m,windspeed_10m&timezone=Asia%2FHo_Chi_Minh');
         const d = await r.json();
         const { temperature_2m: temp, weathercode: code, relative_humidity_2m: hum, windspeed_10m: wind } = d.current;
         const [icon, desc] = WMO[code] || ['🌤️','Hôm nay'];
