@@ -163,6 +163,29 @@ async function loadUsers() {
     }
     if (window.__currentRole !== 'admin') tdDeleteDeposit.style.display = 'none';
 
+    const tdTwoFactor = document.createElement('td');
+    const twoFactorBadge = document.createElement('span');
+    twoFactorBadge.textContent = u.totpEnabled ? 'Bật' : 'Tắt';
+    tdTwoFactor.appendChild(twoFactorBadge);
+    if (window.__currentRole === 'admin' && u.totpEnabled) {
+      const disable2faBtn = document.createElement('button');
+      disable2faBtn.type = 'button';
+      disable2faBtn.className = 'btn-secondary table-actions-btn';
+      disable2faBtn.textContent = 'Tắt 2FA giúp';
+      disable2faBtn.addEventListener('click', async () => {
+        const response = await fetch(`/api/users/${u.id}/disable-2fa`, { method: 'PATCH' });
+        const listError = document.getElementById('listError');
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          listError.textContent = body.error || 'Có lỗi khi tắt 2FA';
+          return;
+        }
+        listError.textContent = '';
+        await loadUsers();
+      });
+      tdTwoFactor.appendChild(disable2faBtn);
+    }
+
     const tdCreated = document.createElement('td');
     tdCreated.textContent = new Date(u.createdAt).toLocaleDateString('vi-VN');
 
@@ -197,7 +220,7 @@ async function loadUsers() {
     });
     tdActions.appendChild(deleteBtn);
 
-    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdDeleteAsset, tdDeleteDeposit, tdCreated, tdActions);
+    tr.append(tdName, tdRole, tdLayout, tdFinanceTx, tdDeleteAsset, tdDeleteDeposit, tdTwoFactor, tdCreated, tdActions);
     tbody.appendChild(tr);
   });
 }

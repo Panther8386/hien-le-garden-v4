@@ -21,6 +21,11 @@
       <button type="submit">Đăng nhập</button>
       <p id="loginError" class="error"></p>
     </form>
+    <form id="twoFactorForm" hidden>
+      <label>Mã Google Authenticator <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" /></label>
+      <button type="submit">Xác nhận</button>
+      <p id="twoFactorError" class="error"></p>
+    </form>
   </div>
   <script src="/admin/login.js"></script>
 </body>

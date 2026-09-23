@@ -51,7 +51,7 @@ function currentPageFile() {
 function buildDrawer(role, username) {
   const page = currentPageFile();
   const prefix = ROLE_URL_PREFIX[role] || '/reception';
-  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
+  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'security.html': 'security', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
   function urlFor(pageFile) {
     if (pageFile === 'reception.html') return prefix;
     return `${prefix}/${pageSlug[pageFile]}`;
@@ -127,6 +127,10 @@ function buildDrawer(role, username) {
   changePasswordLink.href = urlFor('change-password.html');
   changePasswordLink.textContent = 'Đổi mật khẩu';
   if (page === 'change-password.html') changePasswordLink.className = 'active';
+  const securityLink = document.createElement('a');
+  securityLink.href = urlFor('security.html');
+  securityLink.textContent = 'Bảo mật tài khoản (2FA)';
+  if (page === 'security.html') securityLink.className = 'active';
   const logoutLink = document.createElement('a');
   logoutLink.href = '#';
   logoutLink.textContent = 'Đăng xuất';
@@ -137,6 +141,7 @@ function buildDrawer(role, username) {
   });
   footerLinks.appendChild(homeLink);
   footerLinks.appendChild(changePasswordLink);
+  footerLinks.appendChild(securityLink);
   footerLinks.appendChild(logoutLink);
   drawerFooter.appendChild(userLine);
   drawerFooter.appendChild(footerLinks);
