@@ -694,3 +694,42 @@ describe('PATCH /api/finance/transactions/:id/void', () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe('finance.manage without finance.view_all only reaches visible income rows', () => {
+  async function seed(type, hidden = 0) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden).run();
+    return String(r.meta.last_row_id);
+  }
+  beforeEach(async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+  });
+
+  it('PATCH 404s on an expense and on a hidden income, leaving them unchanged; works on a visible income', async () => {
+    const expenseId = await seed('expense');
+    const hiddenId = await seed('income', 1);
+    const incomeId = await seed('income');
+    for (const id of [expenseId, hiddenId]) {
+      const res = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+      expect((await env.DB.prepare('SELECT amount FROM finance_transactions WHERE id = ?').bind(id).first()).amount).toBe(100000);
+    }
+    const ok = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${incomeId}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id: incomeId } });
+    expect(ok.status).toBe(200);
+  });
+
+  it('void 404s on an expense and on a hidden income; works on a visible income', async () => {
+    const expenseId = await seed('expense');
+    const hiddenId = await seed('income', 1);
+    const incomeId = await seed('income');
+    for (const id of [expenseId, hiddenId]) {
+      const res = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}/void`, managerToken, 'PATCH'), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect((await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE id = ?').bind(id).first()).voided_at).toBeNull();
+    }
+    const ok = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${incomeId}/void`, managerToken, 'PATCH'), env, params: { id: incomeId } });
+    expect(ok.status).toBe(200);
+  });
+});

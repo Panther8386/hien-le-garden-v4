@@ -21,7 +21,7 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError('Dòng dịch vụ này đã được huỷ trước đó', 400);
   }
   if (item.payment_status === 'paid' && !hasPermission(auth, 'bookings.edit_paid_service')) {
-    return jsonError('Chỉ Admin mới có quyền huỷ dịch vụ đã thanh toán', 403);
+    return jsonError('Bạn không có quyền sửa/xoá dịch vụ đã thanh toán', 403);
   }
 
   const now = new Date().toISOString();

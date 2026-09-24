@@ -575,6 +575,7 @@ describe('PATCH /api/bookings/:id/services/:itemId', () => {
       params: { id: String(confirmedBookingId), itemId: String(itemId) },
     });
     expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Bạn không có quyền sửa/xoá dịch vụ đã thanh toán');
     const row = await env.DB.prepare(`SELECT status FROM booking_service_items WHERE id = ?`).bind(itemId).first();
     expect(row.status).toBe('posted');
   });

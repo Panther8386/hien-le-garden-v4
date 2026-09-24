@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as uploadAttachment, onRequestDelete as deleteAttachment, onRequestGet as getAttachment } from '../functions/api/finance/transactions/[id]/attachment.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, observerToken;
+let managerToken, receptionToken, observerToken, managerStaffId;
 let expenseTxId, incomeTxId, voidedTxId;
 
 function pdfFile(name = 'hoa-don.pdf', bytes = new Uint8Array([1, 2, 3, 4])) {
@@ -19,6 +20,7 @@ beforeEach(async () => {
   const m = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_att', 'x', 'manager', '2026-09-01T00:00:00Z')`).run();
   const r = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_att', 'x', 'reception', '2026-09-01T00:00:00Z')`).run();
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_att', 'x', 'observer', '2026-09-01T00:00:00Z')`).run();
+  managerStaffId = m.meta.last_row_id;
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   observerToken = await createSession(env.DB, o.meta.last_row_id);
@@ -232,5 +234,31 @@ describe('GET /api/finance/transactions/:id/attachment', () => {
     expect(quotedMatch).not.toBeNull();
     expect(quotedMatch[1]).not.toContain('"');
     expect(decodeURIComponent(quotedMatch[2])).toBe(storedName);
+  });
+});
+
+describe('attachments with finance.manage but without finance.view_all', () => {
+  beforeEach(async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+  });
+
+  it('POST 404s on an expense and on a hidden income; works on a visible income', async () => {
+    const hidden = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES ('income', 'ban_hang', 1000, '2026-09-01', 'draft', 'quan_ly_att', '2026-09-01T00:00:00Z', 1)`
+    ).run();
+    for (const id of [expenseTxId, hidden.meta.last_row_id]) {
+      const res = await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${id}/attachment`, managerToken, pdfFile()), env, params: { id: String(id) } });
+      expect(res.status).toBe(404);
+      expect((await env.DB.prepare('SELECT receipt_key FROM finance_transactions WHERE id = ?').bind(id).first()).receipt_key).toBeNull();
+    }
+    const ok = await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile()), env, params: { id: String(incomeTxId) } });
+    expect(ok.status).toBe(200);
+  });
+
+  it('DELETE 404s on an expense receipt and keeps it', async () => {
+    await env.DB.prepare(`UPDATE finance_transactions SET receipt_key = 'finance-receipts/x/1-a.pdf', receipt_filename = 'a.pdf' WHERE id = ?`).bind(expenseTxId).run();
+    const res = await deleteAttachment({ request: authedRequest(`https://x/api/finance/transactions/${expenseTxId}/attachment`, managerToken, 'DELETE'), env, params: { id: String(expenseTxId) } });
+    expect(res.status).toBe(404);
+    expect((await env.DB.prepare('SELECT receipt_key FROM finance_transactions WHERE id = ?').bind(expenseTxId).first()).receipt_key).toBe('finance-receipts/x/1-a.pdf');
   });
 });

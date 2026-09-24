@@ -1,6 +1,7 @@
 // admin/nav-drawer.js
 // Menu items are gated by permission keys (GET /api/auth/me -> permissions).
 // This is UX only: every API re-checks the same key server-side.
+// `perm` is one key, or an array meaning "any of these keys".
 const NAV_GROUPS = [
   {
     label: 'Tài sản & Kho',
@@ -33,12 +34,12 @@ const NAV_GROUPS = [
     label: 'Cấu hình & Quản trị',
     items: [
       { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', perm: 'promo_config.view' },
-      { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', perm: 'settings.view' },
+      { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', perm: ['settings.view', 'settings.catalog'] },
       { page: 'finance-categories.html', label: 'Danh mục Sổ thu chi', icon: '🏷️', perm: 'settings.finance_categories' },
       { page: 'dine-in-menu.html', label: 'Menu quán', icon: '📋', perm: 'settings.dine_in_menu' },
       { page: 'audit-log.html', label: 'Nhật ký thao tác', icon: '📜', perm: 'audit.view' },
-      { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', perm: 'settings.view' },
-      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: 'settings.view' },
+      { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', perm: ['settings.view', 'settings.cancellation_policy'] },
+      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: ['settings.view', 'settings.rooms'] },
       { page: 'users.html', label: 'Phân quyền', icon: '🔑', perm: 'users.manage' },
     ],
   },
@@ -57,6 +58,11 @@ const PAGE_EXTRA_PERMS = {
   'dine-in-order-detail.html': 'dine_in.view',
   'gio-xanh-detail.html': 'gio_xanh.view',
 };
+
+// True when `permissions` satisfies `perm` (a key, or an any-of array of keys).
+function allows(permissions, perm) {
+  return Array.isArray(perm) ? perm.some((p) => permissions.includes(p)) : permissions.includes(perm);
+}
 
 function currentPageFile() {
   return window.location.pathname.split('/').pop();
@@ -95,10 +101,10 @@ function requiredPermForPage(pageFile) {
 // page's permission. "Vận hành hôm nay" comes first when allowed, then menu order.
 function guardPage(role, permissions) {
   const needed = requiredPermForPage(resolvePageFile());
-  if (!needed || permissions.includes(needed)) return true;
+  if (!needed || allows(permissions, needed)) return true;
   const items = NAV_GROUPS.flatMap((g) => g.items);
   const home = items.find((i) => i.page === 'reception.html');
-  const first = [home, ...items].find((i) => i && permissions.includes(i.perm));
+  const first = [home, ...items].find((i) => i && allows(permissions, i.perm));
   document.documentElement.style.visibility = 'hidden';
   window.location.replace(first ? urlFor(role, first.page) : urlFor(role, 'change-password.html'));
   return false;
@@ -140,7 +146,7 @@ function buildDrawer(role, username, permissions) {
   const drawerBody = document.createElement('div');
   drawerBody.className = 'nav-drawer-body';
   NAV_GROUPS.forEach((group) => {
-    const visibleItems = group.items.filter((item) => permissions.includes(item.perm));
+    const visibleItems = group.items.filter((item) => allows(permissions, item.perm));
     if (visibleItems.length === 0) return;
 
     const groupEl = document.createElement('div');

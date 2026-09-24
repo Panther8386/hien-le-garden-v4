@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { summarize } from './index.js';
+import { canSeeTransaction } from '../../../../lib/financeAccess.js';
 import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
@@ -15,7 +16,7 @@ export async function onRequestPatch({ request, env, params }) {
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (existing.voided_at) return jsonError('Giao dịch này đã bị huỷ, không thể sửa', 400);
 
   let body;
