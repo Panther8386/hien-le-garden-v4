@@ -200,7 +200,7 @@ Xoá 4 API cờ cũ: `room-layout-access`, `finance-transaction-access`, `asset-
 
 1. Tài khoản vai trò admin chỉ tài khoản admin khác mới được sửa, khoá hoặc xoá. Cũng chỉ admin mới gán hoặc gỡ vai trò admin.
 2. Không ai tự khoá, tự xoá, tự đổi vai trò hay tự sửa quyền riêng của chính mình.
-3. Người không phải admin chỉ được thêm `grant` mới cho những quyền mà chính họ đang có (grant đã có sẵn của user được giữ nguyên hoặc gỡ bỏ tự do). Họ được `deny` bất kỳ quyền nào.
+3. Người không phải admin chỉ được thêm `grant` mới cho những quyền mà chính họ đang có (grant đã có sẵn của user được giữ nguyên hoặc gỡ bỏ tự do). Họ được `deny` bất kỳ quyền nào. Gỡ một quyền đang bị chặn cũng tính như cấp quyền.
 4. Không được hạ vai trò, khoá hay xoá **admin cuối cùng chưa bị khoá**. Quy tắc này thay cho quy tắc "manager cuối cùng" hiện nay.
 5. **Đổi vai trò của một user sẽ xoá hết override của user đó.** Lý do: quyền chỉnh riêng được cấp theo vai trò cũ, không được giữ lại khi đổi vai trò. Ví dụ, lễ tân được cấp "Xoá tài sản" rồi bị hạ xuống người quan sát thì không còn quyền này. Giao diện phải báo trước điều này khi user có override. User vai trò admin luôn không có override.
 6. Người không phải admin chỉ được gán một vai trò (khi tạo tài khoản hoặc đổi vai trò) nếu chính họ có toàn bộ quyền của vai trò đó.

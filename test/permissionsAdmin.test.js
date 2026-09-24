@@ -579,3 +579,51 @@ describe('POST /api/users with a null body', () => {
     expect((await response.json()).error).toBe('Dữ liệu không hợp lệ');
   });
 });
+
+describe('rule 3: removing a stored deny counts as granting', () => {
+  let qlBId, qlCId, qlCToken;
+  beforeEach(async () => {
+    qlBId = await insertStaff('ql_b', 'manager');
+    qlCId = await insertStaff('ql_c', 'manager');
+    qlCToken = await createSession(env.DB, qlCId);
+    await setOverride(env.DB, qlBId, 'finance.manage', 'deny');
+    await setOverride(env.DB, qlId, 'finance.manage', 'deny');
+  });
+
+  it('rejects a manager lacking K removing the target deny on K that the target role includes (403, nothing written)', async () => {
+    const response = await putUser(qlToken, qlBId, { overrides: {} });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể gỡ chặn quyền mà bạn không có: finance.manage');
+    expect(await overridesOf(qlBId)).toEqual([{ permission: 'finance.manage', effect: 'deny' }]);
+    const { results } = await env.DB.prepare(`SELECT id FROM audit_log WHERE action_type = 'user_permissions_change'`).all();
+    expect(results).toEqual([]);
+  });
+
+  it('rejects the same manager turning that deny into a grant (403, nothing written)', async () => {
+    const response = await putUser(qlToken, qlBId, { overrides: { 'finance.manage': 'grant' } });
+    expect(response.status).toBe(403);
+    expect(await overridesOf(qlBId)).toEqual([{ permission: 'finance.manage', effect: 'deny' }]);
+  });
+
+  it('lets that manager keep the deny while changing other overrides (200)', async () => {
+    const response = await putUser(qlToken, qlBId, { overrides: { 'finance.manage': 'deny', 'customers.send': 'deny' } });
+    expect(response.status).toBe(200);
+    expect(await overridesOf(qlBId)).toEqual([
+      { permission: 'customers.send', effect: 'deny' },
+      { permission: 'finance.manage', effect: 'deny' },
+    ]);
+  });
+
+  it('lets a manager holding K remove the deny (200)', async () => {
+    const response = await putUser(qlCToken, qlBId, { overrides: {} });
+    expect(response.status).toBe(200);
+    expect(await overridesOf(qlBId)).toEqual([]);
+  });
+
+  it('lets a manager lacking K remove a deny on K the target role does not include (200)', async () => {
+    await setOverride(env.DB, ltId, 'finance.manage', 'deny');
+    const response = await putUser(qlToken, ltId, { overrides: {} });
+    expect(response.status).toBe(200);
+    expect(await overridesOf(ltId)).toEqual([]);
+  });
+});

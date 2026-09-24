@@ -50,6 +50,17 @@ export async function onRequestPut({ request, env, params }) {
     }
   }
 
+  // Quy tắc 3 (spec §7): gỡ một quyền đang bị chặn cũng tính như cấp quyền. Nếu vai trò
+  // của người bị chỉnh có quyền K, bỏ/đổi deny K sẽ nâng họ lên K — người chỉnh phải có K.
+  const prevDenies = prev.filter((o) => o.effect === 'deny').map((o) => o.permission);
+  const liftedDenies = prevDenies.filter((key) => overrides[key] !== 'deny' && !hasPermission(auth, key));
+  if (liftedDenies.length > 0) {
+    const { results: roleRows } = await env.DB.prepare('SELECT permission FROM role_permissions WHERE role = ?').bind(target.role).all();
+    const roleKeys = new Set(roleRows.map((r) => r.permission));
+    const blocked = liftedDenies.sort().find((key) => roleKeys.has(key));
+    if (blocked) return jsonError(`Không thể gỡ chặn quyền mà bạn không có: ${blocked}`, 403);
+  }
+
   const fmt = (list) => list.map(([k, e]) => `${k}:${e}`).join(',');
   await env.DB.batch([
     env.DB.prepare('DELETE FROM user_permission_overrides WHERE staff_id = ?').bind(target.id),

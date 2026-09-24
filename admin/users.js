@@ -281,6 +281,11 @@ function renderPermList(user, readOnly) {
       const differs = value !== 'role';
       const labelNode = el('span', { className: 'pq-perm-label', id: `perm-${perm.key}` }, [perm.label]);
       if (differs) labelNode.appendChild(el('span', { className: 'pq-st', text: ` · vai trò: ${has ? 'có' : 'không'}` }));
+      // Rule 3 (server-enforced): lifting a stored deny on a permission the
+      // target's role includes counts as granting it, so it needs the actor to
+      // hold that permission too. Otherwise the row stays locked on "Chặn".
+      const lockedDeny = !readOnly && state.detail.overrides[perm.key] === 'deny' && has && !iHave(perm.key);
+      if (lockedDeny) labelNode.appendChild(el('span', { className: 'pq-st', text: ' · đã khoá: bạn không có quyền này nên không gỡ chặn được' }));
 
       const seg = el('div', { className: 'pq-seg', role: 'radiogroup', 'aria-labelledby': `perm-${perm.key}` });
       const options = [{ val: 'role', text: value === 'role' ? `Theo vai trò: ${has ? 'có' : 'không'}` : 'Theo vai trò' }];
@@ -299,7 +304,7 @@ function renderPermList(user, readOnly) {
           className: 'pq-seg-opt' + (checked ? ' on' : '') + tone,
           'aria-checked': checked ? 'true' : 'false',
           tabindex: checked ? '0' : '-1',
-          disabled: readOnly,
+          disabled: readOnly || (lockedDeny && o.val !== 'deny'),
           'data-key': perm.key,
           'data-val': o.val,
           onclick: () => setDraft(perm.key, o.val),
@@ -317,7 +322,7 @@ function onSegKey(event) {
   const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
   if (!(event.key in keys)) return;
   event.preventDefault();
-  const buttons = [...event.currentTarget.parentElement.querySelectorAll('.pq-seg-opt')];
+  const buttons = [...event.currentTarget.parentElement.querySelectorAll('.pq-seg-opt')].filter((b) => !b.disabled);
   const index = buttons.indexOf(event.currentTarget);
   const next = buttons[(index + keys[event.key] + buttons.length) % buttons.length];
   setDraft(next.dataset.key, next.dataset.val);
