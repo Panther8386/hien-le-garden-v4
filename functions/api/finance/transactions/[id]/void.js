@@ -8,7 +8,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();

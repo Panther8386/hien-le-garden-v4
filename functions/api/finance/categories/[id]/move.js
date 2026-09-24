@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.finance_categories');
   if (auth instanceof Response) return auth;
 
   const category = await env.DB.prepare(`SELECT id, type, display_order FROM finance_categories WHERE id = ?`).bind(params.id).first();

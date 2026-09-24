@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const PERIOD_FORMAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.view_all');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -32,7 +32,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPatch({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   let body;

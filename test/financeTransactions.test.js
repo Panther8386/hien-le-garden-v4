@@ -8,6 +8,7 @@ import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
+let managerStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -19,6 +20,7 @@ beforeEach(async () => {
   const r = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_fin', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   const a = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_fin', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_fin', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  managerStaffId = m.meta.last_row_id;
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   adminToken = await createSession(env.DB, a.meta.last_row_id);
@@ -265,6 +267,26 @@ describe('GET /api/finance/transactions', () => {
     const body = await response.json();
     expect(body.transactions).toHaveLength(3);
     expect(body.transactions.some((t) => t.type === 'expense')).toBe(true);
+  });
+
+  it('override: grants finance.view_income to a reception account, who then sees only income rows', async () => {
+    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_xem_thu', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+    await setOverride(env.DB, granted.meta.last_row_id, 'finance.view_income');
+    const grantedToken = await createSession(env.DB, granted.meta.last_row_id);
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', grantedToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
+  });
+
+  it('override: denies finance.view_all from manager, forcing income-only results despite the role default', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
   });
 
   it('includes voided transactions in the list (UI shows them struck-through)', async () => {

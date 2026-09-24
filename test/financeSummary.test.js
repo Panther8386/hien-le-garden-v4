@@ -3,8 +3,10 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as getSummary } from '../functions/api/finance/summary.js';
 import { onRequestGet as getOpeningBalance, onRequestPatch as setOpeningBalance } from '../functions/api/finance/opening-balance.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, observerToken, adminToken;
+let managerStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -15,6 +17,7 @@ beforeEach(async () => {
   const m = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_sum', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   const r = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_sum', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_sum', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  managerStaffId = m.meta.last_row_id;
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   observerToken = await createSession(env.DB, o.meta.last_row_id);
@@ -59,6 +62,12 @@ describe('GET /api/finance/summary', () => {
     expect(body).toHaveProperty('openingBalance');
     expect(body).toHaveProperty('totalExpense');
     expect(body).toHaveProperty('closingBalance');
+  });
+
+  it('override: denies finance.view_all from manager, resulting in 403 despite the role default', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const response = await getSummary({ request: authedRequest('https://x/api/finance/summary?month=2026-08', managerToken, 'GET'), env });
+    expect(response.status).toBe(403);
   });
 
   it('rejects a malformed month (400)', async () => {
