@@ -17,13 +17,17 @@ export async function onRequestPost({ request, env }) {
   const { username, password } = body;
 
   const account = await env.DB.prepare(
-    `SELECT id, password_hash, role, totp_enabled AS totpEnabled FROM staff_accounts WHERE username = ?`
+    `SELECT id, password_hash, role, totp_enabled AS totpEnabled, locked_at AS lockedAt FROM staff_accounts WHERE username = ?`
   )
     .bind(username)
     .first();
 
   if (!account || !(await verifyPassword(password, account.password_hash))) {
     return jsonError('Sai tài khoản hoặc mật khẩu', 401);
+  }
+
+  if (account.lockedAt) {
+    return jsonError('Tài khoản đang bị khoá. Liên hệ quản trị.', 403);
   }
 
   if (account.totpEnabled) {

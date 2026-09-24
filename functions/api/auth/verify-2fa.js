@@ -20,13 +20,18 @@ export async function onRequestPost({ request, env }) {
   }
 
   const account = await env.DB.prepare(
-    `SELECT id, username, role, totp_secret AS totpSecret FROM staff_accounts WHERE id = ?`
+    `SELECT id, username, role, totp_secret AS totpSecret, locked_at AS lockedAt FROM staff_accounts WHERE id = ?`
   )
     .bind(staffId)
     .first();
 
   if (!account || !account.totpSecret || typeof code !== 'string' || !(await verifyTOTP(account.totpSecret, code))) {
     return jsonError('Mã xác thực không đúng', 401);
+  }
+
+  if (account.lockedAt) {
+    await deletePendingToken(env.DB, pendingToken);
+    return jsonError('Tài khoản đang bị khoá. Liên hệ quản trị.', 403);
   }
 
   await deletePendingToken(env.DB, pendingToken);

@@ -160,6 +160,33 @@ describe('login flow with 2FA enabled', () => {
     const verifyResponse = await verify2fa({ request: verifyRequest, env });
     expect(verifyResponse.status).toBe(401);
   });
+
+  it('rejects a correct code with the lock message and creates no session when the account was locked after the pendingToken was issued', async () => {
+    const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+    await enableTwoFactorFor(1, secret);
+
+    const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'quan_ly_a', password: 's3cret-pass' }),
+    });
+    const loginResponse = await login({ request: loginRequest, env });
+    const { pendingToken } = await loginResponse.json();
+
+    await env.DB.prepare(`UPDATE staff_accounts SET locked_at = '2026-09-24T01:00:00Z' WHERE id = 1`).run();
+
+    const code = await generateTOTP(secret, {});
+    const verifyRequest = new Request('https://crm.hienlegarden.vn/api/auth/verify-2fa', {
+      method: 'POST',
+      body: JSON.stringify({ pendingToken, code }),
+    });
+    const verifyResponse = await verify2fa({ request: verifyRequest, env });
+
+    expect(verifyResponse.status).toBe(403);
+    expect(await verifyResponse.json()).toEqual({ error: 'Tài khoản đang bị khoá. Liên hệ quản trị.' });
+    expect(verifyResponse.headers.get('Set-Cookie')).toBeNull();
+    const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions').first();
+    expect(n).toBe(0);
+  });
 });
 
 describe('POST /api/auth/2fa/disable (self-service)', () => {

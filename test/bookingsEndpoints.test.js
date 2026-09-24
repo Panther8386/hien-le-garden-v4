@@ -5,6 +5,7 @@ import { onRequestPost as addDeposit } from '../functions/api/bookings/[id]/depo
 import { onRequestDelete as deleteDeposit } from '../functions/api/bookings/[id]/deposits/[depositId].js';
 import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken;
 let observerToken;
@@ -356,7 +357,7 @@ describe('GET /api/bookings — deposits', () => {
     });
     const { depositId } = await depositResponse.json();
 
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(3).run();
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
     await deleteDeposit({
       request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
       env,
@@ -537,7 +538,7 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
   }
 
   async function grantDeleteDeposit(staffId) {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(staffId).run();
+    await setOverride(env.DB, staffId, 'bookings.deposit_delete');
   }
 
   async function addDepositAndReturn(bookingId, amount, paymentMethod = 'cash') {
@@ -623,8 +624,7 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
     expect(bookingRow.deposit_amount).toBe(200000);
   });
 
-  it('rejects an observer even if the flag were somehow set (403)', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(2).run(); // observerToken belongs to staff id 2
+  it('rejects an observer without an explicit grant (403)', async () => {
     const id = await seedBooking();
     const created = await addDepositAndReturn(id, 200000);
 

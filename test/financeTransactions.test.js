@@ -5,6 +5,7 @@ import { onRequestPatch as patchTransaction } from '../functions/api/finance/tra
 import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
 import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
 
@@ -53,7 +54,8 @@ describe('POST /api/finance/transactions', () => {
   });
 
   it('lets a reception account with canAddFinanceTransaction=1 create a transaction', async () => {
-    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z', 1)`).run();
+    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+    await setOverride(env.DB, granted.meta.last_row_id, 'finance.create');
     const grantedToken = await createSession(env.DB, granted.meta.last_row_id);
     const response = await createTransaction({
       request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
@@ -62,11 +64,9 @@ describe('POST /api/finance/transactions', () => {
     expect(response.status).toBe(201);
   });
 
-  it('still rejects an observer account even if canAddFinanceTransaction were somehow set to 1 (defense in depth)', async () => {
-    const grantedObserver = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('quan_sat_duoc_cap', 'x', 'observer', '2026-08-01T00:00:00Z', 1)`).run();
-    const grantedToken = await createSession(env.DB, grantedObserver.meta.last_row_id);
+  it('rejects an observer without an explicit grant (403)', async () => {
     const response = await createTransaction({
-      request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
+      request: authedRequest('https://x/api/finance/transactions', observerToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
       env,
     });
     expect(response.status).toBe(403);
