@@ -190,7 +190,7 @@ async function loadReminders() {
     container.appendChild(heading);
     pendingNoDeposit.forEach((b) => {
       const p = document.createElement('p');
-      p.textContent = `${b.guestName} — ${b.phone} — chờ ${b.hoursWaiting} giờ`;
+      p.textContent = [b.guestName, b.phone, `chờ ${b.hoursWaiting} giờ`].filter(Boolean).join(' — ');
       container.appendChild(p);
     });
   }
@@ -203,7 +203,7 @@ async function loadReminders() {
     container.appendChild(heading);
     arrivingToday.forEach((b) => {
       const p = document.createElement('p');
-      p.textContent = `${b.guestName} — ${b.phone} — ${ROOM_TYPE_LABELS[b.roomType] || b.roomType}`;
+      p.textContent = [b.guestName, b.phone, ROOM_TYPE_LABELS[b.roomType] || b.roomType].filter(Boolean).join(' — ');
       container.appendChild(p);
     });
   }

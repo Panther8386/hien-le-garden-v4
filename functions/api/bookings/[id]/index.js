@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { redactContact } from '../../../../lib/redactContact.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -18,5 +19,6 @@ export async function onRequestGet({ request, env, params }) {
 
   if (!row) return jsonError('Không tìm thấy đặt phòng', 404);
 
+  redactContact(auth, row);
   return new Response(JSON.stringify(row), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

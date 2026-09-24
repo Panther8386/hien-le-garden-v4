@@ -539,3 +539,40 @@ describe('PATCH /api/gio-xanh-sessions/:id/hide', () => {
     expect(row.is_hidden).toBe(0);
   });
 });
+
+describe('Giỏ Xanh sessions — guest contact redaction', () => {
+  async function managerId() {
+    return (await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'quan_ly_gx'`).first()).id;
+  }
+  async function seedSession() {
+    const s = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, phone, status, opened_by, opened_at) VALUES (?, 'Khách SĐT', '0933333333', 'open', 'le_tan_gx', '2026-09-04T08:00:00Z')`).bind(roomId1).run();
+    return s.meta.last_row_id;
+  }
+
+  it('GET list keeps phone for a manager, nulls it when guests.contact_view is denied', async () => {
+    await seedSession();
+    const before = await (await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', managerToken, 'GET'), env })).json();
+    expect(before[0].phone).toBe('0933333333');
+    await setOverride(env.DB, await managerId(), 'guests.contact_view', 'deny');
+    const res = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', managerToken, 'GET'), env });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].guestName).toBe('Khách SĐT');
+    expect(body[0].phone).toBeNull();
+  });
+
+  it('GET detail keeps phone for a manager, nulls it when guests.contact_view is denied', async () => {
+    const id = String(await seedSession());
+    const url = `https://x/api/gio-xanh-sessions/${id}`;
+    const before = await (await getSession({ request: authedRequest(url, managerToken, 'GET'), env, params: { id } })).json();
+    expect(before.phone).toBe('0933333333');
+    await setOverride(env.DB, await managerId(), 'guests.contact_view', 'deny');
+    const res = await getSession({ request: authedRequest(url, managerToken, 'GET'), env, params: { id } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.guestName).toBe('Khách SĐT');
+    expect(body.phone).toBeNull();
+    expect(Array.isArray(body.items)).toBe(true);
+  });
+});

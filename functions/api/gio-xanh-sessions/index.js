@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hasPermission } from '../../../lib/permissions.js';
+import { redactContact } from '../../../lib/redactContact.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -24,7 +25,8 @@ export async function onRequestGet({ request, env }) {
      WHERE s.status = ?${includeHidden ? '' : ' AND s.is_hidden = 0'} ORDER BY s.opened_at ASC`
   ).bind(status).all();
 
-  return new Response(JSON.stringify(results.map((r) => ({ ...r, isHidden: !!r.isHidden }))), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const rows = redactContact(auth, results.map((r) => ({ ...r, isHidden: !!r.isHidden })));
+  return new Response(JSON.stringify(rows), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {

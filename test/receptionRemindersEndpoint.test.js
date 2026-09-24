@@ -48,3 +48,34 @@ describe('GET /api/reception/reminders', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('GET /api/reception/reminders — guest contact redaction', () => {
+  async function seedBookings() {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at, deposit_amount)
+       VALUES ('Khách Chờ Cọc', '0911111111', 'cho@example.com', 'circle', '2099-01-01', '2099-01-02', 'pending', 'phone', '2020-01-01T00:00:00Z', 0)`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Khách Đến Hôm Nay', '0922222222', 'den@example.com', 'circle', ?, '2099-12-31', 'confirmed', 'phone', '2020-01-01T00:00:00Z')`
+    ).bind(today).run();
+  }
+
+  it('nulls guest phone in both lists for an observer (no guests.contact_view)', async () => {
+    await seedBookings();
+    const body = await (await getReminders({ request: authedRequest('https://x/api/reception/reminders', observerToken), env })).json();
+    expect(body.pendingNoDeposit).toHaveLength(1);
+    expect(body.arrivingToday).toHaveLength(1);
+    expect(body.pendingNoDeposit[0].phone).toBeNull();
+    expect(body.arrivingToday[0].phone).toBeNull();
+    expect(body.pendingNoDeposit[0].guestName).toBe('Khách Chờ Cọc');
+  });
+
+  it('keeps guest phone for reception (has guests.contact_view)', async () => {
+    await seedBookings();
+    const body = await (await getReminders({ request: authedRequest('https://x/api/reception/reminders', receptionToken), env })).json();
+    expect(body.pendingNoDeposit[0].phone).toBe('0911111111');
+    expect(body.arrivingToday[0].phone).toBe('0922222222');
+  });
+});

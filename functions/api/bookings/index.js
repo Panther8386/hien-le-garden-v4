@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hasPermission } from '../../../lib/permissions.js';
+import { redactContact } from '../../../lib/redactContact.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
 import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
 
@@ -128,12 +129,7 @@ export async function onRequestGet({ request, env }) {
 
   results.forEach((r) => { r.isHidden = !!r.isHidden; });
 
-  if (!hasPermission(auth, 'guests.contact_view')) {
-    results.forEach((r) => {
-      r.phone = null;
-      r.email = null;
-    });
-  }
+  redactContact(auth, results);
 
   results.forEach((r) => {
     r.services = [];

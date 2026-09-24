@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { redactContact } from '../../../../lib/redactContact.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -16,6 +17,7 @@ export async function onRequestGet({ request, env, params }) {
      WHERE s.id = ?`
   ).bind(params.id).first();
   if (!session) return jsonError('Không tìm thấy phiên', 404);
+  redactContact(auth, session);
 
   const { results: items } = await env.DB.prepare(
     `SELECT id, source, source_id AS sourceId, name, unit_price AS unitPrice, quantity, amount, status,

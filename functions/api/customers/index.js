@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hasPermission } from '../../../lib/permissions.js';
+import { redactContact } from '../../../lib/redactContact.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env }) {
@@ -61,12 +62,7 @@ export async function onRequestGet({ request, env }) {
   const start = (page - 1) * pageSize;
   const pageResults = mapped.slice(start, start + pageSize);
 
-  if (!hasPermission(auth, 'guests.contact_view')) {
-    pageResults.forEach((r) => {
-      r.phone = null;
-      r.email = null;
-    });
-  }
+  redactContact(auth, pageResults);
 
   return new Response(JSON.stringify({ results: pageResults, total, page, pageSize }), {
     status: 200,

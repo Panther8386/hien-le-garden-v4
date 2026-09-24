@@ -4,6 +4,7 @@ import { onRequestPost as createBooking, onRequestGet as listBookings } from '..
 import { onRequestPost as addDeposit } from '../functions/api/bookings/[id]/deposits/index.js';
 import { onRequestDelete as deleteDeposit } from '../functions/api/bookings/[id]/deposits/[depositId].js';
 import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
+import { onRequestGet as getBooking } from '../functions/api/bookings/[id]/index.js';
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
@@ -833,6 +834,22 @@ describe('booking permissions via overrides', () => {
     const body = await (await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env })).json();
     expect(body.length).toBeGreaterThan(0);
     body.forEach((b) => { expect(b.phone).toBeNull(); expect(b.email).toBeNull(); });
+  });
+
+  it('redacts contact details on GET /api/bookings/:id for a manager denied guests.contact_view', async () => {
+    const b = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách', '0900000003', 'd@example.com', 'circle', '2099-01-01', '2099-01-02', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run();
+    const id = String(b.meta.last_row_id);
+    const url = `https://x/api/bookings/${id}`;
+    const before = await (await getBooking({ request: authedRequest(url, managerToken), env, params: { id } })).json();
+    expect(before.phone).toBe('0900000003');
+    expect(before.email).toBe('d@example.com');
+    await setOverride(env.DB, 1, 'guests.contact_view', 'deny');
+    const res = await getBooking({ request: authedRequest(url, managerToken), env, params: { id } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.guestName).toBe('Khách');
+    expect(body.phone).toBeNull();
+    expect(body.email).toBeNull();
   });
 
   it('403s listing for a manager denied bookings.view', async () => {
