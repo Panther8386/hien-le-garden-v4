@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const PAIRED_MOVEMENT_TYPES = ['transfer_out', 'transfer_in', 'issue', 'soil', 'send_wash', 'return'];
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(

@@ -1,5 +1,6 @@
 // v4/functions/api/asset-inventory-lines/[id]/photo.js
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -16,9 +17,9 @@ function photoKeyFor(lineId, filename) {
   return `inventory-line-photos/${lineId}/${Date.now()}-${sanitizeFilename(filename)}`;
 }
 
-function canWriteLine(role, batchStatus) {
+function canWriteLine(auth, batchStatus) {
   if (batchStatus === 'counting') return true;
-  if (batchStatus === 'pending_close') return role === 'admin' || role === 'manager';
+  if (batchStatus === 'pending_close') return hasPermission(auth, 'assets.manage');
   return false;
 }
 
@@ -29,12 +30,12 @@ async function loadLineWithBatchStatus(env, id) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   const existing = await loadLineWithBatchStatus(env, params.id);
   if (!existing) return jsonError('Không tìm thấy dòng kiểm kê', 404);
-  if (!canWriteLine(auth.role, existing.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
+  if (!canWriteLine(auth, existing.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
 
   let form;
   try {
@@ -67,12 +68,12 @@ export async function onRequestPost({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   const existing = await loadLineWithBatchStatus(env, params.id);
   if (!existing) return jsonError('Không tìm thấy dòng kiểm kê', 404);
-  if (!canWriteLine(auth.role, existing.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
+  if (!canWriteLine(auth, existing.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
   if (!existing.photo_key) return jsonError('Dòng kiểm kê này chưa có ảnh đính kèm', 400);
 
   await env.RECEIPTS.delete(existing.photo_key);
@@ -86,7 +87,7 @@ export async function onRequestDelete({ request, env, params }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM asset_inventory_lines WHERE id = ?`).bind(params.id).first();

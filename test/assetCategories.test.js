@@ -34,11 +34,16 @@ describe('GET /api/asset-categories', () => {
     expect(response.status).toBe(401);
   });
 
-  it('lets all 4 roles read', async () => {
-    for (const token of [managerToken, receptionToken, adminToken, observerToken]) {
+  it('lets reception, manager, and admin read', async () => {
+    for (const token of [managerToken, receptionToken, adminToken]) {
       const response = await listCategories({ request: authedRequest('https://x/api/asset-categories', token, 'GET'), env });
       expect(response.status).toBe(200);
     }
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listCategories({ request: authedRequest('https://x/api/asset-categories', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
   });
 
   it('excludes inactive categories by default', async () => {

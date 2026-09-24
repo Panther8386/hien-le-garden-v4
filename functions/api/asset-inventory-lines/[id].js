@@ -1,5 +1,6 @@
 // v4/functions/api/asset-inventory-lines/[id].js
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -7,21 +8,21 @@ function jsonError(message, status) {
 
 const VALID_CONDITIONS = ['tot', 'kha', 'trung_binh', 'can_sua', 'chua_danh_gia'];
 
-function canWriteLine(role, batchStatus) {
+function canWriteLine(auth, batchStatus) {
   if (batchStatus === 'counting') return true;
-  if (batchStatus === 'pending_close') return role === 'admin' || role === 'manager';
+  if (batchStatus === 'pending_close') return hasPermission(auth, 'assets.manage');
   return false;
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   const line = await env.DB.prepare(
     `SELECT l.*, b.status AS batch_status FROM asset_inventory_lines l JOIN asset_inventory_batches b ON b.id = l.batch_id WHERE l.id = ?`
   ).bind(params.id).first();
   if (!line) return jsonError('Không tìm thấy dòng kiểm kê', 404);
-  if (!canWriteLine(auth.role, line.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
+  if (!canWriteLine(auth, line.batch_status)) return jsonError('Không thể sửa dòng kiểm kê ở trạng thái đợt hiện tại', 400);
 
   let body;
   try {

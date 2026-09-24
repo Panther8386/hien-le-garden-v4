@@ -11,7 +11,7 @@ const VALID_LIFECYCLE_STATUSES = ['dang_quan_ly', 'da_hoan_tra', 'da_thanh_ly'];
 const INDIVIDUAL_MANAGEMENT_TYPES = ['individual_device', 'device_set'];
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(
@@ -72,9 +72,8 @@ export async function onRequestPatch({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, null);
+  const auth = await requireAuth(request, env, 'assets.delete');
   if (auth instanceof Response) return auth;
-  if (!auth.canDeleteAsset || auth.role === 'observer') return jsonError('Tài khoản không có quyền xoá tài sản', 403);
 
   const existing = await env.DB.prepare(`SELECT id, name, is_deleted FROM assets WHERE id = ?`).bind(params.id).first();
   if (!existing) return jsonError('Không tìm thấy tài sản', 404);

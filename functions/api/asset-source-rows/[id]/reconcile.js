@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const INDIVIDUAL_MANAGEMENT_TYPES = ['individual_device', 'device_set'];
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
 
   const sourceRow = await env.DB.prepare(`SELECT * FROM asset_source_rows WHERE id = ?`).bind(params.id).first();

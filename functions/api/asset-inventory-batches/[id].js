@@ -1,5 +1,6 @@
 // v4/functions/api/asset-inventory-batches/[id].js
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -42,7 +43,7 @@ function coerceLine(r) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const batch = await env.DB.prepare(`SELECT * FROM asset_inventory_batches WHERE id = ?`).bind(params.id).first();
@@ -60,7 +61,7 @@ export async function onRequestGet({ request, env, params }) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   const batch = await env.DB.prepare(`SELECT * FROM asset_inventory_batches WHERE id = ?`).bind(params.id).first();
@@ -79,13 +80,12 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError(`Không thể chuyển từ trạng thái "${batch.status}" sang "${status}"`, 400);
   }
 
-  // Reception may only move counting -> pending_close; starting a count and
-  // closing a batch stay admin/manager-only, matching every other write in
-  // this subsystem's "who can finalize official records" boundary.
-  if (status === 'counting' && auth.role === 'reception') {
+  // Starting a count and closing a batch require assets.manage; matching every
+  // other write in this subsystem's "who can finalize official records" boundary.
+  if (status === 'counting' && !hasPermission(auth, 'assets.manage')) {
     return jsonError('Không đủ quyền bắt đầu kiểm kê', 403);
   }
-  if (status === 'closed' && auth.role === 'reception') {
+  if (status === 'closed' && !hasPermission(auth, 'assets.manage')) {
     return jsonError('Không đủ quyền chốt đợt kiểm kê', 403);
   }
 

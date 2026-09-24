@@ -39,7 +39,7 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -115,7 +115,7 @@ function insertInStatement(env, p) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception']);
+  const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
 
   let body;

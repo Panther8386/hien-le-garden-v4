@@ -17,7 +17,7 @@ function photoKeyFor(assetId, filename) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM assets WHERE id = ?`).bind(params.id).first();
@@ -54,7 +54,7 @@ export async function onRequestPost({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM assets WHERE id = ?`).bind(params.id).first();
@@ -71,7 +71,7 @@ export async function onRequestDelete({ request, env, params }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM assets WHERE id = ?`).bind(params.id).first();

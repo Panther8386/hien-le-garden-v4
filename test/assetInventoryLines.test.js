@@ -31,11 +31,11 @@ function uploadRequest(url, token, file) {
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
+  await env.DB.exec('DELETE FROM asset_inventory_lines');
+  await env.DB.exec('DELETE FROM asset_inventory_batches');
   await env.DB.exec('DELETE FROM assets');
   await env.DB.exec('DELETE FROM asset_categories');
   await env.DB.exec('DELETE FROM asset_locations');
-  await env.DB.exec('DELETE FROM asset_inventory_lines');
-  await env.DB.exec('DELETE FROM asset_inventory_batches');
   await env.DB.exec('DELETE FROM audit_log');
 
   const m = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_il', 'x', 'manager', '2026-09-08T00:00:00Z')`).run();

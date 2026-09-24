@@ -47,11 +47,24 @@ describe('GET /api/assets', () => {
     expect(response.status).toBe(401);
   });
 
-  it('lets all 4 roles read', async () => {
-    for (const token of [managerToken, receptionToken, adminToken, observerToken]) {
+  it('lets reception, manager, and admin read', async () => {
+    for (const token of [managerToken, receptionToken, adminToken]) {
       const response = await listAssets({ request: authedRequest('https://x/api/assets', token, 'GET'), env });
       expect(response.status).toBe(200);
     }
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listAssets({ request: authedRequest('https://x/api/assets', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets an observer with an assets.view grant read', async () => {
+    const observerRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'quan_sat_as'`).first();
+    await setOverride(env.DB, observerRow.id, 'assets.view');
+
+    const response = await listAssets({ request: authedRequest('https://x/api/assets', observerToken, 'GET'), env });
+    expect(response.status).toBe(200);
   });
 
   it('filters by categoryId', async () => {
@@ -225,7 +238,7 @@ describe('DELETE /api/assets/:id', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets any role with canDeleteAsset delete, regardless of role -- reception here', async () => {
+  it('lets reception with an assets.delete grant delete', async () => {
     const assetId = await createTestAsset();
     const receptionRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'le_tan_as'`).first();
     await setOverride(env.DB, receptionRow.id, 'assets.delete');

@@ -4,6 +4,7 @@ import { onRequestGet as listBatches, onRequestPost as createBatch } from '../fu
 import { onRequestGet as getBatch, onRequestPatch as patchBatchStatus } from '../functions/api/asset-inventory-batches/[id].js';
 import { onRequestPost as refreshLines } from '../functions/api/asset-inventory-batches/[id]/refresh-lines.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
 let individualCategoryId, bulkCategoryId;
@@ -99,7 +100,7 @@ describe('GET /api/asset-inventory-batches', () => {
     const other = await env.DB.prepare(`INSERT INTO asset_locations (location_type, name, created_by, created_at) VALUES ('common_area', 'Sảnh 2', 'admin_ib', '2026-09-08T00:00:00Z')`).run();
     await createBatch({ request: authedRequest('https://x/api/asset-inventory-batches', adminToken, 'POST', { locationId: other.meta.last_row_id }), env });
 
-    const response = await listBatches({ request: authedRequest(`https://x/api/asset-inventory-batches?locationId=${locationId}`, observerToken, 'GET'), env });
+    const response = await listBatches({ request: authedRequest(`https://x/api/asset-inventory-batches?locationId=${locationId}`, managerToken, 'GET'), env });
     const body = await response.json();
     expect(body).toHaveLength(1);
     expect(body[0].locationId).toBe(locationId);
@@ -112,7 +113,7 @@ describe('GET /api/asset-inventory-batches/:id', () => {
     const created = await createBatch({ request: authedRequest('https://x/api/asset-inventory-batches', adminToken, 'POST', { locationId }), env });
     const { id } = await created.json();
 
-    const response = await getBatch({ request: authedRequest(`https://x/api/asset-inventory-batches/${id}`, observerToken, 'GET'), env, params: { id: String(id) } });
+    const response = await getBatch({ request: authedRequest(`https://x/api/asset-inventory-batches/${id}`, managerToken, 'GET'), env, params: { id: String(id) } });
     const body = await response.json();
     expect(body.status).toBe('draft');
     expect(body.lines).toHaveLength(2);
@@ -147,6 +148,15 @@ describe('PATCH /api/asset-inventory-batches/:id -- status transitions', () => {
     const id = await makeBatch();
     const response = await patchBatchStatus({ request: authedRequest(`https://x/api/asset-inventory-batches/${id}`, receptionToken, 'PATCH', { status: 'counting' }), env, params: { id: String(id) } });
     expect(response.status).toBe(403);
+  });
+
+  it('lets reception with an assets.manage grant move draft -> counting', async () => {
+    const receptionRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'le_tan_ib'`).first();
+    await setOverride(env.DB, receptionRow.id, 'assets.manage');
+
+    const id = await makeBatch();
+    const response = await patchBatchStatus({ request: authedRequest(`https://x/api/asset-inventory-batches/${id}`, receptionToken, 'PATCH', { status: 'counting' }), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
   });
 
   it('lets reception move counting -> pending_close', async () => {

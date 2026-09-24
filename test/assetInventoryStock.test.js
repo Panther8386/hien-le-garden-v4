@@ -93,8 +93,8 @@ describe('GET /api/asset-inventory-stock', () => {
     expect(body[0].categoryId).toBe(linenCategoryId);
   });
 
-  it('lets an observer read', async () => {
+  it('rejects observer (403)', async () => {
     const response = await getStock({ request: authedRequest('https://x/api/asset-inventory-stock', observerToken, 'GET'), env });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
   });
 });

@@ -6,7 +6,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
 
   const batch = await env.DB.prepare(`SELECT * FROM asset_inventory_batches WHERE id = ?`).bind(params.id).first();
