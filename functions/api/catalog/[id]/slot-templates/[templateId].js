@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const TIME_FORMAT = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.catalog');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM service_slot_template WHERE id = ? AND service_catalog_id = ?`).bind(params.templateId, params.id).first();

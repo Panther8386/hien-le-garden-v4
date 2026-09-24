@@ -24,7 +24,7 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(`SELECT * FROM dine_in_menu_items ORDER BY category, display_order, id`).all();
@@ -32,7 +32,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.dine_in_menu');
   if (auth instanceof Response) return auth;
 
   let body;
