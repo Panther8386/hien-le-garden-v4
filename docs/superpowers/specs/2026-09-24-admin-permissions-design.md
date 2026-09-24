@@ -111,7 +111,8 @@ Quy ước: `R(x)` = `requireAuth(request, env, 'x')`. Mọi dòng dưới thay 
 | POST `dine-in-orders`, `close`, `items`, `items/[itemId]`, `void` | `dine_in.manage` |
 | GET `gio-xanh-sessions`, `gio-xanh-sessions/[id]` | `gio_xanh.view` |
 | POST `gio-xanh-sessions`, `close`, `items`, `items/[itemId]`, `void` | `gio_xanh.manage` |
-| GET `customers`, `customers/[id]` | `customers.view` |
+| GET `customers` | `customers.view` |
+| GET `customers/[id]` (có SĐT/email) | `customers.view` + `guests.contact_view` |
 | POST `customers/[id]/send` | `customers.send` |
 | GET `templates` | `templates.view` |
 | POST/PATCH/DELETE `templates`, `activate`, `deactivate` | `templates.manage` |
@@ -162,7 +163,7 @@ ALTER TABLE staff_accounts ADD COLUMN locked_by TEXT;
 ```
 
 - 4 cột cờ cũ **không đọc nữa** nhưng chưa xoá trong migration này (xoá ở migration sau khi đã chạy ổn định).
-- Xoá user thì xoá luôn các dòng override của user đó. D1 không bật khoá ngoại mặc định, nên handler DELETE phải tự xoá trong cùng batch.
+- Xoá user thì xoá luôn các dòng override của user đó (D1 bật khoá ngoại nên `ON DELETE CASCADE` lo việc này; handler DELETE vẫn xoá tường minh trong cùng batch cho rõ ràng).
 - Phải chạy migration lên remote **trước** khi merge (theo `BACKEND.md`).
 
 ## 6. Kiểm tra quyền lúc chạy
@@ -199,7 +200,7 @@ Xoá 4 API cờ cũ: `room-layout-access`, `finance-transaction-access`, `asset-
 2. Không ai tự khoá, tự xoá, tự đổi vai trò hay tự sửa quyền riêng của chính mình.
 3. Người không phải admin chỉ được `grant` những quyền mà chính họ đang có. Họ được `deny` bất kỳ quyền nào.
 4. Không được hạ vai trò, khoá hay xoá **admin cuối cùng chưa bị khoá**. Quy tắc này thay cho quy tắc "manager cuối cùng" hiện nay.
-5. User vai trò admin không có override. Khi đổi một user *sang* vai trò admin, xoá hết override của user đó.
+5. **Đổi vai trò của một user sẽ xoá hết override của user đó.** Lý do: quyền chỉnh riêng được cấp theo vai trò cũ, không được giữ lại khi đổi vai trò. Ví dụ, lễ tân được cấp "Xoá tài sản" rồi bị hạ xuống người quan sát thì không còn quyền này. Giao diện phải báo trước điều này khi user có override. User vai trò admin luôn không có override.
 
 ### Nhật ký thao tác (audit_log)
 
