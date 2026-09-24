@@ -6,6 +6,7 @@
     "dev": "wrangler pages dev .",
     "test": "node scripts/test-with-retry.js",
     "test:once": "vitest run",
+    "test:each": "node scripts/test-each.js",
     "deploy": "wrangler pages deploy ."
   },
   "devDependencies": {
