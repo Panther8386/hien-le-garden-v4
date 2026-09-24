@@ -8,8 +8,9 @@ import { onRequestPost as voidSession } from '../functions/api/gio-xanh-sessions
 import { onRequestPost as closeSession } from '../functions/api/gio-xanh-sessions/[id]/close.js';
 import { onRequestPatch as hideSession } from '../functions/api/gio-xanh-sessions/[id]/hide.js';
 import { createSession as createStaffSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, adminToken, observerToken;
+let managerToken, receptionToken, adminToken, observerToken, observerStaffId;
 let roomId1, roomId2;
 
 beforeEach(async () => {
@@ -27,7 +28,8 @@ beforeEach(async () => {
   managerToken = await createStaffSession(env.DB, m.meta.last_row_id);
   receptionToken = await createStaffSession(env.DB, r.meta.last_row_id);
   adminToken = await createStaffSession(env.DB, a.meta.last_row_id);
-  observerToken = await createStaffSession(env.DB, o.meta.last_row_id);
+  observerStaffId = o.meta.last_row_id;
+  observerToken = await createStaffSession(env.DB, observerStaffId);
 
   const rooms = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY id LIMIT 2`).all();
   roomId1 = rooms.results[0].id;
@@ -100,7 +102,7 @@ describe('GET /api/gio-xanh-sessions', () => {
     await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan_gx', '2026-09-04T08:05:00Z')`).bind(sessionId).run();
     await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'mon_an_uong', 1, 'Cà phê', 25000, 1, 25000, 'voided', 'le_tan_gx', '2026-09-04T08:06:00Z')`).bind(sessionId).run();
 
-    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', observerToken, 'GET'), env });
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', receptionToken, 'GET'), env });
     const body = await response.json();
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({ id: sessionId, roomId: roomId1, guestName: 'Khách A', status: 'open', currentTotal: 130000 });
@@ -109,6 +111,17 @@ describe('GET /api/gio-xanh-sessions', () => {
   it('rejects an invalid status query param (400)', async () => {
     const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions?status=deleted', receptionToken, 'GET'), env });
     expect(response.status).toBe(400);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets an observer through when granted gio_xanh.view via override (200)', async () => {
+    await setOverride(env.DB, observerStaffId, 'gio_xanh.view', 'grant');
+    const response = await listSessions({ request: authedRequest('https://x/api/gio-xanh-sessions', observerToken, 'GET'), env });
+    expect(response.status).toBe(200);
   });
 });
 
@@ -128,7 +141,7 @@ describe('GET /api/gio-xanh-sessions/:id', () => {
     const sessionId = session.meta.last_row_id;
     await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan_gx', '2026-09-04T08:05:00Z')`).bind(sessionId).run();
 
-    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}`, observerToken, 'GET'), env, params: { id: String(sessionId) } });
+    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}`, receptionToken, 'GET'), env, params: { id: String(sessionId) } });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.guestName).toBe('Khách B');
@@ -136,6 +149,12 @@ describe('GET /api/gio-xanh-sessions/:id', () => {
     expect(body.roomName).toBeTruthy();
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ source: 'gio_combo', name: 'Giờ Đầu Tiên', unitPrice: 130000, quantity: 1, amount: 130000, status: 'posted' });
+  });
+
+  it('rejects observer (403)', async () => {
+    const session = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách B2', 'open', 'le_tan_gx', '2026-09-04T08:00:00Z')`).bind(roomId2).run();
+    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${session.meta.last_row_id}`, observerToken, 'GET'), env, params: { id: String(session.meta.last_row_id) } });
+    expect(response.status).toBe(403);
   });
 });
 

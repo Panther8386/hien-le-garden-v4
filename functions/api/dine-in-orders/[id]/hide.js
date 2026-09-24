@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'records.hide');
   if (auth instanceof Response) return auth;
 
   const order = await env.DB.prepare(`SELECT id, status, is_hidden, table_label AS tableLabel FROM dine_in_orders WHERE id = ?`).bind(params.id).first();

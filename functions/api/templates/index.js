@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'templates.view');
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
@@ -18,7 +18,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'templates.manage');
   if (auth instanceof Response) return auth;
 
   let body;

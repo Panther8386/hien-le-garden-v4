@@ -8,8 +8,9 @@ import { onRequestPost as voidOrder } from '../functions/api/dine-in-orders/[id]
 import { onRequestPost as closeOrder } from '../functions/api/dine-in-orders/[id]/close.js';
 import { onRequestPatch as hideOrder } from '../functions/api/dine-in-orders/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, adminToken, observerToken;
+let managerToken, receptionToken, adminToken, observerToken, observerStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -27,7 +28,8 @@ beforeEach(async () => {
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   adminToken = await createSession(env.DB, a.meta.last_row_id);
-  observerToken = await createSession(env.DB, o.meta.last_row_id);
+  observerStaffId = o.meta.last_row_id;
+  observerToken = await createSession(env.DB, observerStaffId);
 });
 
 function authedRequest(url, token, method, body) {
@@ -79,7 +81,7 @@ describe('GET /api/dine-in-orders', () => {
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 25000, 1, 25000, 'voided', 'le_tan_order', '2026-09-04T08:06:00Z')`).bind(orderId).run();
 
-    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', receptionToken, 'GET'), env });
     const body = await response.json();
     expect(body).toEqual([{ id: orderId, tableLabel: 'Bàn 5', note: null, status: 'open', openedBy: 'le_tan_order', openedAt: '2026-09-04T08:00:00Z', isHidden: false, currentTotal: 45000 }]);
   });
@@ -87,6 +89,17 @@ describe('GET /api/dine-in-orders', () => {
   it('rejects an invalid status query param (400)', async () => {
     const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders?status=deleted', receptionToken, 'GET'), env });
     expect(response.status).toBe(400);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets an observer through when granted dine_in.view via override (200)', async () => {
+    await setOverride(env.DB, observerStaffId, 'dine_in.view', 'grant');
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    expect(response.status).toBe(200);
   });
 });
 
@@ -106,12 +119,18 @@ describe('GET /api/dine-in-orders/:id', () => {
     const orderId = order.meta.last_row_id;
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
 
-    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}`, observerToken, 'GET'), env, params: { id: String(orderId) } });
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}`, receptionToken, 'GET'), env, params: { id: String(orderId) } });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.tableLabel).toBe('Bàn 7');
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ name: 'Mì Quảng', unitPrice: 45000, quantity: 1, amount: 45000, status: 'posted' });
+  });
+
+  it('rejects observer (403)', async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 7b', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${order.meta.last_row_id}`, observerToken, 'GET'), env, params: { id: String(order.meta.last_row_id) } });
+    expect(response.status).toBe(403);
   });
 });
 

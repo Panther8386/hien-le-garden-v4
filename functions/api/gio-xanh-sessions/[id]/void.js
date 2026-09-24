@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
 
   const session = await env.DB.prepare(

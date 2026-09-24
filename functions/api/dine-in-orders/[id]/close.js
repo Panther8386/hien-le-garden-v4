@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const VALID_PAYMENT_METHODS = ['cash', 'transfer'];
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'dine_in.manage');
   if (auth instanceof Response) return auth;
 
   const order = await env.DB.prepare(`SELECT id, table_label AS tableLabel, status FROM dine_in_orders WHERE id = ?`).bind(params.id).first();

@@ -1,8 +1,9 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, 'customers.view');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -15,7 +16,7 @@ export async function onRequestGet({ request, env }) {
   const params = [];
   if (search) {
     const term = `%${search}%`;
-    if (auth.role === 'observer') {
+    if (!hasPermission(auth, 'guests.contact_view')) {
       conditions.push(`(guest_name LIKE ? OR promo_code LIKE ?)`);
       params.push(term, term);
     } else {
@@ -60,7 +61,7 @@ export async function onRequestGet({ request, env }) {
   const start = (page - 1) * pageSize;
   const pageResults = mapped.slice(start, start + pageSize);
 
-  if (auth.role === 'observer') {
+  if (!hasPermission(auth, 'guests.contact_view')) {
     pageResults.forEach((r) => {
       r.phone = null;
       r.email = null;

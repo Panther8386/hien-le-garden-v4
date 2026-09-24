@@ -1,9 +1,13 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'customers.view');
   if (auth instanceof Response) return auth;
+  if (!hasPermission(auth, 'guests.contact_view')) {
+    return new Response(JSON.stringify({ error: 'Không đủ quyền' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+  }
 
   const row = await env.DB.prepare(
     `SELECT id AS feedbackId, guest_name AS guestName, phone, email, rating, comment, promo_code AS promoCode,

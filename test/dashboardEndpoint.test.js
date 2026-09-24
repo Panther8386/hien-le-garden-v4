@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as getSummary } from '../functions/api/dashboard/summary.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken;
 let receptionToken;
 let observerToken;
+let deniedManagerToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -21,6 +23,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 3);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'quan_ly_bi_chan', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
+  deniedManagerToken = await createSession(env.DB, 4);
+  await setOverride(env.DB, 4, 'dashboard.view', 'deny');
 });
 
 function authedRequest(url, token) {
@@ -73,6 +79,11 @@ describe('GET /api/dashboard/summary', () => {
 
   it('rejects observer (403) — dashboard revenue figures are off-limits to this role', async () => {
     const response = await getSummary({ request: authedRequest('https://x/api/dashboard/summary', observerToken), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a manager denied dashboard.view via override (403)', async () => {
+    const response = await getSummary({ request: authedRequest('https://x/api/dashboard/summary', deniedManagerToken), env });
     expect(response.status).toBe(403);
   });
 });

@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const VALID_SOURCES = ['gio_combo', 'mon_an_uong'];
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
 
   const session = await env.DB.prepare(`SELECT id, status FROM gio_xanh_sessions WHERE id = ?`).bind(params.id).first();

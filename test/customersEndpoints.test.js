@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listCustomers } from '../functions/api/customers/index.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken;
 let observerToken;
+let deniedReceptionToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -16,6 +18,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 2);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'le_tan_bi_chan', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  deniedReceptionToken = await createSession(env.DB, 3);
+  await setOverride(env.DB, 3, 'guests.contact_view', 'deny');
 
   await env.DB.prepare(
     `INSERT INTO feedback_responses (id, submitted_at, guest_name, phone, email, wants_telegram, telegram_chat_id, rating, consent_given, promo_code, discount_percent, promo_expires_at, promo_status, gift_offered, gift_claimed)
@@ -88,34 +94,31 @@ describe('GET /api/customers', () => {
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(2);
   });
+
+  it('rejects observer (403)', async () => {
+    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers', observerToken), env });
+    expect(response.status).toBe(403);
+  });
 });
 
-describe('GET /api/customers as observer', () => {
-  it('redacts phone and email but keeps every other field', async () => {
-    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers', observerToken), env });
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.results.length).toBeGreaterThan(0);
-    body.results.forEach((r) => {
-      expect(r.phone).toBeNull();
-      expect(r.email).toBeNull();
-      expect(r.guestName).not.toBeNull();
-    });
-  });
-
-  it('does not let an observer digit-probe by searching on phone', async () => {
-    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=0900000003', observerToken), env });
+describe('GET /api/customers as reception denied guests.contact_view', () => {
+  it('redacts phone and email, and does not let digit-probing by phone match', async () => {
+    const response = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=0900000003', deniedReceptionToken), env });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.results).toEqual([]);
   });
 
-  it('still lets an observer search by guest name and promo code', async () => {
-    const nameResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=Tr%E1%BA%A7n', observerToken), env });
+  it('still matches by guest name and promo code, with phone/email redacted', async () => {
+    const nameResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=Tr%E1%BA%A7n', deniedReceptionToken), env });
     const nameBody = await nameResponse.json();
     expect(nameBody.results.map((r) => r.feedbackId)).toEqual(['fb-2']);
+    nameBody.results.forEach((r) => {
+      expect(r.phone).toBeNull();
+      expect(r.email).toBeNull();
+    });
 
-    const promoResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=HLG-AAAA', observerToken), env });
+    const promoResponse = await listCustomers({ request: authedRequestAs('https://x/api/customers?search=HLG-AAAA', deniedReceptionToken), env });
     const promoBody = await promoResponse.json();
     expect(promoBody.results.map((r) => r.feedbackId)).toEqual(['fb-1']);
   });

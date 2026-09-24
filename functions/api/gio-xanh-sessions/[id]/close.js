@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const VALID_PAYMENT_METHODS = ['cash', 'transfer'];
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
 
   const session = await env.DB.prepare(

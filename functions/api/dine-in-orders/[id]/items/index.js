@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'dine_in.manage');
   if (auth instanceof Response) return auth;
 
   const order = await env.DB.prepare(`SELECT id, status FROM dine_in_orders WHERE id = ?`).bind(params.id).first();

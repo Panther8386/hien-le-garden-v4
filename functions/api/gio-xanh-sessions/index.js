@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -7,13 +8,13 @@ function jsonError(message, status) {
 const VALID_STATUSES = ['open', 'closed', 'voided'];
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, 'gio_xanh.view');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
   const status = url.searchParams.get('status') || 'open';
   if (!VALID_STATUSES.includes(status)) return jsonError('Trạng thái không hợp lệ', 400);
-  const includeHidden = url.searchParams.get('includeHidden') === '1' && auth.role === 'admin';
+  const includeHidden = url.searchParams.get('includeHidden') === '1' && hasPermission(auth, 'records.hide');
 
   const { results } = await env.DB.prepare(
     `SELECT s.id, s.room_id AS roomId, r.name AS roomName, s.guest_name AS guestName, s.phone, s.status,
@@ -27,7 +28,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
 
   let body;
