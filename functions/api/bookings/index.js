@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
 import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
 
@@ -84,14 +85,14 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, 'bookings.view');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
   const status = url.searchParams.get('status');
   const date = url.searchParams.get('date');
   const view = url.searchParams.get('view');
-  const includeHidden = url.searchParams.get('includeHidden') === '1' && auth.role === 'admin';
+  const includeHidden = url.searchParams.get('includeHidden') === '1' && hasPermission(auth, 'records.hide');
 
   const conditions = [];
   const params = [];
@@ -127,7 +128,7 @@ export async function onRequestGet({ request, env }) {
 
   results.forEach((r) => { r.isHidden = !!r.isHidden; });
 
-  if (auth.role === 'observer') {
+  if (!hasPermission(auth, 'guests.contact_view')) {
     results.forEach((r) => {
       r.phone = null;
       r.email = null;

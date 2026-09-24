@@ -9,7 +9,7 @@ function isValidPrice(value) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.rooms');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT price_weekday, price_weekend FROM rooms WHERE id = ?`).bind(params.id).first();

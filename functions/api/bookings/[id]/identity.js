@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
 
   const booking = await env.DB.prepare(`SELECT id, guest_name, id_number, nationality FROM bookings WHERE id = ?`).bind(params.id).first();

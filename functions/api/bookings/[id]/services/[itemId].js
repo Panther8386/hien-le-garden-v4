@@ -1,11 +1,12 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
 
   const item = await env.DB.prepare(
@@ -19,7 +20,7 @@ export async function onRequestPatch({ request, env, params }) {
   if (item.status === 'voided') {
     return jsonError('Dòng dịch vụ này đã được huỷ trước đó', 400);
   }
-  if (item.payment_status === 'paid' && auth.role !== 'admin') {
+  if (item.payment_status === 'paid' && !hasPermission(auth, 'bookings.edit_paid_service')) {
     return jsonError('Chỉ Admin mới có quyền huỷ dịch vụ đã thanh toán', 403);
   }
 

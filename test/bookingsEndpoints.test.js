@@ -808,3 +808,36 @@ describe('PATCH /api/bookings/:id/hide', () => {
     expect(row.is_hidden).toBe(0);
   });
 });
+
+const HIDDEN_BOOKING_SQL = `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`;
+
+describe('booking permissions via overrides', () => {
+  it('lets a reception user granted records.hide list hidden bookings', async () => {
+    const booking = await env.DB.prepare(HIDDEN_BOOKING_SQL).run();
+    await setOverride(env.DB, 3, 'records.hide');
+    const res = await listBookings({ request: authedRequest('https://x/api/bookings?status=cancelled&includeHidden=1', receptionToken), env });
+    const body = await res.json();
+    expect(body.find((b) => b.id === booking.meta.last_row_id)).toBeTruthy();
+  });
+
+  it('lets a reception user granted records.hide hide a booking', async () => {
+    const booking = await env.DB.prepare(HIDDEN_BOOKING_SQL).run();
+    await setOverride(env.DB, 3, 'records.hide');
+    const res = await hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${booking.meta.last_row_id}/hide`, receptionToken, { hidden: false }), env, params: { id: String(booking.meta.last_row_id) } });
+    expect(res.status).toBe(200);
+  });
+
+  it('redacts contact details for a manager denied guests.contact_view', async () => {
+    await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách', '0900000002', 'k@example.com', 'circle', '2099-01-01', '2099-01-02', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run();
+    await setOverride(env.DB, 1, 'guests.contact_view', 'deny');
+    const body = await (await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env })).json();
+    expect(body.length).toBeGreaterThan(0);
+    body.forEach((b) => { expect(b.phone).toBeNull(); expect(b.email).toBeNull(); });
+  });
+
+  it('403s listing for a manager denied bookings.view', async () => {
+    await setOverride(env.DB, 1, 'bookings.view', 'deny');
+    const res = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
+    expect(res.status).toBe(403);
+  });
+});

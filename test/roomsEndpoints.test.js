@@ -86,6 +86,12 @@ describe('GET /api/rooms', () => {
     expect(response.status).toBe(200);
   });
 
+  it('403s for a manager denied bookings.view', async () => {
+    await setOverride(env.DB, 1, 'bookings.view', 'deny');
+    const response = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
+    expect(response.status).toBe(403);
+  });
+
   it('returns the date-scoped 5-state model when ?date= is passed', async () => {
     const rooms = await env.DB.prepare(`SELECT id, room_type FROM rooms WHERE is_active = 1 ORDER BY id`).all().then((r) => r.results);
     const [emptyRoom, bookedRoom, depositedRoom, occupiedRoom, usedRoom] = rooms;

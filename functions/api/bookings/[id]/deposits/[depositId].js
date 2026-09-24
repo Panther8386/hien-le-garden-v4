@@ -5,11 +5,8 @@ function jsonError(message, status) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, null);
+  const auth = await requireAuth(request, env, 'bookings.deposit_delete');
   if (auth instanceof Response) return auth;
-  if (!auth.canDeleteDeposit || auth.role === 'observer') {
-    return jsonError('Tài khoản không có quyền xoá cọc', 403);
-  }
 
   const deposit = await env.DB.prepare(
     `SELECT id, booking_id, amount, finance_transaction_id, voided_at FROM booking_deposits WHERE id = ?`

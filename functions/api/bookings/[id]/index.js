@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
 
   const row = await env.DB.prepare(

@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'records.hide');
   if (auth instanceof Response) return auth;
 
   const booking = await env.DB.prepare(`SELECT id, status, is_hidden, guest_name FROM bookings WHERE id = ?`).bind(params.id).first();
