@@ -1,5 +1,6 @@
 // v4/admin/asset-inventory.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let locations = [];
 
 let batchesAll = [];
@@ -32,10 +33,10 @@ function showPageError(message) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin' || currentRole === 'manager') {
+  if (can('assets.manage')) {
     document.getElementById('openCreateBatchBtn').classList.remove('hidden');
   }
 
@@ -276,16 +277,16 @@ document.getElementById('createBatchForm').addEventListener('submit', async (eve
   await openBatchDetail(id);
 });
 
-function canTransition(status, role) {
-  if (status === 'draft') return role === 'admin' || role === 'manager';
-  if (status === 'counting') return role === 'admin' || role === 'manager' || role === 'reception';
-  if (status === 'pending_close') return role === 'admin' || role === 'manager';
+function canTransition(status) {
+  if (status === 'draft') return can('assets.manage');
+  if (status === 'counting') return can('assets.count');
+  if (status === 'pending_close') return can('assets.manage');
   return false;
 }
 
-function canWriteLine(status, role) {
-  if (status === 'counting') return role === 'admin' || role === 'manager' || role === 'reception';
-  if (status === 'pending_close') return role === 'admin' || role === 'manager';
+function canWriteLine(status) {
+  if (status === 'counting') return can('assets.count');
+  if (status === 'pending_close') return can('assets.manage');
   return false;
 }
 
@@ -315,7 +316,7 @@ function renderBatchDetail() {
   const actions = document.getElementById('batchDetailActions');
   actions.innerHTML = '';
 
-  if (canTransition(b.status, currentRole)) {
+  if (canTransition(b.status)) {
     const info = NEXT_STATUS_LABEL[b.status];
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -324,7 +325,7 @@ function renderBatchDetail() {
     actions.appendChild(btn);
   }
 
-  if (b.status !== 'closed' && (currentRole === 'admin' || currentRole === 'manager')) {
+  if (b.status !== 'closed' && can('assets.manage')) {
     const refreshBtn = document.createElement('button');
     refreshBtn.type = 'button';
     refreshBtn.className = 'btn-secondary';
@@ -335,7 +336,7 @@ function renderBatchDetail() {
 
   const tbody = document.querySelector('#batchLinesTable tbody');
   tbody.innerHTML = '';
-  const writable = canWriteLine(b.status, currentRole);
+  const writable = canWriteLine(b.status);
   b.lines.forEach((line) => {
     const tr = document.createElement('tr');
 

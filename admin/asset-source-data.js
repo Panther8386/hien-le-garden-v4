@@ -1,5 +1,6 @@
 // v4/admin/asset-source-data.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let categories = [];
 let locations = [];
 let reconcilingRowId = null;
@@ -18,10 +19,10 @@ const INDIVIDUAL_MANAGEMENT_TYPES = ['individual_device', 'device_set'];
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin' || currentRole === 'manager') {
+  if (can('assets.manage')) {
     await loadCategoriesAndLocations();
   }
 
@@ -146,7 +147,7 @@ function renderRows(rows) {
     tr.appendChild(reconciledTd);
 
     const actionTd = document.createElement('td');
-    if (currentRole === 'admin' || currentRole === 'manager') {
+    if (can('assets.manage')) {
       const reconcileBtn = document.createElement('button');
       reconcileBtn.type = 'button';
       reconcileBtn.className = 'table-actions-btn';

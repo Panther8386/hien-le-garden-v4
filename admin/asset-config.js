@@ -1,5 +1,6 @@
 // v4/admin/asset-config.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let categories = [];
 let locations = [];
 let currentLocationType = 'room';
@@ -43,10 +44,10 @@ function populateManagementTypeSelect(select) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin') {
+  if (can('assets.config')) {
     document.getElementById('openAddCategoryBtn').classList.remove('hidden');
     document.getElementById('openAddLocationBtn').classList.remove('hidden');
   }
@@ -122,7 +123,7 @@ function renderCategories() {
         noteP.textContent = c.note;
         card.appendChild(noteP);
       }
-      if (currentRole === 'admin') {
+      if (can('assets.config')) {
         const actions = document.createElement('div');
         actions.className = 'booking-actions';
         const editBtn = document.createElement('button');
@@ -293,7 +294,7 @@ function renderLocations() {
       noteP.textContent = l.note;
       card.appendChild(noteP);
     }
-    if (currentRole === 'admin') {
+    if (can('assets.config')) {
       const actions = document.createElement('div');
       actions.className = 'booking-actions';
       const editBtn = document.createElement('button');

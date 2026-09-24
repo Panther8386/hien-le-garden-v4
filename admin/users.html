@@ -7,40 +7,69 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Quản lý user — Hiền Lê Garden CRM</title>
+  <title>Phân quyền — Hiền Lê Garden CRM</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/admin/admin.css" />
+  <link rel="stylesheet" href="/admin/users.css" />
 </head>
-<body>
-  <div class="page">
-    <h1>Quản lý user</h1>
-
-    <h2>Tạo tài khoản mới</h2>
-    <form id="userForm">
-      <label>Tên đăng nhập <input type="text" name="username" required /></label>
-      <label>Mật khẩu ban đầu <input type="password" name="password" minlength="8" required /></label>
-      <label>Vai trò
-        <select name="role">
-          <option value="reception">Lễ tân</option>
-          <option value="manager">Quản lý</option>
-          <option value="admin">Quản trị</option>
-          <option value="observer">Người quan sát</option>
-        </select>
-      </label>
-      <button type="submit">Tạo tài khoản</button>
-      <p id="formError" class="error"></p>
-    </form>
-
-    <h2>Danh sách tài khoản</h2>
-    <p id="listError" class="error"></p>
-    <div class="table-scroll">
-      <table id="userTable">
-        <thead><tr><th>Tên đăng nhập</th><th>Vai trò</th><th>Bố cục phòng</th><th>Thêm giao dịch</th><th id="deleteAssetColumnHeader">Xoá tài sản</th><th id="deleteDepositColumnHeader">Xoá cọc</th><th>2FA</th><th>Ngày tạo</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
+<body class="pq-body">
+  <main class="pq">
+    <div class="pq-head">
+      <h1>Phân quyền</h1>
+      <button type="button" id="openCreateBtn" class="pq-btn" aria-expanded="false" aria-controls="createPanel">+ Tạo tài khoản</button>
     </div>
-  </div>
+
+    <section id="createPanel" class="pq-card pq-create hidden" aria-labelledby="createTitle">
+      <h2 id="createTitle">Tạo tài khoản</h2>
+      <form id="userForm" novalidate>
+        <div class="pq-form-row">
+          <label>Tên đăng nhập <input type="text" name="username" autocomplete="off" required /></label>
+          <label>Mật khẩu ban đầu <input type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Tối thiểu 8 ký tự" required /></label>
+          <label>Vai trò <select name="role" id="createRole"></select></label>
+        </div>
+        <div class="pq-actions">
+          <button type="submit" class="pq-btn">Tạo tài khoản</button>
+          <button type="button" id="cancelCreateBtn" class="pq-btn pq-btn-secondary">Huỷ</button>
+        </div>
+        <p id="formError" class="pq-error" role="alert"></p>
+      </form>
+    </section>
+
+    <div class="pq-tabs" role="tablist" aria-label="Phân quyền">
+      <button type="button" role="tab" id="tabAccounts" class="pq-tab" aria-selected="true" aria-controls="panelAccounts">Tài khoản</button>
+      <button type="button" role="tab" id="tabRoles" class="pq-tab hidden" aria-selected="false" aria-controls="panelRoles" tabindex="-1">Vai trò <span id="rolesDirtyCount" class="pq-tab-count hidden"></span></button>
+    </div>
+
+    <p id="listError" class="pq-error" role="alert"></p>
+    <p id="notice" class="pq-notice hidden" role="status"></p>
+
+    <section id="panelAccounts" role="tabpanel" aria-labelledby="tabAccounts">
+      <div id="accountsLayout" class="pq-two">
+        <ul id="userList" class="pq-ulist" aria-label="Danh sách tài khoản"></ul>
+        <div id="userDetail" class="pq-card pq-detail">
+          <p class="pq-muted">Chọn một tài khoản để xem và chỉnh quyền.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="panelRoles" role="tabpanel" aria-labelledby="tabRoles" class="hidden">
+      <div class="pq-card">
+        <div class="table-scroll pq-table-scroll">
+          <table id="roleTable" class="pq-matrix">
+            <thead><tr><th scope="col">Quyền</th><th scope="col">Lễ tân</th><th scope="col">Quản lý</th><th scope="col">Quan sát</th><th scope="col">Quản trị</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="pq-hint">Quản trị luôn có toàn quyền (khoá). Thay đổi áp dụng cho mọi user của vai trò, trừ user có chỉnh riêng.</p>
+        <div class="pq-foot">
+          <span id="rolesDirtyText">Không có thay đổi</span>
+          <button type="button" id="saveRolesBtn" class="pq-btn" disabled>Lưu bảng quyền</button>
+        </div>
+        <p id="rolesError" class="pq-error" role="alert"></p>
+      </div>
+    </section>
+  </main>
 
   <script src="/admin/users.js"></script>
   <script src="/admin/nav-drawer.js"></script>

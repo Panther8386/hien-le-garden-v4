@@ -1,5 +1,6 @@
 // v4/admin/dine-in-order-detail.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let currentOrder = null;
 let menuItems = [];
 
@@ -20,8 +21,8 @@ function orderIdFromQuery() {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
   const orderId = orderIdFromQuery();
   if (!orderId) {
@@ -29,7 +30,7 @@ function orderIdFromQuery() {
     return;
   }
 
-  if (currentRole !== 'observer') {
+  if (can('dine_in.manage')) {
     let menuResponse;
     try {
       menuResponse = await fetch('/api/dine-in-menu');
@@ -112,7 +113,7 @@ function render() {
     label.textContent = `${item.name} ×${item.quantity} — ${item.amount.toLocaleString('vi-VN')}đ`;
     line.appendChild(label);
 
-    if (item.status === 'posted' && currentOrder.status === 'open' && currentRole !== 'observer') {
+    if (item.status === 'posted' && currentOrder.status === 'open' && can('dine_in.manage')) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'btn-secondary';
@@ -131,7 +132,7 @@ function render() {
   const closeSection = document.getElementById('closeSection');
   const printBtn = document.getElementById('printBtn');
 
-  if (o.status === 'open' && currentRole !== 'observer') {
+  if (o.status === 'open' && can('dine_in.manage')) {
     addForm.classList.remove('hidden');
     closeSection.classList.remove('hidden');
   } else {

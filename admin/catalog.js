@@ -1,5 +1,6 @@
 // v4/admin/catalog.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let catalogItems = [];
 let activeCategory = 'luu_tru';
 let editingCatalogItem = null;
@@ -11,9 +12,9 @@ const DOW_LABELS = { 0: 'CN', 1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
-  if (currentRole === 'admin') {
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  if (can('settings.catalog')) {
     document.getElementById('addServiceBtn').classList.remove('hidden');
     document.getElementById('experienceSettingsSection').classList.remove('hidden');
     loadExperienceSettings();
@@ -122,7 +123,7 @@ function renderTable() {
     tdNote.textContent = item.note || '';
 
     const tdActions = document.createElement('td');
-    if (currentRole === 'admin') {
+    if (can('settings.catalog')) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.textContent = 'Sửa';
@@ -210,7 +211,7 @@ function openEditForm(item) {
   updateScheduledFields();
 
   const slotSection = document.getElementById('slotTemplatesSection');
-  if (currentRole === 'admin' && item.isScheduled) {
+  if (can('settings.catalog') && item.isScheduled) {
     slotSection.classList.remove('hidden');
     resetSlotTemplateForm();
     loadSlotTemplates(item.id);

@@ -1,10 +1,10 @@
 // v4/admin/assets.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let categories = [];
 let locations = [];
 let editingAssetId = null;
 let editingManagementType = null;
-let canDeleteAsset = false;
 
 const PHYSICAL_CONDITION_LABELS = { chua_danh_gia: 'Chưa đánh giá', tot: 'Tốt', kha: 'Khá', trung_binh: 'Trung bình', can_sua: 'Cần sửa' };
 const OPERATIONAL_STATUS_LABELS = { san_sang: 'Sẵn sàng', dang_su_dung: 'Đang sử dụng', ngung_su_dung: 'Ngừng sử dụng', dang_sua: 'Đang sửa' };
@@ -27,11 +27,10 @@ function showPageError(message) {
     window.location.href = '/admin';
     return;
   }
-  const { role, canDeleteAsset: deleteFlag } = await res.json();
-  currentRole = role;
-  canDeleteAsset = !!deleteFlag;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin' || currentRole === 'manager') {
+  if (can('assets.manage')) {
     document.getElementById('openAddAssetBtn').classList.remove('hidden');
   }
 
@@ -168,8 +167,8 @@ function renderAssetList(assets) {
     line3.textContent = `${a.quantity !== null ? `Số lượng: ${a.quantity}` : 'Số lượng: Chưa xác định'} — ${PHYSICAL_CONDITION_LABELS[a.physicalCondition]} — ${OPERATIONAL_STATUS_LABELS[a.operationalStatus]}`;
     card.appendChild(line3);
 
-    const canEdit = currentRole === 'admin' || currentRole === 'manager';
-    if (canEdit || (canDeleteAsset && currentRole !== 'observer')) {
+    const canEdit = can('assets.manage');
+    if (canEdit || can('assets.delete')) {
       const actions = document.createElement('div');
       actions.className = 'booking-actions';
       if (canEdit) {
@@ -180,7 +179,7 @@ function renderAssetList(assets) {
         editBtn.addEventListener('click', () => openEditAsset(a));
         actions.appendChild(editBtn);
       }
-      if (canDeleteAsset && currentRole !== 'observer') {
+      if (can('assets.delete')) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn-secondary table-actions-btn';

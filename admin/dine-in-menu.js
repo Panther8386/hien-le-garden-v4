@@ -1,5 +1,6 @@
 // v4/admin/dine-in-menu.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let menuItems = [];
 
 (async () => {
@@ -14,10 +15,10 @@ let menuItems = [];
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin') {
+  if (can('settings.dine_in_menu')) {
     document.getElementById('monAnAddForm').classList.remove('hidden');
     document.getElementById('doUongAddForm').classList.remove('hidden');
   }
@@ -86,7 +87,7 @@ function renderTable(category, tbody) {
       headerCell.style.fontWeight = '600';
       headerCell.append(subgroup + ' ');
 
-      if (currentRole === 'admin') {
+      if (can('settings.dine_in_menu')) {
         const upGroupBtn = document.createElement('button');
         upGroupBtn.type = 'button';
         upGroupBtn.className = 'btn-secondary table-actions-btn';
@@ -133,7 +134,7 @@ function renderTable(category, tbody) {
       tdStatus.textContent = m.isActive ? 'Đang bán' : 'Đã ẩn';
 
       const tdActions = document.createElement('td');
-      if (currentRole === 'admin') {
+      if (can('settings.dine_in_menu')) {
         const upBtn = document.createElement('button');
         upBtn.type = 'button';
         upBtn.className = 'btn-secondary table-actions-btn';
