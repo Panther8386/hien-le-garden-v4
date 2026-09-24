@@ -15,6 +15,10 @@ function can(key) { return currentPermissions.includes(key); }
     sendForm.classList.add('hidden');
     sendForm.previousElementSibling.classList.add('hidden');
   }
+  // Render only after permissions are known, so row click handlers
+  // (guests.contact_view) are attached on the first render.
+  loadTemplates();
+  loadCustomers();
 })();
 
 let currentPage = 1;
@@ -197,5 +201,3 @@ document.getElementById('sendForm').addEventListener('submit', async (event) => 
   await showDetail(selectedFeedbackId);
 });
 
-loadTemplates();
-loadCustomers();

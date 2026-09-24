@@ -674,7 +674,9 @@ function renderBookingCard(b) {
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
 
-  if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && can('bookings.manage')) {
+  // Deposit history is shown to anyone who can manage bookings or delete
+  // deposits; the add-deposit form below still needs bookings.manage.
+  if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && (can('bookings.manage') || can('bookings.deposit_delete'))) {
     const depositTotalLine = document.createElement('p');
     const depositTotalStrong = document.createElement('strong');
     depositTotalStrong.textContent = `Cọc: ${formatVnd(b.depositAmount || 0)}`;
@@ -786,7 +788,7 @@ function renderBookingCard(b) {
     });
 
     addDepositForm.append(amountInput, cashLabel, transferLabel, addDepositBtn);
-    card.appendChild(addDepositForm);
+    if (can('bookings.manage')) card.appendChild(addDepositForm);
   }
 
   renderServicesSection(b, card);

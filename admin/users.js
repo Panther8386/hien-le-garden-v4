@@ -172,6 +172,14 @@ function diffCount() {
   return Object.keys(state.draft).length;
 }
 
+// What a role change would discard: saved overrides plus unsaved draft edits.
+function roleChangeLoss() {
+  const saved = (state.detail && state.detail.overrides) || {};
+  const keys = new Set([...Object.keys(saved), ...Object.keys(state.draft)]);
+  const unsaved = [...keys].filter((k) => saved[k] !== state.draft[k]).length;
+  return { total: keys.size, unsaved };
+}
+
 function draftChanged() {
   const a = state.draft;
   const b = (state.detail && state.detail.overrides) || {};
@@ -365,8 +373,8 @@ function onRoleSelect(event) {
     renderDetail();
     return;
   }
-  const overrideCount = Object.keys((state.detail && state.detail.overrides) || {}).length;
-  if (overrideCount > 0) {
+  const loss = roleChangeLoss();
+  if (loss.total > 0 || loss.unsaved > 0) {
     state.pendingRole = role;
     renderDetail();
     const confirmBtn = document.querySelector('#roleConfirm .pq-btn');
@@ -377,9 +385,10 @@ function onRoleSelect(event) {
 }
 
 function renderRoleConfirm(user) {
-  const n = Object.keys((state.detail && state.detail.overrides) || {}).length;
+  const { total, unsaved } = roleChangeLoss();
+  const unsavedNote = unsaved > 0 ? ` (gồm ${unsaved} thay đổi chưa lưu)` : '';
   return el('div', { id: 'roleConfirm', className: 'pq-confirm', role: 'group', 'aria-label': 'Xác nhận đổi vai trò' }, [
-    el('span', { text: `Đổi vai trò sẽ xoá ${n} quyền chỉnh riêng. Tiếp tục?` }),
+    el('span', { text: `Đổi vai trò sẽ xoá ${total} quyền chỉnh riêng${unsavedNote}. Tiếp tục?` }),
     el('span', { className: 'pq-actions' }, [
       el('button', { type: 'button', className: 'pq-btn', onclick: () => changeRole(user, state.pendingRole), text: 'Đổi vai trò' }),
       el('button', { type: 'button', className: 'pq-btn pq-btn-secondary', onclick: () => { state.pendingRole = null; renderDetail(); }, text: 'Giữ nguyên' }),

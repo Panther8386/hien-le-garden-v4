@@ -714,7 +714,7 @@ async function refreshFinanceSummary() {
 }
 
 async function refreshStorageWarning() {
-  if (!can('finance.manage')) return;
+  if (!can('finance.view_all')) return;
   const banner = document.getElementById('financeStorageWarning');
   let response;
   try {
