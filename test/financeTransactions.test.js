@@ -55,7 +55,7 @@ describe('POST /api/finance/transactions', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets a reception account with canAddFinanceTransaction=1 create a transaction', async () => {
+  it('lets a reception account with the finance.create override create a transaction', async () => {
     const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
     await setOverride(env.DB, granted.meta.last_row_id, 'finance.create');
     const grantedToken = await createSession(env.DB, granted.meta.last_row_id);

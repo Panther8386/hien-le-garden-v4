@@ -51,10 +51,10 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false, canAddFinanceTransaction: true, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false, permissions: [...ROLE_DEFAULTS.manager].sort() });
+    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', totpEnabled: false, permissions: [...ROLE_DEFAULTS.manager].sort() });
   });
 
-  it('returns canManageRoomLayout true for an account with the flag set', async () => {
+  it('includes rooms.layout in permissions for an account with the override set', async () => {
     const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username: 'le_tan_b', password: 's3cret-pass' }),
@@ -68,10 +68,12 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'rooms.layout'])].sort() });
+    const body = await response.json();
+    expect(body).toEqual({ username: 'le_tan_b', role: 'reception', totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'rooms.layout'])].sort() });
+    expect(body.permissions).toContain('rooms.layout');
   });
 
-  it('returns canAddFinanceTransaction true for an account with the flag set', async () => {
+  it('includes finance.create in permissions for an account with the override set', async () => {
     const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username: 'le_tan_c', password: 's3cret-pass' }),
@@ -85,6 +87,8 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_c', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: true, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'finance.create'])].sort() });
+    const body = await response.json();
+    expect(body).toEqual({ username: 'le_tan_c', role: 'reception', totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'finance.create'])].sort() });
+    expect(body.permissions).toContain('finance.create');
   });
 });

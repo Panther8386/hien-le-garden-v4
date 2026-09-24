@@ -39,10 +39,10 @@ describe('createSession / getSession', () => {
 
     const token = await createSession(env.DB, 1);
     const session = await getSession(env.DB, token);
-    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', permissions: new Set(ROLE_DEFAULTS.reception), canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false });
+    expect(session).toEqual({ staffId: 1, username: 'le_tan_a', role: 'reception', permissions: new Set(ROLE_DEFAULTS.reception), totpEnabled: false });
   });
 
-  it('resolves canAddFinanceTransaction true for an account with the flag set', async () => {
+  it('resolves finance.create permission true for an account with the override set', async () => {
     await env.DB.prepare(
       `INSERT INTO staff_accounts (id, username, password_hash, role, created_at)
        VALUES (2, 'le_tan_c', 'x', 'reception', '2026-08-01T00:00:00Z')`
@@ -51,7 +51,7 @@ describe('createSession / getSession', () => {
 
     const token = await createSession(env.DB, 2);
     const session = await getSession(env.DB, token);
-    expect(session.canAddFinanceTransaction).toBe(true);
+    expect(session.permissions.has('finance.create')).toBe(true);
   });
 
   it('resolves totpEnabled true for an account with 2FA turned on', async () => {

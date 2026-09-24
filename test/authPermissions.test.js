@@ -27,7 +27,6 @@ describe('getSession permissions', () => {
     expect(s.permissions.has('bookings.manage')).toBe(true);
     expect(s.permissions.has('assets.delete')).toBe(true);
     expect(s.permissions.has('customers.send')).toBe(false);
-    expect(s.canDeleteAsset).toBe(true);
   });
 
   it('gives admin every permission', async () => {
@@ -65,16 +64,17 @@ describe('requireAuth with a permission key', () => {
     expect(r.username).toBe('qs');
   });
 
-  it('still accepts a legacy role array during the migration', async () => {
-    const r = await requireAuth(req(await createSession(env.DB, observerId)), env, ['observer']);
-    expect(r.username).toBe('qs');
+  it('throws on a legacy role array so a missed conversion fails loudly', async () => {
+    await expect(requireAuth(req(await createSession(env.DB, observerId)), env, ['observer'])).rejects.toThrow(TypeError);
   });
 });
 
 describe('GET /api/auth/me', () => {
   it('returns the sorted permission list', async () => {
     const res = await me({ request: req(await createSession(env.DB, observerId)), env });
-    expect((await res.json()).permissions).toEqual(['bookings.view', 'finance.view_income']);
+    const body = await res.json();
+    expect(body.permissions).toEqual(['bookings.view', 'finance.view_income']);
+    expect(body).not.toHaveProperty('canManageRoomLayout');
   });
 });
 

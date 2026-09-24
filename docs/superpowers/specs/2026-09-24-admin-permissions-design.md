@@ -89,9 +89,11 @@ Các API sau chỉ trả dữ liệu cấu hình không nhạy cảm và đượ
 
 - GET `catalog`, `catalog/[id]/slot-availability`, `catalog/[id]/slot-templates`
 - GET `dine-in-menu`, `holidays`, `cancellation-policy`
-- GET `experience-booking-settings`, `reminder-settings`, `availability`
+- GET `experience-booking-settings`, `reminder-settings`
 
 Việc *hiển thị trang* cài đặt tương ứng vẫn yêu cầu `settings.view` (hoặc quyền sửa tương ứng).
+
+GET `availability` vẫn giữ **công khai** (không cần đăng nhập) vì form đặt phòng trên trang chủ công khai gọi API này.
 
 ## 4. Ánh xạ API → quyền
 

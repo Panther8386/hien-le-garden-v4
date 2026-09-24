@@ -57,6 +57,17 @@ wrangler d1 migrations apply hien_le_garden_crm --local
 
 The root Playwright suite (`npm test` from the `hien-le-garden` repo root) covers the survey/admin pages against a static server; it mocks every `/api/*` call via `page.route()`, so it does not exercise the live Functions/D1 — that's what this repo's own Vitest suite is for.
 
+## Phân quyền
+
+Mã quyền (permission keys) là nguồn sự thật cho việc kiểm tra quyền trong `lib/requireAuth.js` — không còn mảng vai trò hard-code. Danh mục mã quyền, nhãn hiển thị và mặc định seed theo vai trò nằm ở `lib/permissions.js` (`PERMISSION_GROUPS`, `ROLE_DEFAULTS`). Lúc chạy, quyền thật của một tài khoản = quyền mặc định của vai trò (bảng `role_permissions`, chỉnh được qua trang Phân quyền, chỉ Quản trị) cộng/trừ override riêng theo tài khoản (bảng `user_permission_overrides`). Quản trị (`admin`) luôn có mọi quyền, không override.
+
+Thêm một quyền mới:
+1. Thêm mã quyền vào nhóm phù hợp trong `PERMISSION_GROUPS` (`lib/permissions.js`).
+2. Thêm mã đó vào migration seed (`migrations/0042_permissions.sql`, hoặc migration mới nếu `0042` đã chạy remote) cho những vai trò cần có quyền này mặc định.
+3. Áp dụng migration cho D1 **remote** trước khi merge nhánh vào `main` — xem "Applying a new migration to production" bên dưới; code đã deploy mà đọc mã quyền chưa được seed sẽ coi như chưa cấp quyền cho ai.
+
+4 cột cờ cũ trên bảng `staff_accounts` (`can_manage_room_layout`, `can_add_finance_transaction`, `can_delete_asset`, `can_delete_deposit`) vẫn còn trong schema nhưng không còn được code đọc — đã chuyển thành override tương ứng (`rooms.layout`, `finance.create`, `assets.delete`, `bookings.deposit_delete`) trong `user_permission_overrides` bởi migration `0042`.
+
 ## Deploy
 
 Automatic: `.github/workflows/deploy.yml` runs `wrangler pages deploy .` on every push to `main`, via `cloudflare/wrangler-action`. Needs two repo secrets (Settings → Secrets and variables → Actions):
