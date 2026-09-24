@@ -1,21 +1,21 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { guardTarget } from '../../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'users.security');
   if (auth instanceof Response) return auth;
 
   const target = await env.DB.prepare(
-    `SELECT id, username, totp_enabled AS totpEnabled FROM staff_accounts WHERE id = ?`
+    `SELECT id, username, role, totp_enabled AS totpEnabled FROM staff_accounts WHERE id = ?`
   )
     .bind(params.id)
     .first();
-  if (!target) {
-    return jsonError('Không tìm thấy tài khoản', 404);
-  }
+  const denied = guardTarget(auth, target, { allowSelf: true });
+  if (denied) return denied;
   if (!target.totpEnabled) {
     return jsonError('Tài khoản này chưa bật 2FA', 400);
   }

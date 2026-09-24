@@ -29,6 +29,10 @@ const ACTION_TYPE_LABELS = {
   asset_delete: 'Xoá tài sản',
   asset_inventory_adjustment: 'Điều chỉnh số lượng qua kiểm kê',
   deposit_delete: 'Xoá cọc',
+  role_permissions_change: 'Sửa bảng quyền vai trò',
+  user_permissions_change: 'Sửa quyền riêng của tài khoản',
+  account_lock: 'Khoá tài khoản',
+  account_unlock: 'Mở khoá tài khoản',
 };
 
 const RECORD_HIDE_ENTITY_LABELS = {

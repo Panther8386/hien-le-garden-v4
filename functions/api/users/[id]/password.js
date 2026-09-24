@@ -1,12 +1,13 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { hashPassword } from '../../../../lib/auth.js';
+import { guardTarget } from '../../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'users.security');
   if (auth instanceof Response) return auth;
 
   if (String(params.id) === String(auth.staffId)) {
@@ -25,10 +26,9 @@ export async function onRequestPatch({ request, env, params }) {
     return jsonError('Mật khẩu phải có ít nhất 8 ký tự', 400);
   }
 
-  const target = await env.DB.prepare(`SELECT id, username FROM staff_accounts WHERE id = ?`).bind(params.id).first();
-  if (!target) {
-    return jsonError('Không tìm thấy tài khoản', 404);
-  }
+  const target = await env.DB.prepare(`SELECT id, username, role FROM staff_accounts WHERE id = ?`).bind(params.id).first();
+  const denied = guardTarget(auth, target, { allowSelf: true });
+  if (denied) return denied;
 
   const passwordHash = await hashPassword(password);
   const now = new Date().toISOString();

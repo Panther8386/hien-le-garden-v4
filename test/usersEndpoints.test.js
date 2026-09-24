@@ -6,6 +6,7 @@ import { createSession, verifyPassword } from '../lib/auth.js';
 let managerToken, receptionToken, adminToken;
 
 beforeEach(async () => {
+  await env.DB.exec('DELETE FROM user_permission_overrides');
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
 
@@ -29,6 +30,27 @@ describe('GET /api/users', () => {
     expect(body).toHaveLength(3);
     expect(body[0]).not.toHaveProperty('passwordHash');
     expect(body[0]).not.toHaveProperty('password_hash');
+  });
+
+  it('returns lockedAt, overrideCount and a boolean totpEnabled, without the old flag fields', async () => {
+    await env.DB.prepare(`INSERT INTO user_permission_overrides (staff_id, permission, effect) VALUES (2, 'assets.delete', 'grant'), (2, 'customers.send', 'deny')`).run();
+    await env.DB.prepare(`UPDATE staff_accounts SET locked_at = '2026-09-24T00:00:00Z', locked_by = 'quan_ly_a', totp_enabled = 1 WHERE id = 2`).run();
+    const response = await listUsers({ request: authedRequest('https://x/api/users', managerToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const reception = body.find((u) => u.username === 'le_tan_a');
+    const manager = body.find((u) => u.username === 'quan_ly_a');
+    expect(reception.lockedAt).toBe('2026-09-24T00:00:00Z');
+    expect(reception.overrideCount).toBe(2);
+    expect(reception.totpEnabled).toBe(true);
+    expect(manager.lockedAt).toBeNull();
+    expect(manager.overrideCount).toBe(0);
+    expect(manager.totpEnabled).toBe(false);
+    expect(reception.role).toBe('reception');
+    expect(reception.createdAt).toBe('2026-08-01T00:00:00Z');
+    for (const flag of ['canManageRoomLayout', 'canAddFinanceTransaction', 'canDeleteAsset', 'canDeleteDeposit']) {
+      expect(reception).not.toHaveProperty(flag);
+    }
   });
 
   it('rejects a reception account (403)', async () => {
@@ -70,6 +92,17 @@ describe('POST /api/users', () => {
     });
     const response = await createUser({ request, env });
     expect(response.status).toBe(201);
+  });
+
+  it('rejects a manager creating an admin account (403)', async () => {
+    const request = authedRequest('https://x/api/users', managerToken, 'POST', {
+      username: 'sneaky_admin', password: 'password123', role: 'admin',
+    });
+    const response = await createUser({ request, env });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Chỉ quản trị mới được gán vai trò quản trị');
+    const row = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'sneaky_admin'`).first();
+    expect(row).toBeNull();
   });
 
   it('rejects a duplicate username (409)', async () => {

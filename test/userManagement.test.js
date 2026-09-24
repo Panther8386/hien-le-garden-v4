@@ -2,10 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
-import { onRequestPatch as setRoomLayoutAccess } from '../functions/api/users/[id]/room-layout-access.js';
-import { onRequestPatch as setFinanceTransactionAccess } from '../functions/api/users/[id]/finance-transaction-access.js';
-import { onRequestPatch as assetDeleteAccess } from '../functions/api/users/[id]/asset-delete-access.js';
-import { onRequestPatch as depositDeleteAccess } from '../functions/api/users/[id]/deposit-delete-access.js';
 import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
 import { createSession, verifyPassword } from '../lib/auth.js';
 
@@ -54,6 +50,23 @@ describe('DELETE /api/users/:id', () => {
 
     const managerCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM staff_accounts WHERE role = 'manager'`).first();
     expect(managerCount.n).toBe(1);
+  });
+
+  it('rejects the only active admin deleting themselves (400)', async () => {
+    const response = await deleteUser({ request: authedRequest(`https://x/api/users/${adminId}`, adminToken, 'DELETE'), env, params: { id: String(adminId) } });
+    expect(response.status).toBe(400);
+    const row = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE id = ?`).bind(adminId).first();
+    expect(row).not.toBeNull();
+  });
+
+  it('rejects a manager deleting an admin (403)', async () => {
+    const response = await deleteUser({ request: authedRequest(`https://x/api/users/${adminId}`, managerAToken, 'DELETE'), env, params: { id: String(adminId) } });
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const response = await deleteUser({ request: authedRequest('https://x/api/users/999999', managerAToken, 'DELETE'), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
   });
 
   it('rejects a reception account (403)', async () => {
@@ -105,149 +118,34 @@ describe('PATCH /api/users/:id/role', () => {
     expect(response.status).toBe(400);
   });
 
-  it('rejects demoting the last manager (400)', async () => {
+  it('allows demoting the last manager -- the old last-manager rule is replaced by the last-active-admin rule', async () => {
     await deleteUser({ request: authedRequest(`https://x/api/users/${managerBId}`, managerAToken, 'DELETE'), env, params: { id: String(managerBId) } });
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${managerAId}/role`, adminToken, 'PATCH', { role: 'reception' }), env, params: { id: String(managerAId) } });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(managerAId).first();
+    expect(row.role).toBe('reception');
+  });
+
+  it('rejects the only active admin demoting themselves (400)', async () => {
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${adminId}/role`, adminToken, 'PATCH', { role: 'manager' }), env, params: { id: String(adminId) } });
+    expect(response.status).toBe(400);
+    const row = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(adminId).first();
+    expect(row.role).toBe('admin');
+  });
+
+  it('rejects a manager changing their own role (400)', async () => {
     const response = await changeRole({ request: authedRequest(`https://x/api/users/${managerAId}/role`, managerAToken, 'PATCH', { role: 'reception' }), env, params: { id: String(managerAId) } });
     expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for a nonexistent account', async () => {
+    const response = await changeRole({ request: authedRequest('https://x/api/users/999999/role', managerAToken, 'PATCH', { role: 'reception' }), env, params: { id: '999999' } });
+    expect(response.status).toBe(404);
   });
 
   it('rejects a reception account (403)', async () => {
     const response = await changeRole({ request: authedRequest(`https://x/api/users/${managerBId}/role`, receptionToken, 'PATCH', { role: 'reception' }), env, params: { id: String(managerBId) } });
     expect(response.status).toBe(403);
-  });
-});
-
-describe('PATCH /api/users/:id/room-layout-access', () => {
-  it('lets a manager grant the flag', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_manage_room_layout).toBe(1);
-  });
-
-  it('writes an audit_log row with Bật/Tắt values', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-
-    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ?`).bind(receptionId).first();
-    expect(row.entity_type).toBe('staff_account');
-    expect(row.entity_label).toBe('le_tan_a');
-    expect(row.old_value).toBe('Tắt');
-    expect(row.new_value).toBe('Bật');
-    expect(row.actor).toBe('quan_ly_a');
-  });
-
-  it('lets a manager revoke the flag', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = ?`).bind(receptionId).run();
-    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: false });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_manage_room_layout).toBe(0);
-  });
-
-  it('rejects a reception account (403)', async () => {
-    const request = authedRequest(`https://x/api/users/${managerBId}/room-layout-access`, receptionToken, 'PATCH', { canManageRoomLayout: true });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(managerBId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('returns 404 for a nonexistent account', async () => {
-    const request = authedRequest('https://x/api/users/999999/room-layout-access', managerAToken, 'PATCH', { canManageRoomLayout: true });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: '999999' } });
-    expect(response.status).toBe(404);
-  });
-
-  it('rejects a non-boolean value (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: 'yes' });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(400);
-  });
-
-  it('rejects granting the flag to an observer account (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${observerId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: true });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(400);
-    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_manage_room_layout).toBe(0);
-  });
-
-  it('lets a manager revoke the flag on an observer account even though granting is blocked', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = ?`).bind(observerId).run();
-    const request = authedRequest(`https://x/api/users/${observerId}/room-layout-access`, managerAToken, 'PATCH', { canManageRoomLayout: false });
-    const response = await setRoomLayoutAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_manage_room_layout FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_manage_room_layout).toBe(0);
-  });
-});
-
-describe('PATCH /api/users/:id/finance-transaction-access', () => {
-  it('lets a manager grant the flag', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_add_finance_transaction).toBe(1);
-  });
-
-  it('writes an audit_log row with Bật/Tắt values', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-
-    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ?`).bind(receptionId).first();
-    expect(row.entity_type).toBe('staff_account');
-    expect(row.entity_label).toBe('le_tan_a');
-    expect(row.old_value).toBe('Tắt');
-    expect(row.new_value).toBe('Bật');
-    expect(row.actor).toBe('quan_ly_a');
-  });
-
-  it('lets a manager revoke the flag', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_add_finance_transaction = 1 WHERE id = ?`).bind(receptionId).run();
-    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: false });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_add_finance_transaction).toBe(0);
-  });
-
-  it('rejects a reception account (403)', async () => {
-    const request = authedRequest(`https://x/api/users/${managerBId}/finance-transaction-access`, receptionToken, 'PATCH', { canAddFinanceTransaction: true });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(managerBId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('returns 404 for a nonexistent account', async () => {
-    const request = authedRequest('https://x/api/users/999999/finance-transaction-access', managerAToken, 'PATCH', { canAddFinanceTransaction: true });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: '999999' } });
-    expect(response.status).toBe(404);
-  });
-
-  it('rejects a non-boolean value (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: 'yes' });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(400);
-  });
-
-  it('rejects granting the flag to an observer account (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${observerId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: true });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(400);
-    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_add_finance_transaction).toBe(0);
-  });
-
-  it('lets a manager revoke the flag on an observer account even though granting is blocked', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_add_finance_transaction = 1 WHERE id = ?`).bind(observerId).run();
-    const request = authedRequest(`https://x/api/users/${observerId}/finance-transaction-access`, managerAToken, 'PATCH', { canAddFinanceTransaction: false });
-    const response = await setFinanceTransactionAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_add_finance_transaction FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_add_finance_transaction).toBe(0);
   });
 });
 
@@ -304,126 +202,3 @@ describe('PATCH /api/users/:id/password', () => {
   });
 });
 
-describe('PATCH /api/users/:id/asset-delete-access', () => {
-  it('lets admin grant the permission', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_delete_asset).toBe(1);
-  });
-
-  it('lets admin revoke the permission', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_asset = 1 WHERE id = ?`).bind(receptionId).run();
-    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: false });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_delete_asset).toBe(0);
-  });
-
-  it('rejects a manager (403) -- unlike room-layout/finance-transaction access, only admin grants this one', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, managerAToken, 'PATCH', { canDeleteAsset: true });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('rejects a reception account (403)', async () => {
-    const request = authedRequest(`https://x/api/users/${managerBId}/asset-delete-access`, receptionToken, 'PATCH', { canDeleteAsset: true });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(managerBId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('rejects granting to an observer target (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${observerId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(400);
-    const row = await env.DB.prepare(`SELECT can_delete_asset FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_delete_asset).toBe(0);
-  });
-
-  it('rejects a non-boolean value (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: 'yes' });
-    const response = await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(400);
-  });
-
-  it('returns 404 for a nonexistent account', async () => {
-    const request = authedRequest('https://x/api/users/999999/asset-delete-access', adminToken, 'PATCH', { canDeleteAsset: true });
-    const response = await assetDeleteAccess({ request, env, params: { id: '999999' } });
-    expect(response.status).toBe(404);
-  });
-
-  it('writes an account_permission_change audit_log row', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/asset-delete-access`, adminToken, 'PATCH', { canDeleteAsset: true });
-    await assetDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ? ORDER BY id DESC LIMIT 1`).bind(receptionId).first();
-    expect(row.entity_type).toBe('staff_account');
-    expect(row.entity_label).toBe('le_tan_a');
-    expect(row.old_value).toBe('Tắt');
-    expect(row.new_value).toBe('Bật');
-    expect(row.actor).toBe('admin_a');
-  });
-});
-
-describe('PATCH /api/users/:id/deposit-delete-access', () => {
-  it('lets admin grant the permission', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/deposit-delete-access`, adminToken, 'PATCH', { canDeleteDeposit: true });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_delete_deposit FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_delete_deposit).toBe(1);
-  });
-
-  it('lets admin revoke the permission', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(receptionId).run();
-    const request = authedRequest(`https://x/api/users/${receptionId}/deposit-delete-access`, adminToken, 'PATCH', { canDeleteDeposit: false });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(200);
-    const row = await env.DB.prepare(`SELECT can_delete_deposit FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.can_delete_deposit).toBe(0);
-  });
-
-  it('rejects a manager (403) -- only admin grants this one', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/deposit-delete-access`, managerAToken, 'PATCH', { canDeleteDeposit: true });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('rejects a reception account (403)', async () => {
-    const request = authedRequest(`https://x/api/users/${managerBId}/deposit-delete-access`, receptionToken, 'PATCH', { canDeleteDeposit: true });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(managerBId) } });
-    expect(response.status).toBe(403);
-  });
-
-  it('rejects granting to an observer target (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${observerId}/deposit-delete-access`, adminToken, 'PATCH', { canDeleteDeposit: true });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(observerId) } });
-    expect(response.status).toBe(400);
-    const row = await env.DB.prepare(`SELECT can_delete_deposit FROM staff_accounts WHERE id = ?`).bind(observerId).first();
-    expect(row.can_delete_deposit).toBe(0);
-  });
-
-  it('rejects a non-boolean value (400)', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/deposit-delete-access`, adminToken, 'PATCH', { canDeleteDeposit: 'yes' });
-    const response = await depositDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    expect(response.status).toBe(400);
-  });
-
-  it('returns 404 for a nonexistent account', async () => {
-    const request = authedRequest('https://x/api/users/999999/deposit-delete-access', adminToken, 'PATCH', { canDeleteDeposit: true });
-    const response = await depositDeleteAccess({ request, env, params: { id: '999999' } });
-    expect(response.status).toBe(404);
-  });
-
-  it('writes an account_permission_change audit_log row', async () => {
-    const request = authedRequest(`https://x/api/users/${receptionId}/deposit-delete-access`, adminToken, 'PATCH', { canDeleteDeposit: true });
-    await depositDeleteAccess({ request, env, params: { id: String(receptionId) } });
-    const row = await env.DB.prepare(`SELECT * FROM audit_log WHERE action_type = 'account_permission_change' AND entity_id = ? ORDER BY id DESC LIMIT 1`).bind(receptionId).first();
-    expect(row.entity_type).toBe('staff_account');
-    expect(row.entity_label).toBe('le_tan_a');
-    expect(row.old_value).toBe('Tắt');
-    expect(row.new_value).toBe('Bật');
-    expect(row.actor).toBe('admin_a');
-  });
-});

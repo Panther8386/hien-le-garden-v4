@@ -6,18 +6,21 @@ function jsonError(message, status) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'users.manage');
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
-    `SELECT id, username, role, can_manage_room_layout AS canManageRoomLayout, can_add_finance_transaction AS canAddFinanceTransaction, can_delete_asset AS canDeleteAsset, can_delete_deposit AS canDeleteDeposit, totp_enabled AS totpEnabled, created_at AS createdAt FROM staff_accounts ORDER BY username`
+    `SELECT id, username, role, totp_enabled AS totpEnabled, locked_at AS lockedAt, created_at AS createdAt,
+            (SELECT COUNT(*) FROM user_permission_overrides o WHERE o.staff_id = staff_accounts.id) AS overrideCount
+     FROM staff_accounts ORDER BY username`
   ).all();
 
-  return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const users = results.map((u) => ({ ...u, totpEnabled: !!u.totpEnabled }));
+  return new Response(JSON.stringify(users), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'users.manage');
   if (auth instanceof Response) return auth;
 
   let body;
@@ -33,6 +36,9 @@ export async function onRequestPost({ request, env }) {
   }
   if (!['manager', 'reception', 'admin', 'observer'].includes(role)) {
     return jsonError('Vai trò phải là manager, reception, admin hoặc observer', 400);
+  }
+  if (role === 'admin' && auth.role !== 'admin') {
+    return jsonError('Chỉ quản trị mới được gán vai trò quản trị', 403);
   }
   if (typeof password !== 'string' || password.length < 8) {
     return jsonError('Mật khẩu phải có ít nhất 8 ký tự', 400);
