@@ -106,6 +106,11 @@ describe('GET /api/asset-inventory-batches', () => {
     expect(body[0].locationId).toBe(locationId);
     expect(body[0].status).toBe('draft');
   });
+
+  it('rejects observer (403)', async () => {
+    const response = await listBatches({ request: authedRequest('https://x/api/asset-inventory-batches', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
 });
 
 describe('GET /api/asset-inventory-batches/:id', () => {
@@ -127,6 +132,14 @@ describe('GET /api/asset-inventory-batches/:id', () => {
   it('404s for a nonexistent batch', async () => {
     const response = await getBatch({ request: authedRequest('https://x/api/asset-inventory-batches/999999', adminToken, 'GET'), env, params: { id: '999999' } });
     expect(response.status).toBe(404);
+  });
+
+  it('rejects observer (403)', async () => {
+    const created = await createBatch({ request: authedRequest('https://x/api/asset-inventory-batches', adminToken, 'POST', { locationId }), env });
+    const { id } = await created.json();
+
+    const response = await getBatch({ request: authedRequest(`https://x/api/asset-inventory-batches/${id}`, observerToken, 'GET'), env, params: { id: String(id) } });
+    expect(response.status).toBe(403);
   });
 });
 
