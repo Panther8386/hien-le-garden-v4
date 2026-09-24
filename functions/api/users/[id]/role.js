@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
-import { loadTarget, guardTarget, isLastActiveAdmin } from '../../../../lib/staffGuards.js';
+import { loadTarget, guardTarget, isLastActiveAdmin, missingRolePermissions } from '../../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -25,6 +25,13 @@ export async function onRequestPatch({ request, env, params }) {
   }
   if (role === 'admin' && auth.role !== 'admin') {
     return jsonError('Chỉ quản trị mới được gán vai trò quản trị', 403);
+  }
+  if (role === target.role) {
+    // Không đổi gì: giữ override, không ghi nhật ký.
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  if ((await missingRolePermissions(env.DB, auth, role)).length > 0) {
+    return jsonError('Không thể gán vai trò có quyền mà bạn không có', 403);
   }
   if (target.role === 'admin' && role !== 'admin' && await isLastActiveAdmin(env.DB, target.id)) {
     return jsonError('Không thể hạ quyền quản trị cuối cùng', 400);

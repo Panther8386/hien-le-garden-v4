@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hashPassword } from '../../../lib/auth.js';
+import { missingRolePermissions } from '../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -29,6 +30,9 @@ export async function onRequestPost({ request, env }) {
   } catch (err) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return jsonError('Dữ liệu không hợp lệ', 400);
+  }
   const { username, password, role } = body;
 
   if (typeof username !== 'string' || username.trim().length === 0) {
@@ -39,6 +43,9 @@ export async function onRequestPost({ request, env }) {
   }
   if (role === 'admin' && auth.role !== 'admin') {
     return jsonError('Chỉ quản trị mới được gán vai trò quản trị', 403);
+  }
+  if ((await missingRolePermissions(env.DB, auth, role)).length > 0) {
+    return jsonError('Không thể gán vai trò có quyền mà bạn không có', 403);
   }
   if (typeof password !== 'string' || password.length < 8) {
     return jsonError('Mật khẩu phải có ít nhất 8 ký tự', 400);

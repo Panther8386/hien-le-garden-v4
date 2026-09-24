@@ -7,6 +7,7 @@ import { onRequestPost as lockUser } from '../functions/api/users/[id]/lock.js';
 import { onRequestPost as unlockUser } from '../functions/api/users/[id]/unlock.js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
+import { onRequestPost as createUser } from '../functions/api/users/index.js';
 import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
 import { onRequestPatch as adminDisable2fa } from '../functions/api/users/[id]/disable-2fa.js';
 import { createSession, getSession, verifyPassword } from '../lib/auth.js';
@@ -481,5 +482,100 @@ describe('password and disable-2fa', () => {
     expect(row.totp_secret).toBeNull();
     const audit = await auditRow('2fa_admin_disable');
     expect(audit.entity_label).toBe('qt2');
+  });
+});
+
+describe('rule 6: assigning a role needs every permission of that role', () => {
+  const create = (token, body) =>
+    createUser({ request: authedRequest('https://x/api/users', token, 'POST', body), env });
+  const roleOf = async (id) => (await env.DB.prepare('SELECT role FROM staff_accounts WHERE id = ?').bind(id).first()).role;
+
+  it('rejects a manager with a denied manager permission creating a manager account (403)', async () => {
+    await setOverride(env.DB, qlId, 'finance.manage', 'deny');
+    const response = await create(qlToken, { username: 'ql_moi', password: 'password123', role: 'manager' });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
+    const row = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'ql_moi'`).first();
+    expect(row).toBeNull();
+  });
+
+  it('rejects the same manager changing another account to manager (403)', async () => {
+    await setOverride(env.DB, qlId, 'finance.manage', 'deny');
+    const response = await patchRole(qlToken, ltId, 'manager');
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
+    expect(await roleOf(ltId)).toBe('reception');
+    expect(await auditRow('account_role_change')).toBeNull();
+  });
+
+  it('rejects a reception account granted users.manage promoting someone to manager (403)', async () => {
+    await setOverride(env.DB, ltId, 'users.manage', 'grant');
+    const response = await patchRole(ltToken, qsId, 'manager');
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
+    expect(await roleOf(qsId)).toBe('observer');
+  });
+
+  it('still lets a plain manager create a reception account and promote someone to manager', async () => {
+    const created = await create(qlToken, { username: 'lt_moi', password: 'password123', role: 'reception' });
+    expect(created.status).toBe(201);
+    const changed = await patchRole(qlToken, qsId, 'manager');
+    expect(changed.status).toBe(200);
+    expect(await roleOf(qsId)).toBe('manager');
+  });
+
+  it('does not restrict an admin', async () => {
+    const created = await create(qtToken, { username: 'ql_moi', password: 'password123', role: 'manager' });
+    expect(created.status).toBe(201);
+    const changed = await patchRole(qtToken, ltId, 'manager');
+    expect(changed.status).toBe(200);
+    expect(await roleOf(ltId)).toBe('manager');
+  });
+});
+
+describe('rule 3 applies only to newly added grants', () => {
+  it('lets a manager keep an existing grant they lack while adding a deny, but not add a new one', async () => {
+    expect((await putUser(qtToken, ltId, { overrides: { 'assets.delete': 'grant' } })).status).toBe(200);
+
+    const keep = await putUser(qlToken, ltId, { overrides: { 'assets.delete': 'grant', 'customers.send': 'deny' } });
+    expect(keep.status).toBe(200);
+    expect(await overridesOf(ltId)).toEqual([
+      { permission: 'assets.delete', effect: 'grant' },
+      { permission: 'customers.send', effect: 'deny' },
+    ]);
+
+    const addNew = await putUser(qlToken, ltId, { overrides: { 'assets.delete': 'grant', 'customers.send': 'deny', 'users.security': 'grant' } });
+    expect(addNew.status).toBe(403);
+    expect((await addNew.json()).error).toBe('Không thể cấp quyền mà bạn không có: users.security');
+    expect(await overridesOf(ltId)).toEqual([
+      { permission: 'assets.delete', effect: 'grant' },
+      { permission: 'customers.send', effect: 'deny' },
+    ]);
+  });
+
+  it('lets a manager remove an existing grant they lack', async () => {
+    expect((await putUser(qtToken, ltId, { overrides: { 'assets.delete': 'grant' } })).status).toBe(200);
+    const response = await putUser(qlToken, ltId, { overrides: {} });
+    expect(response.status).toBe(200);
+    expect(await overridesOf(ltId)).toEqual([]);
+  });
+});
+
+describe('PATCH /api/users/:id/role to the same role', () => {
+  it('returns ok without clearing overrides or writing an audit row', async () => {
+    await setOverride(env.DB, ltId, 'assets.delete', 'grant');
+    const response = await patchRole(qlToken, ltId, 'reception');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(await overridesOf(ltId)).toEqual([{ permission: 'assets.delete', effect: 'grant' }]);
+    expect(await auditRow('account_role_change')).toBeNull();
+  });
+});
+
+describe('POST /api/users with a null body', () => {
+  it('returns 400 Dữ liệu không hợp lệ', async () => {
+    const response = await createUser({ request: authedRequest('https://x/api/users', qlToken, 'POST', 'null'), env });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('Dữ liệu không hợp lệ');
   });
 });
