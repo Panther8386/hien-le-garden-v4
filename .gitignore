@@ -2,3 +2,8 @@ node_modules/
 .wrangler/
 .wrangler-local-state/
 .superpowers/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.local
