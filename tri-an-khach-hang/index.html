@@ -153,6 +153,8 @@
     }
     button[type="submit"]:active { opacity: 0.88; }
 
+    .turnstile-slot { margin: 0 0 1rem; min-height: 65px; }
+
     .error { color: #ff8a8a; font-size: 0.85rem; min-height: 1.2em; margin-top: 0.75rem; }
 
     #confirmation strong { color: var(--accent-gold); font-family: var(--font-serif); font-size: 1.5rem; }
@@ -236,6 +238,7 @@
           <span>Tôi đồng ý để Hiền Lê Garden sử dụng thông tin này để liên hệ ưu đãi.</span>
         </label>
 
+        <div id="turnstileWidget" class="turnstile-slot"></div>
         <button type="submit">Gửi đánh giá</button>
         <p id="formError" class="error" role="alert"></p>
       </form>
@@ -265,6 +268,39 @@
     const form = document.getElementById('surveyForm');
     const errorEl = document.getElementById('formError');
 
+    // Cloudflare Turnstile (bot protection). The site key comes from
+    // /api/public-config; without it the widget is not shown and the server
+    // rejects the submission (fail closed), which surfaces as the normal error.
+    let turnstileWidgetId = null;
+    let turnstileSiteKey = null;
+    let turnstileApiReady = false;
+    function renderTurnstile() {
+      if (!turnstileApiReady || !turnstileSiteKey || turnstileWidgetId !== null) return;
+      turnstileWidgetId = window.turnstile.render('#turnstileWidget', {
+        sitekey: turnstileSiteKey,
+        theme: 'auto',
+        language: 'vi',
+      });
+    }
+    window.onTurnstileLoad = function () {
+      turnstileApiReady = true;
+      renderTurnstile();
+    };
+    fetch('/api/public-config')
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((config) => {
+        turnstileSiteKey = config.turnstileSiteKey || null;
+        renderTurnstile();
+      })
+      .catch(() => {});
+    function turnstileToken() {
+      if (turnstileWidgetId === null || !window.turnstile) return undefined;
+      return window.turnstile.getResponse(turnstileWidgetId) || undefined;
+    }
+    function resetTurnstile() {
+      if (turnstileWidgetId !== null && window.turnstile) window.turnstile.reset(turnstileWidgetId);
+    }
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       errorEl.textContent = '';
@@ -282,6 +318,7 @@
         stayDate: data.get('stayDate') || undefined,
         wishesNextTime: data.get('wishesNextTime') || undefined,
         favoriteActivities: favoriteActivities.length ? favoriteActivities : undefined,
+        turnstileToken: turnstileToken(),
       };
 
       let response;
@@ -293,12 +330,15 @@
         });
       } catch (err) {
         errorEl.textContent = 'Không thể kết nối đến hệ thống. Vui lòng thử lại sau.';
+        resetTurnstile();
         return;
       }
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         errorEl.textContent = body.error || 'Có lỗi xảy ra, vui lòng thử lại.';
+        // Turnstile tokens are single-use: get a fresh one for the next attempt.
+        resetTurnstile();
         return;
       }
 
@@ -321,6 +361,7 @@
       }
     });
   </script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileLoad" async defer></script>
 
 </body>
 </html>

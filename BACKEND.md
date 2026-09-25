@@ -21,6 +21,7 @@ single Cloudflare Pages deployment.
    - `wrangler pages secret put TELEGRAM_BOT_TOKEN`
    - `wrangler pages secret put TELEGRAM_WEBHOOK_SECRET` — a long random string you generate (e.g. `openssl rand -hex 32`; Telegram allows 1–256 chars of `A-Z a-z 0-9 _ -`). The webhook rejects every request (401) whose `X-Telegram-Bot-Api-Secret-Token` header does not match it, and rejects everything if it is unset (fail closed).
    - `wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` (or set it as a plain environment variable in the Pages project settings) — comma-separated Telegram chat ids allowed to change where new-booking notifications (guest name + phone) are sent, e.g. `-100xxxxxxxxxx,123456789`. Only a chat in this list can run `/start staff_booking_notify`; from any other chat (or if the variable is unset/empty) the command is silently ignored. Changes are recorded in the audit log (`notification_destination_change`).
+   - `wrangler pages secret put TURNSTILE_SECRET_KEY` and a plain environment variable `TURNSTILE_SITE_KEY` — see "Public feedback form: bot protection" below. **Without both, the guest feedback form (`/tri-an-khach-hang/`) rejects every submission (403, fail closed).**
 4. Create the first manager account:
    - `node scripts/seed-manager.js <username> <password>`
    - Run the printed `INSERT` with `wrangler d1 execute hien_le_garden_crm --remote --command "<sql>"`
@@ -33,6 +34,19 @@ single Cloudflare Pages deployment.
 7. Create the Pages project itself with `wrangler pages project create hien-le-garden-v4 --production-branch=main`, then do a first deploy with `wrangler pages deploy .` (see Deploy below for what runs this automatically on every push). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages project → Custom domains).
 
    **Pitfall:** Cloudflare's dashboard "Workers & Pages → Create" flow can create a **Workers** project instead of a **Pages** project even when connecting the same repo — Workers can't run this project (it needs Pages' `functions/`-directory routing and `.assetsignore`-based static asset handling). If the dashboard flow is used and the resulting project's build settings show `Deploy command: npx wrangler deploy` (no "pages"), that's a Workers project — delete it (`wrangler delete --name <name>`, run from a directory with no `wrangler.toml`) and create the Pages project via CLI as above instead.
+
+## Public feedback form: bot protection
+
+`POST /api/feedback` is public and issues a discount voucher, so it is protected by:
+
+1. **Cloudflare Turnstile.** The page (`tri-an-khach-hang/index.html`) reads the public site key from `GET /api/public-config` (`{ turnstileSiteKey }`, no auth, nothing else) and renders the widget; the token is sent as `turnstileToken`. The server (`lib/turnstile.js`) verifies it with siteverify before any DB access or email. Missing secret, missing/invalid/replayed token, or any siteverify error → `403` (fail closed).
+   - Deploy config (Pages project → Settings → Variables and Secrets, Production and Preview):
+     - `TURNSTILE_SITE_KEY` — plain variable (public).
+     - `TURNSTILE_SECRET_KEY` — secret (`wrangler pages secret put TURNSTILE_SECRET_KEY`). Never commit it.
+   - Create the widget in Cloudflare dashboard → Turnstile, with the production hostname(s) (`hienlegarden.vn`, `www.hienlegarden.vn`, and the `*.pages.dev` preview host if previews should accept feedback).
+   - Local dev: put Cloudflare's documented always-pass test keys in `.dev.vars` (site key `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`); never use them in production.
+2. **One active voucher per guest.** A new voucher is not issued while the same phone (digits only, `84…` → `0…`) or the same email (trim + lowercase) already has an `unused`, unexpired voucher — the insert is a single `INSERT … SELECT … WHERE NOT EXISTS (…)` statement, and a duplicate gets `409` without any code. After that voucher is used or expires, the guest can get a new one.
+3. **Rate limiting is not done in code** (it would need a new table or a Workers rate-limit binding). **Recommended:** a Cloudflare WAF rate-limiting rule (Security → WAF → Rate limiting rules) for `POST` requests to `/api/feedback` and `/api/bookings`, e.g. at most 5 requests per 10 minutes per IP, action Block (or Managed Challenge).
 
 ## Local development
 
