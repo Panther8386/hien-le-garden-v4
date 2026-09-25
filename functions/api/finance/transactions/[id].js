@@ -27,6 +27,12 @@ export async function onRequestPatch({ request, env, params }) {
   }
 
   const type = body.type !== undefined ? body.type : existing.type;
+  // The actor must be able to see the row both before and after the edit: changing
+  // the type must not move a row out of the actor's own visibility (e.g. income →
+  // expense without finance.view_all). The source is already visible, so 403 leaks nothing.
+  if (!canSeeTransaction(auth, { ...existing, type })) {
+    return jsonError('Không đủ quyền đổi giao dịch sang loại này', 403);
+  }
   const category = body.category !== undefined ? body.category : existing.category;
   const amount = body.amount !== undefined ? body.amount : existing.amount;
   const note = body.note !== undefined ? body.note : existing.note;

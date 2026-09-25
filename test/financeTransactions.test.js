@@ -733,3 +733,99 @@ describe('finance.manage without finance.view_all only reaches visible income ro
     expect(ok.status).toBe(200);
   });
 });
+
+describe('PATCH type change authorization', () => {
+  async function seed(type) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z')`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu').run();
+    return String(r.meta.last_row_id);
+  }
+  async function patchAs(token, id, body) {
+    return patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, token, 'PATCH', body), env, params: { id } });
+  }
+  async function rowOf(id) {
+    return env.DB.prepare('SELECT type, category, amount FROM finance_transactions WHERE id = ?').bind(id).first();
+  }
+  // FULL = manager as seeded (finance.manage + finance.view_all).
+  // NO_ALL = same manager with finance.view_all denied (keeps finance.manage + finance.view_income).
+  async function denyViewAll() {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+  }
+
+  it('1. income → income (amount change): FULL 200', async () => {
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { amount: 222000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 222000 });
+  });
+
+  it('1. income → income (amount change): NO_ALL 200', async () => {
+    await denyViewAll();
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { amount: 222000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 222000 });
+  });
+
+  it('2. expense → expense: FULL 200', async () => {
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { amount: 333000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 333000 });
+  });
+
+  it('2. expense → expense: NO_ALL 404 (source not visible), row unchanged', async () => {
+    await denyViewAll();
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { amount: 333000 });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('3. income → expense: FULL 200 with a valid expense category', async () => {
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { type: 'expense', category: 'vat_tu' });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('3. income → expense: NO_ALL 403 (destination not visible), row unchanged, no audit', async () => {
+    await denyViewAll();
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { type: 'expense', category: 'vat_tu', amount: 444000 });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('Không đủ quyền đổi giao dịch sang loại này');
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+    const audit = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE entity_id = ?`).bind(id).first();
+    expect(audit.n).toBe(0);
+  });
+
+  it('4. expense → income: FULL 200', async () => {
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { type: 'income', category: 'ban_hang' });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+  });
+
+  it('4. expense → income: NO_ALL 404 (source not visible), row unchanged', async () => {
+    await denyViewAll();
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { type: 'income', category: 'ban_hang' });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('5. reception (no finance.manage) → 403 on any PATCH, rows unchanged', async () => {
+    const incomeId = await seed('income');
+    const expenseId = await seed('expense');
+    for (const [id, body] of [[incomeId, { amount: 555000 }], [incomeId, { type: 'expense', category: 'vat_tu' }], [expenseId, { type: 'income', category: 'ban_hang' }]]) {
+      const res = await patchAs(receptionToken, id, body);
+      expect(res.status).toBe(403);
+    }
+    expect(await rowOf(incomeId)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+    expect(await rowOf(expenseId)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+});
