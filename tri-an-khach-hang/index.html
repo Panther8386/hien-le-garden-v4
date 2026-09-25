@@ -305,6 +305,15 @@
       event.preventDefault();
       errorEl.textContent = '';
 
+      // Don't send without an anti-spam token: the server would reject it anyway.
+      const token = turnstileToken();
+      if (!token) {
+        errorEl.textContent = turnstileWidgetId === null
+          ? 'Chưa tải được bước xác minh chống spam. Vui lòng tải lại trang và thử lại.'
+          : 'Vui lòng hoàn tất bước xác minh chống spam trước khi gửi.';
+        return;
+      }
+
       const data = new FormData(form);
       const favoriteActivities = data.getAll('favoriteActivities');
       const payload = {
@@ -318,7 +327,7 @@
         stayDate: data.get('stayDate') || undefined,
         wishesNextTime: data.get('wishesNextTime') || undefined,
         favoriteActivities: favoriteActivities.length ? favoriteActivities : undefined,
-        turnstileToken: turnstileToken(),
+        turnstileToken: token,
       };
 
       let response;

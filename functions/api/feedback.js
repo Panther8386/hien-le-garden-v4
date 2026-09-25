@@ -17,12 +17,16 @@ const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // so a stored phone always normalizes the same way in JS and in SQL.
 const PHONE_CHARS = /^[0-9 .\-+()]+$/;
 const TURNSTILE_ERROR = 'Xác minh chống spam không thành công. Vui lòng thử lại.';
-const DUPLICATE_VOUCHER_ERROR = 'Bạn đã nhận ưu đãi cho lần góp ý này. Ưu đãi hiện tại vẫn còn hiệu lực.';
+const DUPLICATE_VOUCHER_ERROR =
+  'Bạn đã nhận ưu đãi cho lần góp ý này. Ưu đãi hiện tại vẫn còn hiệu lực. Nếu chưa nhận được mã, vui lòng liên hệ lễ tân.';
 
-// Digits only; Vietnamese international form 84xxxxxxxxx (11 digits) → 0xxxxxxxxx.
+// Digits only; Vietnamese international forms 84xxxxxxxxx (11 digits) and
+// 0084xxxxxxxxx (13 digits) → 0xxxxxxxxx.
 function normalizePhone(phone) {
   const digits = String(phone).replace(/\D/g, '');
-  return digits.length === 11 && digits.startsWith('84') ? `0${digits.slice(2)}` : digits;
+  if (digits.length === 11 && digits.startsWith('84')) return `0${digits.slice(2)}`;
+  if (digits.length === 13 && digits.startsWith('0084')) return `0${digits.slice(4)}`;
+  return digits;
 }
 
 // trim + ASCII lowercase — matches SQLite's lower(trim(email)) exactly.
@@ -32,8 +36,12 @@ function normalizeEmail(email) {
 
 // SQL twin of normalizePhone for the stored column.
 const STRIPPED_PHONE_SQL = `replace(replace(replace(replace(replace(replace(f.phone, ' ', ''), '.', ''), '-', ''), '+', ''), '(', ''), ')', '')`;
-const STORED_PHONE_SQL = `CASE WHEN length(${STRIPPED_PHONE_SQL}) = 11 AND substr(${STRIPPED_PHONE_SQL}, 1, 2) = '84'
-      THEN '0' || substr(${STRIPPED_PHONE_SQL}, 3) ELSE ${STRIPPED_PHONE_SQL} END`;
+const STORED_PHONE_SQL = `CASE
+      WHEN length(${STRIPPED_PHONE_SQL}) = 11 AND substr(${STRIPPED_PHONE_SQL}, 1, 2) = '84'
+        THEN '0' || substr(${STRIPPED_PHONE_SQL}, 3)
+      WHEN length(${STRIPPED_PHONE_SQL}) = 13 AND substr(${STRIPPED_PHONE_SQL}, 1, 4) = '0084'
+        THEN '0' || substr(${STRIPPED_PHONE_SQL}, 5)
+      ELSE ${STRIPPED_PHONE_SQL} END`;
 
 function isAbsent(value) {
   return value === undefined || value === null || value === '';

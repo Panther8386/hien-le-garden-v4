@@ -6,7 +6,8 @@ const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverif
 const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
 const TEST_SECRET = 'test-secret';
 const TEST_TOKEN = 'dummy-turnstile-token';
-const DEDUPE_ERROR = 'Bạn đã nhận ưu đãi cho lần góp ý này. Ưu đãi hiện tại vẫn còn hiệu lực.';
+const DEDUPE_ERROR =
+  'Bạn đã nhận ưu đãi cho lần góp ý này. Ưu đãi hiện tại vẫn còn hiệu lực. Nếu chưa nhận được mã, vui lòng liên hệ lễ tân.';
 const TURNSTILE_ERROR = 'Xác minh chống spam không thành công. Vui lòng thử lại.';
 
 const env = { ...baseEnv, TURNSTILE_SECRET_KEY: TEST_SECRET, BREVO_API_KEY: 'test-key' };
@@ -319,6 +320,23 @@ describe('POST /api/feedback — voucher dedupe', () => {
     await submitFeedback({ request: post(validBody({ phone: '(090) 123-4567', email: 'a@example.com' })), env });
     const second = await submitFeedback({ request: post(validBody({ phone: '84.901.234.567', email: 'b@example.com' })), env });
     expect(second.status).toBe(409);
+    expect(await rowCount()).toBe(1);
+  });
+
+  it('0084 international prefix matches the local 0 form (both directions)', async () => {
+    const first = await submitFeedback({ request: post(validBody({ phone: '0084901234567', email: 'a@example.com' })), env });
+    expect(first.status).toBe(201);
+    const second = await submitFeedback({ request: post(validBody({ phone: '0901234567', email: 'b@example.com' })), env });
+    expect(second.status).toBe(409);
+    const body = await second.json();
+    expect(body).toEqual({ error: DEDUPE_ERROR });
+    expect(await rowCount()).toBe(1);
+
+    await env.DB.exec('DELETE FROM feedback_responses');
+    const third = await submitFeedback({ request: post(validBody({ phone: '090 123 4567', email: 'c@example.com' })), env });
+    expect(third.status).toBe(201);
+    const fourth = await submitFeedback({ request: post(validBody({ phone: '+0084 901 234 567', email: 'd@example.com' })), env });
+    expect(fourth.status).toBe(409);
     expect(await rowCount()).toBe(1);
   });
 

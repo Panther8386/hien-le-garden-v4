@@ -45,7 +45,7 @@ single Cloudflare Pages deployment.
      - `TURNSTILE_SECRET_KEY` — secret (`wrangler pages secret put TURNSTILE_SECRET_KEY`). Never commit it.
    - Create the widget in Cloudflare dashboard → Turnstile, with the production hostname(s) (`hienlegarden.vn`, `www.hienlegarden.vn`, and the `*.pages.dev` preview host if previews should accept feedback).
    - Local dev: put Cloudflare's documented always-pass test keys in `.dev.vars` (site key `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`); never use them in production.
-2. **One active voucher per guest.** A new voucher is not issued while the same phone (digits only, `84…` → `0…`) or the same email (trim + lowercase) already has an `unused`, unexpired voucher — the insert is a single `INSERT … SELECT … WHERE NOT EXISTS (…)` statement, and a duplicate gets `409` without any code. After that voucher is used or expires, the guest can get a new one.
+2. **One active voucher per guest.** A new voucher is not issued while the same phone (digits only, `84…` or `0084…` → `0…`) or the same email (trim + lowercase) already has an `unused`, unexpired voucher — the insert is a single `INSERT … SELECT … WHERE NOT EXISTS (…)` statement, and a duplicate gets `409` without any code. After that voucher is used or expires, the guest can get a new one.
 3. **Rate limiting is not done in code** (it would need a new table or a Workers rate-limit binding). **Recommended:** a Cloudflare WAF rate-limiting rule (Security → WAF → Rate limiting rules) for `POST` requests to `/api/feedback` and `/api/bookings`, e.g. at most 5 requests per 10 minutes per IP, action Block (or Managed Challenge).
 
 ## Local development
