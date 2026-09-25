@@ -19,12 +19,16 @@ single Cloudflare Pages deployment.
 3. Set secrets:
    - `wrangler pages secret put BREVO_API_KEY`
    - `wrangler pages secret put TELEGRAM_BOT_TOKEN`
+   - `wrangler pages secret put TELEGRAM_WEBHOOK_SECRET` — a long random string you generate (e.g. `openssl rand -hex 32`; Telegram allows 1–256 chars of `A-Z a-z 0-9 _ -`). The webhook rejects every request (401) whose `X-Telegram-Bot-Api-Secret-Token` header does not match it, and rejects everything if it is unset (fail closed).
+   - `wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` (or set it as a plain environment variable in the Pages project settings) — comma-separated Telegram chat ids allowed to change where new-booking notifications (guest name + phone) are sent, e.g. `-100xxxxxxxxxx,123456789`. Only a chat in this list can run `/start staff_booking_notify`; from any other chat (or if the variable is unset/empty) the command is silently ignored. Changes are recorded in the audit log (`notification_destination_change`).
 4. Create the first manager account:
    - `node scripts/seed-manager.js <username> <password>`
    - Run the printed `INSERT` with `wrangler d1 execute hien_le_garden_crm --remote --command "<sql>"`
    - Create a reception account the same way, with `reception` as the 3rd argument.
-5. Create the Telegram bot via @BotFather, set its webhook to `https://<your-domain>/api/telegram/webhook`:
-   - `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-domain>/api/telegram/webhook"`
+5. Create the Telegram bot via @BotFather, set its webhook to `https://<your-domain>/api/telegram/webhook` **with the same `secret_token` as `TELEGRAM_WEBHOOK_SECRET`**:
+   - `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-domain>/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET value>"`
+   - **Deploy requirement:** whenever `TELEGRAM_WEBHOOK_SECRET` is first set or rotated, re-run this `setWebhook` call with the matching `secret_token`. A webhook registered without it (or with an old value) gets every update rejected with 401 — guest deep links (`/start <feedbackId>`) and `/start staff_booking_notify` stop working until it is re-registered. Check with `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"` (`last_error_message` shows 401s). Never commit or paste the real values.
+   - To find a chat id for the allowlist: add the bot to the group, send any message, and read `message.chat.id` from `getUpdates` (temporarily `deleteWebhook` first, then re-run `setWebhook` with `secret_token`), or ask an existing admin who knows the id already stored in `notification_settings`.
 6. Verify the sending domain in Brevo so `sender.email` in `lib/email.js` is authorized.
 7. Create the Pages project itself with `wrangler pages project create hien-le-garden-v4 --production-branch=main`, then do a first deploy with `wrangler pages deploy .` (see Deploy below for what runs this automatically on every push). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages project → Custom domains).
 

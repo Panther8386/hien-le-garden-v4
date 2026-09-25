@@ -33,6 +33,7 @@ const ACTION_TYPE_LABELS = {
   user_permissions_change: 'Sửa quyền riêng của tài khoản',
   account_lock: 'Khoá tài khoản',
   account_unlock: 'Mở khoá tài khoản',
+  notification_destination_change: 'Đổi nơi nhận thông báo đặt phòng',
 };
 
 const RECORD_HIDE_ENTITY_LABELS = {
