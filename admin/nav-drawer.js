@@ -1,12 +1,15 @@
 // admin/nav-drawer.js
 // Menu items are gated by permission keys (GET /api/auth/me -> permissions).
 // This is UX only: every API re-checks the same key server-side.
-// `perm` is one key, or an array meaning "any of these keys".
+// `perm` is one key, an array meaning "any of these keys", or
+// `{ all: [...], any: [...] }` meaning every `all` key AND at least one
+// `any` key (either list may be omitted). Use `all` for permissions every
+// on-load API call on the page needs beyond the page's own any-of gate.
 const NAV_GROUPS = [
   {
     label: 'Tài sản & Kho',
     items: [
-      { page: 'asset-config.html', label: 'Danh mục & vị trí', icon: '🗂️', perm: 'assets.view' },
+      { page: 'asset-config.html', label: 'Danh mục & vị trí', icon: '🗂️', perm: { all: ['assets.view', 'bookings.view'] } },
       { page: 'asset-source-data.html', label: 'Hồ sơ nguồn', icon: '📄', perm: 'assets.view' },
       { page: 'assets.html', label: 'Danh mục tài sản', icon: '🏷️', perm: 'assets.view' },
       { page: 'asset-inventory.html', label: 'Kiểm kê tài sản', icon: '📦', perm: 'assets.view' },
@@ -26,7 +29,7 @@ const NAV_GROUPS = [
   {
     label: 'Khách hàng & CRM',
     items: [
-      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', perm: 'customers.view' },
+      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', perm: { all: ['customers.view', 'templates.view'] } },
       { page: 'templates.html', label: 'Kho template', icon: '✉️', perm: 'templates.view' },
     ],
   },
@@ -35,11 +38,11 @@ const NAV_GROUPS = [
     items: [
       { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', perm: 'promo_config.view' },
       { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', perm: ['settings.view', 'settings.catalog'] },
-      { page: 'finance-categories.html', label: 'Danh mục Sổ thu chi', icon: '🏷️', perm: 'settings.finance_categories' },
+      { page: 'finance-categories.html', label: 'Danh mục Sổ thu chi', icon: '🏷️', perm: { all: ['settings.finance_categories', 'finance.view_income'] } },
       { page: 'dine-in-menu.html', label: 'Menu quán', icon: '📋', perm: 'settings.dine_in_menu' },
       { page: 'audit-log.html', label: 'Nhật ký thao tác', icon: '📜', perm: 'audit.view' },
       { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', perm: ['settings.view', 'settings.cancellation_policy'] },
-      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: ['settings.view', 'settings.rooms'] },
+      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: { any: ['settings.view', 'settings.rooms'], all: ['bookings.view'] } },
       { page: 'users.html', label: 'Phân quyền', icon: '🔑', perm: 'users.manage' },
     ],
   },
@@ -59,8 +62,15 @@ const PAGE_EXTRA_PERMS = {
   'gio-xanh-detail.html': 'gio_xanh.view',
 };
 
-// True when `permissions` satisfies `perm` (a key, or an any-of array of keys).
+// True when `permissions` satisfies `perm`: a key, an any-of array of keys,
+// or `{ all, any }` (every `all` key present AND at least one `any` key
+// present; either list may be omitted from the object form).
 function allows(permissions, perm) {
+  if (perm && typeof perm === 'object' && !Array.isArray(perm)) {
+    const allOk = !perm.all || perm.all.every((p) => permissions.includes(p));
+    const anyOk = !perm.any || perm.any.some((p) => permissions.includes(p));
+    return allOk && anyOk;
+  }
   return Array.isArray(perm) ? perm.some((p) => permissions.includes(p)) : permissions.includes(perm);
 }
 
