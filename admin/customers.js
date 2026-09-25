@@ -10,14 +10,17 @@ function can(key) { return currentPermissions.includes(key); }
   }
   const me = await res.json();
   currentPermissions = me.permissions || [];
-  if (!can('customers.send')) {
+  // The send widget needs templates.view's data to populate its dropdown —
+  // without it, keep the form hidden rather than show a broken selector.
+  if (can('customers.send') && can('templates.view')) {
+    loadTemplates();
+  } else {
     const sendForm = document.getElementById('sendForm');
     sendForm.classList.add('hidden');
     sendForm.previousElementSibling.classList.add('hidden');
   }
   // Render only after permissions are known, so row click handlers
   // (guests.contact_view) are attached on the first render.
-  loadTemplates();
   loadCustomers();
 })();
 

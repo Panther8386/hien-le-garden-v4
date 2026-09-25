@@ -29,7 +29,7 @@ const NAV_GROUPS = [
   {
     label: 'Khách hàng & CRM',
     items: [
-      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', perm: { all: ['customers.view', 'templates.view'] } },
+      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', perm: 'customers.view' },
       { page: 'templates.html', label: 'Kho template', icon: '✉️', perm: 'templates.view' },
     ],
   },
