@@ -11,6 +11,8 @@ const ACTION_TYPE_LABELS = {
   finance_transaction_create: 'Tạo giao dịch thu chi',
   finance_transaction_update: 'Sửa giao dịch thu chi',
   finance_transaction_void: 'Huỷ giao dịch thu chi',
+  finance_transaction_attachment_upload: 'Tải lên chứng từ thu chi',
+  finance_transaction_attachment_delete: 'Xoá chứng từ thu chi',
   finance_opening_balance_set: 'Đặt số dư đầu kỳ',
   finance_category_create: 'Tạo danh mục thu chi',
   finance_category_update: 'Sửa danh mục thu chi',
@@ -33,6 +35,9 @@ const ACTION_TYPE_LABELS = {
   user_permissions_change: 'Sửa quyền riêng của tài khoản',
   account_lock: 'Khoá tài khoản',
   account_unlock: 'Mở khoá tài khoản',
+  '2fa_enable': 'Bật 2FA',
+  '2fa_disable': 'Tắt 2FA',
+  '2fa_admin_disable': 'Quản trị tắt 2FA',
   notification_destination_change: 'Đổi nơi nhận thông báo đặt phòng',
 };
 
@@ -53,12 +58,23 @@ function formatValue(actionType, value) {
   return value;
 }
 
+function populateTypeFilter() {
+  const select = document.getElementById('typeFilter');
+  for (const [value, label] of Object.entries(ACTION_TYPE_LABELS)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  }
+}
+
 (async () => {
   const res = await fetch('/api/auth/me');
   if (!res.ok) {
     window.location.href = '/admin';
     return;
   }
+  populateTypeFilter();
   await loadLog();
 })();
 

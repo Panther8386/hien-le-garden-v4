@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { onRequestGet as getAuditLog } from '../functions/api/audit-log/index.js';
+import { onRequestGet as getAuditLog, VALID_ACTION_TYPES } from '../functions/api/audit-log/index.js';
 import { createSession } from '../lib/auth.js';
 
 let managerToken, adminToken, receptionToken, observerToken;
@@ -64,6 +64,91 @@ describe('GET /api/audit-log', () => {
   it('rejects an invalid type value (400)', async () => {
     const response = await getAuditLog({ request: authedRequest('https://x/api/audit-log?type=bogus', managerToken), env });
     expect(response.status).toBe(400);
+  });
+
+  it('accepts each newly whitelisted security/admin action type and filters to only those rows', async () => {
+    const newTypes = [
+      '2fa_admin_disable',
+      '2fa_disable',
+      '2fa_enable',
+      'account_lock',
+      'account_unlock',
+      'finance_transaction_attachment_upload',
+      'finance_transaction_attachment_delete',
+      'notification_destination_change',
+      'role_permissions_change',
+      'user_permissions_change',
+    ];
+
+    let entityId = 100;
+    for (const type of newTypes) {
+      entityId += 1;
+      await env.DB.prepare(
+        `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at) VALUES (?, 'staff_account', ?, 'Nhãn thử', 'cũ', 'mới', 'quan_ly_log', '2026-08-27T09:00:00Z')`
+      ).bind(type, entityId).run();
+    }
+
+    for (const type of newTypes) {
+      const response = await getAuditLog({ request: authedRequest(`https://x/api/audit-log?type=${type}`, managerToken), env });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.length).toBe(1);
+      expect(body[0].actionType).toBe(type);
+    }
+  });
+
+  it('rejects a reception account for the newly whitelisted types (403)', async () => {
+    const response = await getAuditLog({ request: authedRequest('https://x/api/audit-log?type=role_permissions_change', receptionToken), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('keeps every action_type literal written by the handlers inside VALID_ACTION_TYPES', () => {
+    // Explicit list collected by grepping `INSERT INTO audit_log` across functions/ and lib/
+    // (see .superpowers/sdd/2026-09-24-admin-permissions-plan/ops-brief.md). No filesystem
+    // scanning here — the Workers test runtime cannot read the repo tree.
+    const writtenActionTypes = [
+      '2fa_admin_disable',
+      '2fa_disable',
+      '2fa_enable',
+      'account_delete',
+      'account_lock',
+      'account_password_reset',
+      'account_role_change',
+      'account_unlock',
+      'asset_category_create',
+      'asset_category_update',
+      'asset_create',
+      'asset_delete',
+      'asset_inventory_adjustment',
+      'asset_location_create',
+      'asset_location_update',
+      'asset_update',
+      'booking_cancel',
+      'booking_reject',
+      'deposit_delete',
+      'dine_in_menu_item_create',
+      'dine_in_menu_item_update',
+      'dine_in_order_void',
+      'finance_category_create',
+      'finance_category_update',
+      'finance_opening_balance_set',
+      'finance_transaction_attachment_delete',
+      'finance_transaction_attachment_upload',
+      'finance_transaction_create',
+      'finance_transaction_update',
+      'finance_transaction_void',
+      'gio_xanh_session_void',
+      'guest_identity_update',
+      'notification_destination_change',
+      'record_hide',
+      'role_permissions_change',
+      'service_void',
+      'user_permissions_change',
+    ];
+
+    for (const type of writtenActionTypes) {
+      expect(VALID_ACTION_TYPES).toContain(type);
+    }
   });
 
   it('lets an admin view the log', async () => {
