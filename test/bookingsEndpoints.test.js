@@ -858,3 +858,37 @@ describe('booking permissions via overrides', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('PATCH /api/bookings/:id/hide — records.hide does not imply bookings.view', () => {
+  // observer (staff id 2) granted records.hide; bookings.view denied where the test needs it.
+  let cancelledId, pendingId;
+  beforeEach(async () => {
+    cancelledId = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đã Huỷ', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z')`).run()).meta.last_row_id;
+    pendingId = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đang Chờ', '0900000002', 'circle', '2026-09-12', '2026-09-13', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run()).meta.last_row_id;
+    await setOverride(env.DB, 2, 'records.hide', 'grant');
+  });
+  const hide = (id) => hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${id}/hide`, observerToken, { hidden: true }), env, params: { id: String(id) } });
+
+  it('answers an existing id exactly like a non-existent one (404, same body) and leaves is_hidden unchanged', async () => {
+    await setOverride(env.DB, 2, 'bookings.view', 'deny');
+    const missing = await hide(999999);
+    const existing = await hide(cancelledId);
+    const notHideable = await hide(pendingId); // visibility check runs before the status check
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy đặt phòng' });
+    expect(existing.status).toBe(404);
+    expect(await existing.json()).toEqual(missingBody);
+    expect(notHideable.status).toBe(404);
+    expect(await notHideable.json()).toEqual(missingBody);
+    const row = await env.DB.prepare('SELECT is_hidden FROM bookings WHERE id = ?').bind(cancelledId).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('works (200) for the same user with bookings.view', async () => {
+    const res = await hide(cancelledId);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT is_hidden FROM bookings WHERE id = ?').bind(cancelledId).first();
+    expect(row.is_hidden).toBe(1);
+  });
+});

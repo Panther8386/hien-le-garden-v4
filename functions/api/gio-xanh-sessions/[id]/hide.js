@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -12,7 +13,8 @@ export async function onRequestPatch({ request, env, params }) {
     `SELECT s.id, s.status, s.is_hidden, s.guest_name AS guestName, r.name AS roomName
      FROM gio_xanh_sessions s JOIN rooms r ON r.id = s.room_id WHERE s.id = ?`
   ).bind(params.id).first();
-  if (!session) return jsonError('Không tìm thấy phiên', 404);
+  // records.hide never implies read access: without gio_xanh.view the record answers like a missing id.
+  if (!session || !hasPermission(auth, 'gio_xanh.view')) return jsonError('Không tìm thấy phiên', 404);
   if (session.status !== 'closed' && session.status !== 'voided') {
     return jsonError('Chỉ có thể ẩn phiên đã chốt hoặc đã huỷ', 400);
   }

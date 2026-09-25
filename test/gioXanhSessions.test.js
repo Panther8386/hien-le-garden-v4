@@ -576,3 +576,37 @@ describe('Giỏ Xanh sessions — guest contact redaction', () => {
     expect(Array.isArray(body.items)).toBe(true);
   });
 });
+
+describe('PATCH /api/gio-xanh-sessions/:id/hide — records.hide does not imply gio_xanh.view', () => {
+  // observer (no gio_xanh.view by default) granted records.hide.
+  let closedId, openId;
+  beforeEach(async () => {
+    closedId = (await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách Đã Chốt', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z')`).bind(roomId1).run()).meta.last_row_id;
+    openId = (await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách Đang Mở', 'open', 'le_tan_gx', '2026-09-05T08:00:00Z')`).bind(roomId2).run()).meta.last_row_id;
+    await setOverride(env.DB, observerStaffId, 'records.hide', 'grant');
+  });
+  const hide = (id) => hideSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${id}/hide`, observerToken, 'PATCH', { hidden: true }), env, params: { id: String(id) } });
+
+  it('answers an existing id exactly like a non-existent one (404, same body) and leaves is_hidden unchanged', async () => {
+    const missing = await hide(999999);
+    const existing = await hide(closedId);
+    const notHideable = await hide(openId); // visibility check runs before the status check
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy phiên' });
+    expect(existing.status).toBe(404);
+    expect(await existing.json()).toEqual(missingBody);
+    expect(notHideable.status).toBe(404);
+    expect(await notHideable.json()).toEqual(missingBody);
+    const row = await env.DB.prepare('SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('works (200) for the same user once granted gio_xanh.view', async () => {
+    await setOverride(env.DB, observerStaffId, 'gio_xanh.view', 'grant');
+    const res = await hide(closedId);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(1);
+  });
+});

@@ -829,3 +829,58 @@ describe('PATCH type change authorization', () => {
     expect(await rowOf(expenseId)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
   });
 });
+
+describe('PATCH /api/finance/transactions/:id/hide — records.hide does not imply finance visibility', () => {
+  // manager granted records.hide; finance.view_all denied where the test needs it.
+  async function seed(type, hidden = 0, voided = true) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden, voided_by, voided_at) VALUES (?, ?, 100000, '2026-09-01', 'confirmed', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?, ?, ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden, voided ? 'admin_fin' : null, voided ? '2026-09-02T00:00:00Z' : null).run();
+    return String(r.meta.last_row_id);
+  }
+  const hide = (id, hidden = true) => hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}/hide`, managerToken, 'PATCH', { hidden }), env, params: { id } });
+  const hiddenOf = async (id) => (await env.DB.prepare('SELECT is_hidden FROM finance_transactions WHERE id = ?').bind(id).first()).is_hidden;
+
+  beforeEach(async () => {
+    await setOverride(env.DB, managerStaffId, 'records.hide', 'grant');
+  });
+
+  it('answers an invisible existing id exactly like a non-existent one (404, same body), is_hidden unchanged', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const voidedExpense = await seed('expense');
+    const activeExpense = await seed('expense', 0, false); // visibility check runs before the voided check
+    const hiddenIncome = await seed('income', 1);
+    const missing = await hide('999999');
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy giao dịch' });
+    for (const [id, hidden] of [[voidedExpense, true], [activeExpense, true], [hiddenIncome, false]]) {
+      const res = await hide(id, hidden);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual(missingBody);
+    }
+    expect(await hiddenOf(voidedExpense)).toBe(0);
+    expect(await hiddenOf(activeExpense)).toBe(0);
+    expect(await hiddenOf(hiddenIncome)).toBe(1);
+  });
+
+  it('without view_all: can hide a voided income row, then gets 404 trying to unhide it', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const id = await seed('income');
+    const res = await hide(id, true);
+    expect(res.status).toBe(200);
+    expect(await hiddenOf(id)).toBe(1);
+    const unhide = await hide(id, false);
+    expect(unhide.status).toBe(404);
+    expect(await unhide.json()).toEqual({ error: 'Không tìm thấy giao dịch' });
+    expect(await hiddenOf(id)).toBe(1);
+  });
+
+  it('works (200) for the same user with finance.view_all (expense row, hide and unhide)', async () => {
+    const id = await seed('expense');
+    expect((await hide(id, true)).status).toBe(200);
+    expect(await hiddenOf(id)).toBe(1);
+    expect((await hide(id, false)).status).toBe(200);
+    expect(await hiddenOf(id)).toBe(0);
+  });
+});

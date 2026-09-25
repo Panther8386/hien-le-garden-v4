@@ -417,3 +417,37 @@ describe('PATCH /api/dine-in-orders/:id/hide', () => {
     expect(row.is_hidden).toBe(0);
   });
 });
+
+describe('PATCH /api/dine-in-orders/:id/hide — records.hide does not imply dine_in.view', () => {
+  // observer (no dine_in.view by default) granted records.hide.
+  let closedId, openId;
+  beforeEach(async () => {
+    closedId = (await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đã Chốt', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z')`).run()).meta.last_row_id;
+    openId = (await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đang Mở', 'open', 'le_tan_order', '2026-09-05T08:00:00Z')`).run()).meta.last_row_id;
+    await setOverride(env.DB, observerStaffId, 'records.hide', 'grant');
+  });
+  const hide = (id) => hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${id}/hide`, observerToken, 'PATCH', { hidden: true }), env, params: { id: String(id) } });
+
+  it('answers an existing id exactly like a non-existent one (404, same body) and leaves is_hidden unchanged', async () => {
+    const missing = await hide(999999);
+    const existing = await hide(closedId);
+    const notHideable = await hide(openId); // visibility check runs before the status check
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy order' });
+    expect(existing.status).toBe(404);
+    expect(await existing.json()).toEqual(missingBody);
+    expect(notHideable.status).toBe(404);
+    expect(await notHideable.json()).toEqual(missingBody);
+    const row = await env.DB.prepare('SELECT is_hidden FROM dine_in_orders WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('works (200) for the same user once granted dine_in.view', async () => {
+    await setOverride(env.DB, observerStaffId, 'dine_in.view', 'grant');
+    const res = await hide(closedId);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT is_hidden FROM dine_in_orders WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(1);
+  });
+});
