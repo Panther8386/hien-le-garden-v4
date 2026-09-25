@@ -35,6 +35,10 @@ export async function onRequestPatch({ request, env, params }) {
 
   await env.DB.batch([
     env.DB.prepare(`UPDATE staff_accounts SET password_hash = ? WHERE id = ?`).bind(passwordHash, params.id),
+    // A reset means the old credential is no longer trusted: sign the target out
+    // everywhere and drop any half-finished 2FA login started with the old password.
+    env.DB.prepare(`DELETE FROM sessions WHERE staff_id = ?`).bind(params.id),
+    env.DB.prepare(`DELETE FROM pending_2fa_tokens WHERE staff_id = ?`).bind(params.id),
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
        VALUES ('account_password_reset', 'staff_account', ?, ?, NULL, 'Đã đặt lại mật khẩu', ?, ?)`

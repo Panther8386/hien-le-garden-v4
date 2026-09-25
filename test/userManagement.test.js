@@ -3,7 +3,9 @@ import { env } from 'cloudflare:test';
 import { onRequestDelete as deleteUser } from '../functions/api/users/[id].js';
 import { onRequestPatch as changeRole } from '../functions/api/users/[id]/role.js';
 import { onRequestPatch as resetPassword } from '../functions/api/users/[id]/password.js';
-import { createSession, verifyPassword } from '../lib/auth.js';
+import { onRequestPost as login } from '../functions/api/auth/login.js';
+import { createSession, verifyPassword, createPending2FAToken, getPendingStaffId } from '../lib/auth.js';
+import { requireAuth } from '../lib/requireAuth.js';
 
 let managerAId, managerBId, receptionId, adminId, observerId, managerAToken, receptionToken, adminToken;
 
@@ -199,6 +201,34 @@ describe('PATCH /api/users/:id/password', () => {
     const request = authedRequest('https://x/api/users/999999/password', adminToken, 'PATCH', { password: 'MatKhauMoi123' });
     const response = await resetPassword({ request, env, params: { id: '999999' } });
     expect(response.status).toBe(404);
+  });
+
+  it('revokes every existing session and pending 2FA token of the target, keeps the admin session, and the new password logs in', async () => {
+    const oldToken1 = receptionToken;
+    const oldToken2 = await createSession(env.DB, receptionId);
+    const pendingToken = await createPending2FAToken(env.DB, receptionId);
+    const probe = (token) => requireAuth(new Request('https://x/api/auth/me', { headers: { Cookie: `session=${token}` } }), env);
+    expect((await probe(oldToken1)).staffId).toBe(receptionId);
+    expect((await probe(oldToken2)).staffId).toBe(receptionId);
+
+    const response = await resetPassword({ request: authedRequest(`https://x/api/users/${receptionId}/password`, adminToken, 'PATCH', { password: 'MatKhauMoi123' }), env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(200);
+
+    for (const token of [oldToken1, oldToken2]) {
+      const res = await probe(token);
+      expect(res).toBeInstanceOf(Response);
+      expect(res.status).toBe(401);
+    }
+    expect(await getPendingStaffId(env.DB, pendingToken)).toBeNull();
+    const pendingCount = await env.DB.prepare('SELECT COUNT(*) AS n FROM pending_2fa_tokens WHERE staff_id = ?').bind(receptionId).first();
+    expect(pendingCount.n).toBe(0);
+    expect((await probe(adminToken)).staffId).toBe(adminId);
+    expect((await probe(managerAToken)).staffId).toBe(managerAId);
+
+    const loginRes = await login({ request: new Request('https://x/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'le_tan_a', password: 'MatKhauMoi123' }) }), env });
+    expect(loginRes.status).toBe(200);
+    const newToken = /session=([^;]+)/.exec(loginRes.headers.get('Set-Cookie'))[1];
+    expect((await probe(newToken)).staffId).toBe(receptionId);
   });
 });
 
