@@ -264,11 +264,14 @@ describe('attachments with finance.manage but without finance.view_all', () => {
 });
 
 describe('GET attachment — finance.view_all does not imply hidden-row visibility (records.hide required) (F-3)', () => {
-  it('404s a manager with finance.view_all but no records.hide on a hidden income receipt', async () => {
+  it('404s a manager with finance.view_all but no records.hide on a hidden income receipt, body identical to a missing transaction id', async () => {
     await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('hidden-income.pdf')), env, params: { id: String(incomeTxId) } });
     await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE id = ?`).bind(incomeTxId).run();
+    const missing = await getAttachment({ request: authedRequest('https://x/api/finance/transactions/999999/attachment', managerToken, 'GET'), env, params: { id: '999999' } });
     const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, 'GET'), env, params: { id: String(incomeTxId) } });
+    expect(missing.status).toBe(404);
     expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(await missing.json());
   });
 
   it('allows an admin to view the same hidden income receipt', async () => {

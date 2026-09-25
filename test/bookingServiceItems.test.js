@@ -5,7 +5,7 @@ import { onRequestPatch as voidServiceItem } from '../functions/api/bookings/[id
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, observerToken, adminToken;
+let managerToken, receptionToken, observerToken, adminToken, receptionStaffId;
 let confirmedBookingId, pendingBookingId, checkedOutBookingId;
 let activeCatalogId, inactiveCatalogId;
 let scheduledCatalogId, scheduledWithTermsCatalogId, slotTemplateId;
@@ -23,6 +23,7 @@ beforeEach(async () => {
   managerToken = await createSession(env.DB, 1);
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_svc', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   receptionToken = await createSession(env.DB, 2);
+  receptionStaffId = 2;
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'quan_sat_svc', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 3);
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'admin_svc', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
@@ -652,7 +653,7 @@ describe('services endpoints — hidden booking requires records.hide (F-3)', ()
   });
 
   it('PATCH /services/:itemId (void) works (200) for a user granted records.hide', async () => {
-    await setOverride(env.DB, 2, 'records.hide'); // receptionToken belongs to staff id 2, seeded in beforeEach
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
     const response = await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenBookingId), itemId: String(postedItemId) } });
     expect(response.status).toBe(200);
   });

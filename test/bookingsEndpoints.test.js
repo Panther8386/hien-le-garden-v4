@@ -738,6 +738,87 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
   });
 });
 
+describe('DELETE /api/bookings/:id/deposits/:depositId — hidden parent booking requires records.hide (F-3)', () => {
+  // receptionToken belongs to staff id 3, seeded in the top-level beforeEach.
+  async function seedHiddenBookingWithDeposit() {
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Hidden Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const depositResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 200000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const { depositId } = await depositResponse.json();
+    // A real hide.js-hidden booking can only be checked_out/cancelled — both of which this
+    // endpoint's own status rule already rejects with 400 — so is_hidden is seeded directly
+    // here (bypassing hide.js) to isolate the visibility gate under test from that unrelated
+    // business rule.
+    await env.DB.prepare(`UPDATE bookings SET is_hidden = 1 WHERE id = ?`).bind(id).run();
+    return { id, depositId };
+  }
+
+  it('answers a hidden parent booking exactly like a non-existent booking id for a user without records.hide, deposit row unchanged', async () => {
+    const { id, depositId } = await seedHiddenBookingWithDeposit();
+    const missing = await deleteDeposit({
+      request: new Request('https://x/api/bookings/999999/deposits/999999', { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: '999999', depositId: '999999' },
+    });
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+
+    const depositRow = await env.DB.prepare(`SELECT voided_at FROM booking_deposits WHERE id = ?`).bind(depositId).first();
+    expect(depositRow.voided_at).toBeNull();
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(200000);
+  });
+
+  it('works (200) for the same user granted records.hide', async () => {
+    const { id, depositId } = await seedHiddenBookingWithDeposit();
+    await setOverride(env.DB, 3, 'records.hide');
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    expect(response.status).toBe(200);
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(0);
+  });
+
+  it('does not affect a non-hidden booking for the same user (regression)', async () => {
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Visible Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const depositResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const { depositId } = await depositResponse.json();
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    expect(response.status).toBe(200);
+  });
+});
+
 describe('GET /api/bookings — is_hidden filtering', () => {
   it('excludes hidden bookings by default', async () => {
     const booking = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`).run();
