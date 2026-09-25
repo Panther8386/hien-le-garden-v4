@@ -10,7 +10,7 @@ import { onRequestPatch as hideOrder } from '../functions/api/dine-in-orders/[id
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, adminToken, observerToken, observerStaffId;
+let managerToken, receptionToken, adminToken, observerToken, observerStaffId, receptionStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -27,6 +27,7 @@ beforeEach(async () => {
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_order', 'x', 'observer', '2026-09-04T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
+  receptionStaffId = r.meta.last_row_id;
   adminToken = await createSession(env.DB, a.meta.last_row_id);
   observerStaffId = o.meta.last_row_id;
   observerToken = await createSession(env.DB, observerStaffId);
@@ -449,5 +450,65 @@ describe('PATCH /api/dine-in-orders/:id/hide — records.hide does not imply din
     expect(res.status).toBe(200);
     const row = await env.DB.prepare('SELECT is_hidden FROM dine_in_orders WHERE id = ?').bind(closedId).first();
     expect(row.is_hidden).toBe(1);
+  });
+});
+
+describe('GET/void/items endpoints — hidden order requires records.hide (F-3)', () => {
+  let hiddenOrderId, postedItemId;
+  beforeEach(async () => {
+    const hidden = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn 2', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    hiddenOrderId = hidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-05T08:05:00Z')`).bind(hiddenOrderId).run();
+    postedItemId = item.meta.last_row_id;
+  });
+
+  it('GET answers a hidden order exactly like a non-existent id for reception (no records.hide)', async () => {
+    const missing = await getOrder({ request: authedRequest('https://x/api/dine-in-orders/999999', receptionToken, 'GET'), env, params: { id: '999999' } });
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}`, receptionToken, 'GET'), env, params: { id: String(hiddenOrderId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+  });
+
+  it('GET returns 200 for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}`, receptionToken, 'GET'), env, params: { id: String(hiddenOrderId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('POST /void answers a hidden order exactly like a non-existent id for reception — before the "must be open" status check (order is closed)', async () => {
+    const response = await voidOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}/void`, receptionToken, 'POST'), env, params: { id: String(hiddenOrderId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy order' });
+    const row = await env.DB.prepare(`SELECT status FROM dine_in_orders WHERE id = ?`).bind(hiddenOrderId).first();
+    expect(row.status).toBe('closed');
+  });
+
+  it('PATCH /items/:itemId (void, a child endpoint) answers a hidden order exactly like a non-existent id for reception, item untouched', async () => {
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}/items/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenOrderId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy dòng món' });
+    const row = await env.DB.prepare(`SELECT status FROM dine_in_order_items WHERE id = ?`).bind(postedItemId).first();
+    expect(row.status).toBe('posted');
+  });
+
+  it('PATCH /items/:itemId (void) works (200) for a user granted records.hide, once the order is also open (isolates the visibility check from the "must be open" business rule)', async () => {
+    // A real hide.js-hidden order can never be 'open' (hiding requires closed/voided), so this
+    // seeds is_hidden directly on an open order purely to isolate the visibility gate under test.
+    const openHidden = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn Mở', 'open', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    const openHiddenId = openHidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-05T08:05:00Z')`).bind(openHiddenId).run();
+    const itemId = item.meta.last_row_id;
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${openHiddenId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(openHiddenId), itemId: String(itemId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden order for the same user (regression)', async () => {
+    const openOrder = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Thường', 'open', 'le_tan_order', '2026-09-05T08:00:00Z')`).run();
+    const id = openOrder.meta.last_row_id;
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${id}`, receptionToken, 'GET'), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
   });
 });

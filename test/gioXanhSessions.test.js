@@ -10,7 +10,7 @@ import { onRequestPatch as hideSession } from '../functions/api/gio-xanh-session
 import { createSession as createStaffSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, adminToken, observerToken, observerStaffId;
+let managerToken, receptionToken, adminToken, observerToken, observerStaffId, receptionStaffId;
 let roomId1, roomId2;
 
 beforeEach(async () => {
@@ -27,6 +27,7 @@ beforeEach(async () => {
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_gx', 'x', 'observer', '2026-09-04T00:00:00Z')`).run();
   managerToken = await createStaffSession(env.DB, m.meta.last_row_id);
   receptionToken = await createStaffSession(env.DB, r.meta.last_row_id);
+  receptionStaffId = r.meta.last_row_id;
   adminToken = await createStaffSession(env.DB, a.meta.last_row_id);
   observerStaffId = o.meta.last_row_id;
   observerToken = await createStaffSession(env.DB, observerStaffId);
@@ -608,5 +609,66 @@ describe('PATCH /api/gio-xanh-sessions/:id/hide — records.hide does not imply 
     expect(res.status).toBe(200);
     const row = await env.DB.prepare('SELECT is_hidden FROM gio_xanh_sessions WHERE id = ?').bind(closedId).first();
     expect(row.is_hidden).toBe(1);
+  });
+});
+
+describe('GET/void/items endpoints — hidden session requires records.hide (F-3)', () => {
+  let hiddenSessionId, postedItemId;
+  beforeEach(async () => {
+    const hidden = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Khách Ẩn 2', 'closed', 'le_tan_gx', '2026-09-05T08:00:00Z', 1)`).bind(roomId2).run();
+    hiddenSessionId = hidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan_gx', '2026-09-05T08:05:00Z')`).bind(hiddenSessionId).run();
+    postedItemId = item.meta.last_row_id;
+  });
+
+  it('GET answers a hidden session exactly like a non-existent id for reception (no records.hide)', async () => {
+    const missing = await getSession({ request: authedRequest('https://x/api/gio-xanh-sessions/999999', receptionToken, 'GET'), env, params: { id: '999999' } });
+    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${hiddenSessionId}`, receptionToken, 'GET'), env, params: { id: String(hiddenSessionId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+  });
+
+  it('GET returns 200 for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${hiddenSessionId}`, receptionToken, 'GET'), env, params: { id: String(hiddenSessionId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('POST /void answers a hidden session exactly like a non-existent id for reception — before the "must be open" status check (session is closed)', async () => {
+    const response = await voidSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${hiddenSessionId}/void`, receptionToken, 'POST'), env, params: { id: String(hiddenSessionId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy phiên' });
+    const row = await env.DB.prepare(`SELECT status FROM gio_xanh_sessions WHERE id = ?`).bind(hiddenSessionId).first();
+    expect(row.status).toBe('closed');
+  });
+
+  it('PATCH /items/:itemId (void, a child endpoint) answers a hidden session exactly like a non-existent id for reception, item untouched', async () => {
+    const response = await voidItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${hiddenSessionId}/items/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenSessionId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy dòng' });
+    const row = await env.DB.prepare(`SELECT status FROM gio_xanh_session_items WHERE id = ?`).bind(postedItemId).first();
+    expect(row.status).toBe('posted');
+  });
+
+  it('PATCH /items/:itemId (void) works (200) for a user granted records.hide, once the session is also open (isolates the visibility check from the "must be open" business rule)', async () => {
+    // A real hide.js-hidden session can never be 'open' (hiding requires closed/voided), so this
+    // seeds is_hidden directly on an open session purely to isolate the visibility gate under test.
+    const roomForOpenHidden = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 AND id NOT IN (?, ?) ORDER BY id LIMIT 1`).bind(roomId1, roomId2).first();
+    const openHidden = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, is_hidden) VALUES (?, 'Khách Ẩn Mở', 'open', 'le_tan_gx', '2026-09-05T08:00:00Z', 1)`).bind(roomForOpenHidden.id).run();
+    const openHiddenId = openHidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'gio_combo', 1, 'Giờ Đầu Tiên', 130000, 1, 130000, 'posted', 'le_tan_gx', '2026-09-05T08:05:00Z')`).bind(openHiddenId).run();
+    const itemId = item.meta.last_row_id;
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await voidItem({ request: authedRequest(`https://x/api/gio-xanh-sessions/${openHiddenId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(openHiddenId), itemId: String(itemId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden session for the same user (regression)', async () => {
+    const openSession = await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at) VALUES (?, 'Khách Thường', 'open', 'le_tan_gx', '2026-09-05T08:00:00Z')`).bind(roomId1).run();
+    const id = openSession.meta.last_row_id;
+    const response = await getSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${id}`, receptionToken, 'GET'), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
   });
 });

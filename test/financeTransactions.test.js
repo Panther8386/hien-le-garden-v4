@@ -884,3 +884,49 @@ describe('PATCH /api/finance/transactions/:id/hide — records.hide does not imp
     expect(await hiddenOf(id)).toBe(0);
   });
 });
+
+describe('finance.view_all does not imply hidden-row visibility (records.hide required) (F-3)', () => {
+  async function seed(type, hidden = 1) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden).run();
+    return String(r.meta.last_row_id);
+  }
+
+  it('PATCH answers a hidden income and a hidden expense exactly like a non-existent id for a manager with finance.view_all but no records.hide, rows unchanged', async () => {
+    const hiddenIncome = await seed('income');
+    const hiddenExpense = await seed('expense');
+    const missing = await patchTransaction({ request: authedRequest('https://x/api/finance/transactions/999999', managerToken, 'PATCH', { amount: 999000 }), env, params: { id: '999999' } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    for (const id of [hiddenIncome, hiddenExpense]) {
+      const res = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual(missingBody);
+      expect((await env.DB.prepare('SELECT amount FROM finance_transactions WHERE id = ?').bind(id).first()).amount).toBe(100000);
+    }
+  });
+
+  it('void answers a hidden income exactly like a non-existent id for a manager with finance.view_all but no records.hide, row unchanged', async () => {
+    const hiddenIncome = await seed('income');
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenIncome}/void`, managerToken, 'PATCH'), env, params: { id: hiddenIncome } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy giao dịch' });
+    expect((await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE id = ?').bind(hiddenIncome).first()).voided_at).toBeNull();
+  });
+
+  it('admin (all permissions) can PATCH and void a hidden row', async () => {
+    const hiddenIncome = await seed('income');
+    const patchRes = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenIncome}`, adminToken, 'PATCH', { amount: 999000 }), env, params: { id: hiddenIncome } });
+    expect(patchRes.status).toBe(200);
+    const hiddenExpense = await seed('expense');
+    const voidRes = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenExpense}/void`, adminToken, 'PATCH'), env, params: { id: hiddenExpense } });
+    expect(voidRes.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden row for the same manager (regression)', async () => {
+    const visible = await seed('income', 0);
+    const response = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${visible}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id: visible } });
+    expect(response.status).toBe(200);
+  });
+});

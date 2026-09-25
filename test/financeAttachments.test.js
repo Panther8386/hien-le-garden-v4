@@ -262,3 +262,27 @@ describe('attachments with finance.manage but without finance.view_all', () => {
     expect((await env.DB.prepare('SELECT receipt_key FROM finance_transactions WHERE id = ?').bind(expenseTxId).first()).receipt_key).toBe('finance-receipts/x/1-a.pdf');
   });
 });
+
+describe('GET attachment — finance.view_all does not imply hidden-row visibility (records.hide required) (F-3)', () => {
+  it('404s a manager with finance.view_all but no records.hide on a hidden income receipt', async () => {
+    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('hidden-income.pdf')), env, params: { id: String(incomeTxId) } });
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE id = ?`).bind(incomeTxId).run();
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, 'GET'), env, params: { id: String(incomeTxId) } });
+    expect(response.status).toBe(404);
+  });
+
+  it('allows an admin to view the same hidden income receipt', async () => {
+    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('hidden-income-2.pdf')), env, params: { id: String(incomeTxId) } });
+    await env.DB.prepare(`UPDATE finance_transactions SET is_hidden = 1 WHERE id = ?`).bind(incomeTxId).run();
+    const adminAcc = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_att_hidden', 'x', 'admin', '2026-09-01T00:00:00Z')`).run();
+    const adminToken = await createSession(env.DB, adminAcc.meta.last_row_id);
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, adminToken, 'GET'), env, params: { id: String(incomeTxId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden income receipt for the same manager (regression)', async () => {
+    await uploadAttachment({ request: authedFormRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, pdfFile('visible-income.pdf')), env, params: { id: String(incomeTxId) } });
+    const response = await getAttachment({ request: authedRequest(`https://x/api/finance/transactions/${incomeTxId}/attachment`, managerToken, 'GET'), env, params: { id: String(incomeTxId) } });
+    expect(response.status).toBe(200);
+  });
+});

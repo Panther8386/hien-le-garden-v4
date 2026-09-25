@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -9,11 +10,15 @@ export async function onRequestPatch({ request, env, params }) {
   if (auth instanceof Response) return auth;
 
   const item = await env.DB.prepare(
-    `SELECT oi.id, oi.order_id, oi.status, oi.name, oi.quantity, o.table_label AS tableLabel, o.status AS orderStatus
+    `SELECT oi.id, oi.order_id, oi.status, oi.name, oi.quantity, o.table_label AS tableLabel, o.status AS orderStatus, o.is_hidden
      FROM dine_in_order_items oi JOIN dine_in_orders o ON o.id = oi.order_id
      WHERE oi.id = ?`
   ).bind(params.itemId).first();
   if (!item || String(item.order_id) !== String(params.id)) {
+    return jsonError('Không tìm thấy dòng món', 404);
+  }
+  // A hidden parent order answers exactly like a non-existent id for anyone without records.hide.
+  if (!canSeeHidden(auth, item)) {
     return jsonError('Không tìm thấy dòng món', 404);
   }
   if (item.status === 'voided') return jsonError('Dòng này đã được huỷ trước đó', 400);

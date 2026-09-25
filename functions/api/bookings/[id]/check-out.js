@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { computeRoomTotal } from '../../../../lib/roomPricing.js';
+import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -12,12 +13,13 @@ export async function onRequestPost({ request, env, params }) {
   if (auth instanceof Response) return auth;
 
   const booking = await env.DB.prepare(
-    `SELECT bk.id, bk.status, bk.room_id, bk.room_type, bk.check_in, bk.check_out, bk.guest_name, bk.deposit_amount,
+    `SELECT bk.id, bk.status, bk.room_id, bk.room_type, bk.check_in, bk.check_out, bk.guest_name, bk.deposit_amount, bk.is_hidden,
             r.price_weekday AS priceWeekday, r.price_weekend AS priceWeekend
      FROM bookings bk LEFT JOIN rooms r ON r.id = bk.room_id
      WHERE bk.id = ?`
   ).bind(params.id).first();
-  if (!booking) {
+  // A hidden booking answers exactly like a non-existent id for anyone without records.hide.
+  if (!booking || !canSeeHidden(auth, booking)) {
     return jsonError('Không tìm thấy đặt phòng', 404);
   }
   if (booking.status !== 'checked_in') {

@@ -1,6 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { hasRoomConflict } from '../../../../lib/bookingAvailability.js';
 import { ROOM_TYPES } from '../../../../lib/roomTypes.js';
+import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -36,9 +37,10 @@ export async function onRequestPost({ request, env, params }) {
   }
 
   const booking = await env.DB.prepare(
-    `SELECT id, guest_name, phone, email, check_in, check_out, guests_count, notes, source, status FROM bookings WHERE id = ?`
+    `SELECT id, guest_name, phone, email, check_in, check_out, guests_count, notes, source, status, is_hidden FROM bookings WHERE id = ?`
   ).bind(params.id).first();
-  if (!booking) {
+  // A hidden booking answers exactly like a non-existent id for anyone without records.hide.
+  if (!booking || !canSeeHidden(auth, booking)) {
     return jsonError('Không tìm thấy yêu cầu đặt phòng', 404);
   }
   if (booking.status !== 'pending') {
