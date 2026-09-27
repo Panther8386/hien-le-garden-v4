@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
@@ -8,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without gio_xanh.view answer like a missing id.
+  if (!hasPermission(auth, 'gio_xanh.view')) return jsonError('Không tìm thấy phiên', 404);
 
   const session = await env.DB.prepare(
     `SELECT s.id, s.guest_name AS guestName, s.status, r.name AS roomName, s.is_hidden

@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -7,6 +8,8 @@ function jsonError(message, status) {
 export async function onRequestPut({ request, env, params }) {
   const auth = await requireAuth(request, env, 'templates.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without templates.view answer like a missing id.
+  if (!hasPermission(auth, 'templates.view')) return jsonError('Không tìm thấy template', 404);
 
   const existing = await env.DB.prepare(`SELECT id FROM message_templates WHERE id = ?`).bind(params.id).first();
   if (!existing) {
@@ -46,6 +49,8 @@ export async function onRequestPut({ request, env, params }) {
 export async function onRequestDelete({ request, env, params }) {
   const auth = await requireAuth(request, env, 'templates.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without templates.view answer like a missing id.
+  if (!hasPermission(auth, 'templates.view')) return jsonError('Không tìm thấy template', 404);
 
   const existing = await env.DB.prepare(`SELECT is_active FROM message_templates WHERE id = ?`).bind(params.id).first();
   if (!existing) {

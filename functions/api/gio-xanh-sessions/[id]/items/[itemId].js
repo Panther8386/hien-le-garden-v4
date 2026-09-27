@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
 import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
@@ -8,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without gio_xanh.view answer like a missing id.
+  if (!hasPermission(auth, 'gio_xanh.view')) return jsonError('Không tìm thấy dòng', 404);
 
   const item = await env.DB.prepare(
     `SELECT si.id, si.session_id, si.status, si.name, si.quantity, s.guest_name AS guestName, s.status AS sessionStatus, s.is_hidden

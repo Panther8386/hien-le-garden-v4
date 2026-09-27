@@ -32,6 +32,8 @@ async function loadLineWithBatchStatus(env, id) {
 export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy dòng kiểm kê', 404);
 
   const existing = await loadLineWithBatchStatus(env, params.id);
   if (!existing) return jsonError('Không tìm thấy dòng kiểm kê', 404);
@@ -70,6 +72,8 @@ export async function onRequestPost({ request, env, params }) {
 export async function onRequestDelete({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy dòng kiểm kê', 404);
 
   const existing = await loadLineWithBatchStatus(env, params.id);
   if (!existing) return jsonError('Không tìm thấy dòng kiểm kê', 404);

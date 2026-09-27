@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
@@ -18,6 +19,8 @@ function daysBeforeCheckin(checkIn) {
 export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy đặt phòng', 404);
 
   let body = {};
   try {

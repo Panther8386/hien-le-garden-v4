@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -9,6 +10,8 @@ const PAIRED_MOVEMENT_TYPES = ['transfer_out', 'transfer_in', 'issue', 'soil', '
 export async function onRequestDelete({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy giao dịch', 404);
 
   const existing = await env.DB.prepare(
     `SELECT id, category_id, location_id, lot_id, linen_status, quantity_delta, movement_type, voided_at FROM asset_inventory_transactions WHERE id = ?`

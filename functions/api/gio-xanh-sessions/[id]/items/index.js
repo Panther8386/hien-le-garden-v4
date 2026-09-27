@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
 import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
@@ -10,6 +11,8 @@ const VALID_SOURCES = ['gio_combo', 'mon_an_uong'];
 export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, 'gio_xanh.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without gio_xanh.view answer like a missing id.
+  if (!hasPermission(auth, 'gio_xanh.view')) return jsonError('Không tìm thấy phiên', 404);
 
   const session = await env.DB.prepare(`SELECT id, status, is_hidden FROM gio_xanh_sessions WHERE id = ?`).bind(params.id).first();
   // A hidden parent session answers exactly like a non-existent id for anyone without records.hide.

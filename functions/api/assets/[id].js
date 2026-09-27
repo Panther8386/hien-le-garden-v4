@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -13,6 +14,8 @@ const INDIVIDUAL_MANAGEMENT_TYPES = ['individual_device', 'device_set'];
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy tài sản', 404);
 
   const existing = await env.DB.prepare(
     `SELECT a.*, c.management_type FROM assets a JOIN asset_categories c ON c.id = a.category_id WHERE a.id = ?`
@@ -74,6 +77,8 @@ export async function onRequestPatch({ request, env, params }) {
 export async function onRequestDelete({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.delete');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy tài sản', 404);
 
   const existing = await env.DB.prepare(`SELECT id, name, is_deleted FROM assets WHERE id = ?`).bind(params.id).first();
   if (!existing) return jsonError('Không tìm thấy tài sản', 404);

@@ -63,6 +63,8 @@ export async function onRequestGet({ request, env, params }) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy đợt kiểm kê', 404);
 
   const batch = await env.DB.prepare(`SELECT * FROM asset_inventory_batches WHERE id = ?`).bind(params.id).first();
   if (!batch) return jsonError('Không tìm thấy đợt kiểm kê', 404);

@@ -9,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy dòng dịch vụ', 404);
 
   const item = await env.DB.prepare(
     `SELECT bsi.id, bsi.booking_id, bsi.status, bsi.payment_status, bsi.finance_transaction_id, bsi.name, bsi.quantity, b.guest_name AS guestName, b.is_hidden

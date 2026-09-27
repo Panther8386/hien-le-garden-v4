@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
 import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
@@ -8,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'dine_in.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without dine_in.view answer like a missing id.
+  if (!hasPermission(auth, 'dine_in.view')) return jsonError('Không tìm thấy dòng món', 404);
 
   const item = await env.DB.prepare(
     `SELECT oi.id, oi.order_id, oi.status, oi.name, oi.quantity, o.table_label AS tableLabel, o.status AS orderStatus, o.is_hidden

@@ -1,5 +1,6 @@
 // v4/functions/api/asset-inventory-batches/[id]/refresh-lines.js
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -8,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPost({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy đợt kiểm kê', 404);
 
   const batch = await env.DB.prepare(`SELECT * FROM asset_inventory_batches WHERE id = ?`).bind(params.id).first();
   if (!batch) return jsonError('Không tìm thấy đợt kiểm kê', 404);

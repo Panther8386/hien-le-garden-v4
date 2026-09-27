@@ -17,6 +17,8 @@ function canWriteLine(auth, batchStatus) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without assets.view answer like a missing id.
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không tìm thấy dòng kiểm kê', 404);
 
   const line = await env.DB.prepare(
     `SELECT l.*, b.status AS batch_status FROM asset_inventory_lines l JOIN asset_inventory_batches b ON b.id = l.batch_id WHERE l.id = ?`
