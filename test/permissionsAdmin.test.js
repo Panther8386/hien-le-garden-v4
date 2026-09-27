@@ -490,38 +490,40 @@ describe('rule 6: assigning a role needs every permission of that role', () => {
     createUser({ request: authedRequest('https://x/api/users', token, 'POST', body), env });
   const roleOf = async (id) => (await env.DB.prepare('SELECT role FROM staff_accounts WHERE id = ?').bind(id).first()).role;
 
-  it('rejects a manager with a denied manager permission creating a manager account (403)', async () => {
-    await setOverride(env.DB, qlId, 'finance.manage', 'deny');
-    const response = await create(qlToken, { username: 'ql_moi', password: 'password123', role: 'manager' });
+  // FA-1 (quy tắc 7): manager chỉ còn gán được reception/observer, nên quy tắc 6 được
+  // kiểm bằng một quyền của vai trò reception mà manager bị chặn.
+  it('rejects a manager with a denied reception permission creating a reception account (403)', async () => {
+    await setOverride(env.DB, qlId, 'customers.send', 'deny');
+    const response = await create(qlToken, { username: 'lt_moi', password: 'password123', role: 'reception' });
     expect(response.status).toBe(403);
     expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
-    const row = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'ql_moi'`).first();
+    const row = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'lt_moi'`).first();
     expect(row).toBeNull();
   });
 
-  it('rejects the same manager changing another account to manager (403)', async () => {
-    await setOverride(env.DB, qlId, 'finance.manage', 'deny');
-    const response = await patchRole(qlToken, ltId, 'manager');
-    expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
-    expect(await roleOf(ltId)).toBe('reception');
-    expect(await auditRow('account_role_change')).toBeNull();
-  });
-
-  it('rejects a reception account granted users.manage promoting someone to manager (403)', async () => {
-    await setOverride(env.DB, ltId, 'users.manage', 'grant');
-    const response = await patchRole(ltToken, qsId, 'manager');
+  it('rejects the same manager changing another account to reception (403)', async () => {
+    await setOverride(env.DB, qlId, 'customers.send', 'deny');
+    const response = await patchRole(qlToken, qsId, 'reception');
     expect(response.status).toBe(403);
     expect((await response.json()).error).toBe('Không thể gán vai trò có quyền mà bạn không có');
     expect(await roleOf(qsId)).toBe('observer');
+    expect(await auditRow('account_role_change')).toBeNull();
   });
 
-  it('still lets a plain manager create a reception account and promote someone to manager', async () => {
+  it('rejects a reception account granted users.manage promoting someone to manager (403, hierarchy)', async () => {
+    await setOverride(env.DB, ltId, 'users.manage', 'grant');
+    const response = await patchRole(ltToken, qsId, 'manager');
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể thao tác trên tài khoản cùng cấp hoặc cấp cao hơn');
+    expect(await roleOf(qsId)).toBe('observer');
+  });
+
+  it('still lets a plain manager create a reception account and move someone to reception', async () => {
     const created = await create(qlToken, { username: 'lt_moi', password: 'password123', role: 'reception' });
     expect(created.status).toBe(201);
-    const changed = await patchRole(qlToken, qsId, 'manager');
+    const changed = await patchRole(qlToken, qsId, 'reception');
     expect(changed.status).toBe(200);
-    expect(await roleOf(qsId)).toBe('manager');
+    expect(await roleOf(qsId)).toBe('reception');
   });
 
   it('does not restrict an admin', async () => {
@@ -581,43 +583,46 @@ describe('POST /api/users with a null body', () => {
 });
 
 describe('rule 3: removing a stored deny counts as granting', () => {
-  let qlBId, qlCId, qlCToken;
+  // FA-1 (quy tắc 7): manager chỉ còn chỉnh được tài khoản cấp thấp hơn, nên target là
+  // một reception bị chặn K = customers.send (quyền có trong vai trò reception).
+  let ltBId, qlCId, qlCToken;
   beforeEach(async () => {
-    qlBId = await insertStaff('ql_b', 'manager');
+    ltBId = await insertStaff('lt_b', 'reception');
     qlCId = await insertStaff('ql_c', 'manager');
     qlCToken = await createSession(env.DB, qlCId);
-    await setOverride(env.DB, qlBId, 'finance.manage', 'deny');
+    await setOverride(env.DB, ltBId, 'customers.send', 'deny');
+    await setOverride(env.DB, qlId, 'customers.send', 'deny');
     await setOverride(env.DB, qlId, 'finance.manage', 'deny');
   });
 
   it('rejects a manager lacking K removing the target deny on K that the target role includes (403, nothing written)', async () => {
-    const response = await putUser(qlToken, qlBId, { overrides: {} });
+    const response = await putUser(qlToken, ltBId, { overrides: {} });
     expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe('Không thể gỡ chặn quyền mà bạn không có: finance.manage');
-    expect(await overridesOf(qlBId)).toEqual([{ permission: 'finance.manage', effect: 'deny' }]);
+    expect((await response.json()).error).toBe('Không thể gỡ chặn quyền mà bạn không có: customers.send');
+    expect(await overridesOf(ltBId)).toEqual([{ permission: 'customers.send', effect: 'deny' }]);
     const { results } = await env.DB.prepare(`SELECT id FROM audit_log WHERE action_type = 'user_permissions_change'`).all();
     expect(results).toEqual([]);
   });
 
   it('rejects the same manager turning that deny into a grant (403, nothing written)', async () => {
-    const response = await putUser(qlToken, qlBId, { overrides: { 'finance.manage': 'grant' } });
+    const response = await putUser(qlToken, ltBId, { overrides: { 'customers.send': 'grant' } });
     expect(response.status).toBe(403);
-    expect(await overridesOf(qlBId)).toEqual([{ permission: 'finance.manage', effect: 'deny' }]);
+    expect(await overridesOf(ltBId)).toEqual([{ permission: 'customers.send', effect: 'deny' }]);
   });
 
   it('lets that manager keep the deny while changing other overrides (200)', async () => {
-    const response = await putUser(qlToken, qlBId, { overrides: { 'finance.manage': 'deny', 'customers.send': 'deny' } });
+    const response = await putUser(qlToken, ltBId, { overrides: { 'customers.send': 'deny', 'bookings.view': 'deny' } });
     expect(response.status).toBe(200);
-    expect(await overridesOf(qlBId)).toEqual([
+    expect(await overridesOf(ltBId)).toEqual([
+      { permission: 'bookings.view', effect: 'deny' },
       { permission: 'customers.send', effect: 'deny' },
-      { permission: 'finance.manage', effect: 'deny' },
     ]);
   });
 
   it('lets a manager holding K remove the deny (200)', async () => {
-    const response = await putUser(qlCToken, qlBId, { overrides: {} });
+    const response = await putUser(qlCToken, ltBId, { overrides: {} });
     expect(response.status).toBe(200);
-    expect(await overridesOf(qlBId)).toEqual([]);
+    expect(await overridesOf(ltBId)).toEqual([]);
   });
 
   it('lets a manager lacking K remove a deny on K the target role does not include (200)', async () => {

@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
-import { loadTarget, guardTarget, isLastActiveAdmin, missingRolePermissions } from '../../../../lib/staffGuards.js';
+import { loadTarget, guardTarget, isLastActiveAdmin, missingRolePermissions, outranks, HIERARCHY_ERROR } from '../../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -25,6 +25,10 @@ export async function onRequestPatch({ request, env, params }) {
   }
   if (role === 'admin' && auth.role !== 'admin') {
     return jsonError('Chỉ quản trị mới được gán vai trò quản trị', 403);
+  }
+  // Quy tắc 7: người không phải admin chỉ gán được vai trò có cấp thấp hơn mình.
+  if (!outranks(auth, role)) {
+    return jsonError(HIERARCHY_ERROR, 403);
   }
   if (role === target.role) {
     // Không đổi gì: giữ override, không ghi nhật ký.

@@ -51,7 +51,17 @@ function roleHas(role, key) { return role === 'admin' || (state.roleSaved[role] 
 function canAssignRole(role) {
   if (meIsAdmin()) return true;
   if (role === 'admin') return false;
+  if (!outranksRole(role)) return false;
   return [...(state.roleSaved[role] || [])].every(iHave);
+}
+
+// Rule 7 (server-enforced, FA-1): a non-admin may only act on / assign a role
+// ranked strictly below their own (admin 3 > manager 2 > reception = observer 1).
+const ROLE_RANK = { admin: 3, manager: 2, reception: 1, observer: 1 };
+function outranksRole(role) {
+  if (meIsAdmin()) return true;
+  if (!(role in ROLE_RANK)) return false;
+  return ROLE_RANK[role] < (ROLE_RANK[state.me.role] || 0);
 }
 
 async function readError(response, fallback) {
@@ -198,7 +208,8 @@ function renderDetail() {
 
   const isSelf = user.username === state.me.username;
   const targetIsAdmin = user.role === 'admin';
-  const hideActions = isSelf || (targetIsAdmin && !meIsAdmin());
+  const outranked = !isSelf && !targetIsAdmin && !outranksRole(user.role);
+  const hideActions = isSelf || (targetIsAdmin && !meIsAdmin()) || outranked;
 
   const title = el('div', { className: 'pq-detail-title' }, [el('h2', { text: user.username })]);
   if (user.lockedAt) title.appendChild(el('span', { className: 'pq-badge pq-badge-danger', text: 'Đang khoá' }));
@@ -242,6 +253,9 @@ function renderDetail() {
   if (isSelf) {
     box.appendChild(el('p', { className: 'pq-hint', text: 'Đây là tài khoản của bạn: không tự đổi vai trò, khoá, xoá hay chỉnh quyền của chính mình.' }));
   }
+  if (outranked) {
+    box.appendChild(el('p', { className: 'pq-hint', text: 'Tài khoản cùng cấp hoặc cấp cao hơn bạn: chỉ xem, không thao tác được.' }));
+  }
 
   if (state.pendingRole) box.appendChild(renderRoleConfirm(user));
   if (state.panel === 'reset') box.appendChild(renderResetPanel(user));
@@ -256,8 +270,8 @@ function renderDetail() {
     box.appendChild(el('p', { className: 'pq-muted', text: 'Đang tải quyền…' }));
     return;
   }
-  box.appendChild(renderPermList(user, isSelf));
-  if (!isSelf) {
+  box.appendChild(renderPermList(user, isSelf || outranked));
+  if (!isSelf && !outranked) {
     const n = diffCount();
     const changed = draftChanged();
     box.appendChild(el('div', { className: 'pq-foot' }, [

@@ -43,15 +43,13 @@ describe('DELETE /api/users/:id', () => {
     expect(response.status).toBe(400);
   });
 
-  it('deleting a manager always leaves at least one manager, since only a manager can delete another', async () => {
-    // A deletes B: A can never delete itself, so the acting manager always remains — the
-    // count can never reach zero this way. This is why DELETE needs no separate "last
-    // manager" count guard; see the implementation note below Step 3 for the full argument.
+  it('rejects a manager deleting another manager (403) -- account hierarchy, FA-1', async () => {
     const response = await deleteUser({ request: authedRequest(`https://x/api/users/${managerBId}`, managerAToken, 'DELETE'), env, params: { id: String(managerBId) } });
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Không thể thao tác trên tài khoản cùng cấp hoặc cấp cao hơn');
 
     const managerCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM staff_accounts WHERE role = 'manager'`).first();
-    expect(managerCount.n).toBe(1);
+    expect(managerCount.n).toBe(2);
   });
 
   it('rejects the only active admin deleting themselves (400)', async () => {
@@ -90,11 +88,18 @@ describe('DELETE /api/users/:id', () => {
 });
 
 describe('PATCH /api/users/:id/role', () => {
-  it('lets a manager change another account role', async () => {
-    const response = await changeRole({ request: authedRequest(`https://x/api/users/${receptionId}/role`, managerAToken, 'PATCH', { role: 'manager' }), env, params: { id: String(receptionId) } });
+  it('lets a manager change a lower-ranked account role', async () => {
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${observerId}/role`, managerAToken, 'PATCH', { role: 'reception' }), env, params: { id: String(observerId) } });
     expect(response.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(observerId).first();
+    expect(row.role).toBe('reception');
+  });
+
+  it('rejects a manager promoting an account to manager (403) -- account hierarchy, FA-1', async () => {
+    const response = await changeRole({ request: authedRequest(`https://x/api/users/${receptionId}/role`, managerAToken, 'PATCH', { role: 'manager' }), env, params: { id: String(receptionId) } });
+    expect(response.status).toBe(403);
     const row = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(receptionId).first();
-    expect(row.role).toBe('manager');
+    expect(row.role).toBe('reception');
   });
 
   it('writes an audit_log row with the old and new role', async () => {
@@ -121,7 +126,7 @@ describe('PATCH /api/users/:id/role', () => {
   });
 
   it('allows demoting the last manager -- the old last-manager rule is replaced by the last-active-admin rule', async () => {
-    await deleteUser({ request: authedRequest(`https://x/api/users/${managerBId}`, managerAToken, 'DELETE'), env, params: { id: String(managerBId) } });
+    await deleteUser({ request: authedRequest(`https://x/api/users/${managerBId}`, adminToken, 'DELETE'), env, params: { id: String(managerBId) } });
     const response = await changeRole({ request: authedRequest(`https://x/api/users/${managerAId}/role`, adminToken, 'PATCH', { role: 'reception' }), env, params: { id: String(managerAId) } });
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT role FROM staff_accounts WHERE id = ?`).bind(managerAId).first();

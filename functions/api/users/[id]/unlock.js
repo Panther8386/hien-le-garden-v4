@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
-import { loadTarget, guardTarget } from '../../../../lib/staffGuards.js';
+import { loadTarget, guardTarget, guardAdminLock } from '../../../../lib/staffGuards.js';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -12,6 +12,8 @@ export async function onRequestPost({ request, env, params }) {
   const denied = guardTarget(auth, target);
   if (denied) return denied;
   if (!target.lockedAt) return json({ error: 'Tài khoản không bị khoá' }, 400);
+  const adminLocked = await guardAdminLock(env.DB, auth, target.id);
+  if (adminLocked) return adminLocked;
 
   const now = new Date().toISOString();
   await env.DB.batch([
