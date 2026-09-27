@@ -20,8 +20,8 @@ single Cloudflare Pages deployment.
    - `wrangler pages secret put BREVO_API_KEY`
    - `wrangler pages secret put TELEGRAM_BOT_TOKEN`
    - `wrangler pages secret put TELEGRAM_WEBHOOK_SECRET` — a long random string you generate (e.g. `openssl rand -hex 32`; Telegram allows 1–256 chars of `A-Z a-z 0-9 _ -`). The webhook rejects every request (401) whose `X-Telegram-Bot-Api-Secret-Token` header does not match it, and rejects everything if it is unset (fail closed).
-   - `wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` (or set it as a plain environment variable in the Pages project settings) — comma-separated Telegram chat ids allowed to change where new-booking notifications (guest name + phone) are sent, e.g. `-100xxxxxxxxxx,123456789`. Only a chat in this list can run `/start staff_booking_notify`; from any other chat (or if the variable is unset/empty) the command is silently ignored. Changes are recorded in the audit log (`notification_destination_change`).
-   - `wrangler pages secret put TURNSTILE_SECRET_KEY` and a plain environment variable `TURNSTILE_SITE_KEY` — see "Public feedback form: bot protection" below. **Without both, the guest feedback form (`/tri-an-khach-hang/`) rejects every submission (403, fail closed).**
+   - `wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` (set it with `pages secret put` even though it is not secret: `wrangler.toml` has `pages_build_output_dir`, so it owns plain vars and dashboard plain vars may not persist) — comma-separated Telegram chat ids allowed to change where new-booking notifications (guest name + phone) are sent, e.g. `-100xxxxxxxxxx,123456789`. Only a chat in this list can run `/start staff_booking_notify`; from any other chat (or if the variable is unset/empty) the command is silently ignored. Changes are recorded in the audit log (`notification_destination_change`).
+   - `wrangler pages secret put TURNSTILE_SECRET_KEY` and `wrangler pages secret put TURNSTILE_SITE_KEY` (public value, stored as a secret for the same reason) — see "Public feedback form: bot protection" below. **Without both, the guest feedback form (`/tri-an-khach-hang/`) rejects every submission (403, fail closed).**
 4. Create the first manager account:
    - `node scripts/seed-manager.js <username> <password>`
    - Run the printed `INSERT` with `wrangler d1 execute hien_le_garden_crm --remote --command "<sql>"`
@@ -41,7 +41,7 @@ single Cloudflare Pages deployment.
 
 1. **Cloudflare Turnstile.** The page (`tri-an-khach-hang/index.html`) reads the public site key from `GET /api/public-config` (`{ turnstileSiteKey }`, no auth, nothing else) and renders the widget; the token is sent as `turnstileToken`. The server (`lib/turnstile.js`) verifies it with siteverify before any DB access or email. Missing secret, missing/invalid/replayed token, or any siteverify error → `403` (fail closed).
    - Deploy config (Pages project → Settings → Variables and Secrets, Production and Preview):
-     - `TURNSTILE_SITE_KEY` — plain variable (public).
+     - `TURNSTILE_SITE_KEY` — public value; set it with `wrangler pages secret put TURNSTILE_SITE_KEY` (see the plain-vars note above). After deploy, `GET /api/public-config` must return a non-null `turnstileSiteKey`.
      - `TURNSTILE_SECRET_KEY` — secret (`wrangler pages secret put TURNSTILE_SECRET_KEY`). Never commit it.
    - Create the widget in Cloudflare dashboard → Turnstile, with the production hostname(s) (`hienlegarden.vn`, `www.hienlegarden.vn`, and the `*.pages.dev` preview host if previews should accept feedback).
    - Local dev: put Cloudflare's documented always-pass test keys in `.dev.vars` (site key `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`); never use them in production.
@@ -94,13 +94,11 @@ Automatic: `.github/workflows/deploy.yml` runs `wrangler pages deploy .` on ever
 - `CLOUDFLARE_API_TOKEN` — create at Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template.
 - `CLOUDFLARE_ACCOUNT_ID` — shown in `wrangler whoami`, or the dashboard URL (`dash.cloudflare.com/<account-id>/...`).
 
-Manual (e.g. for a one-off deploy without waiting on CI):
+**Do not deploy manually from a working checkout** (`npm run deploy` / `wrangler pages deploy .`). `pages deploy` uploads every file in the directory except a small hard-coded list. It does not read `.gitignore` or `.assetsignore`, so it also publishes local untracked and ignored files (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`, …) as public assets. Run from a non-`main` branch, it also creates a preview deployment bound to the production D1/R2. To redeploy, re-run the GitHub Actions deploy job instead: `gh run rerun <run-id>`, or "Re-run jobs" in the Actions tab.
 
-```bash
-npm run deploy   # wrangler pages deploy .
-```
+Known issue R-1 (release blocker, pre-existing): even the CI deploy publishes tracked non-public files (`lib/`, `migrations/`, `test/`, `docs/`, `wrangler.toml`, `package.json`, this file). See the R-1 section of the release runbook.
 
-Either way, the same domain serves both the static site and `/api/*` — no CORS, no separate backend deployment.
+The same domain serves both the static site and `/api/*` — no CORS, no separate backend deployment.
 
 ### Applying a new migration to production
 

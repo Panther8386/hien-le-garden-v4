@@ -1,6 +1,6 @@
 # Runbook phát hành — Phân quyền admin (nhánh `admin-redesign`)
 
-- Nhánh: `admin-redesign`, HEAD `289cbab`. Production hiện tại: `main` = `9675840`.
+- Nhánh: `admin-redesign`. Code runtime được kiểm thử ở `289cbab` (bằng chứng Linux §3); các commit sau đó chỉ là tài liệu/CI (runbook, `.env.example`, `.github/workflows/test.yml`), không đổi code chạy. Production hiện tại: `main` = `9675840`.
 - Hạ tầng: Cloudflare Pages project `hien-le-garden-v4` (static + Pages Functions), D1 `hien_le_garden_crm` (binding `DB`), R2 `hien-le-garden-finance-receipts` (binding `RECEIPTS`).
 - Deploy: `.github/workflows/deploy.yml` chạy `wrangler pages deploy . --project-name=hien-le-garden-v4` khi có push lên `main`.
 - Runbook này chỉ là tài liệu. Mọi lệnh `--remote` bên dưới do người vận hành tự chạy, đúng thứ tự, đúng thời điểm. Không lệnh nào trong tài liệu chứa giá trị secret thật: `<...>` là chỗ cần điền.
@@ -9,6 +9,65 @@ Quy ước:
 - Chạy lệnh trong **Git Bash / WSL / macOS / Linux** (cách trích dẫn `"..."` + `'...'` trong SQL giả định shell POSIX). PowerShell cần sửa lại dấu nháy.
 - `npx wrangler ...` dùng wrangler của repo (`^3.78`). Đăng nhập trước bằng `npx wrangler login` với tài khoản có quyền trên project.
 - Cột "READ-ONLY" = chỉ `SELECT`/`PRAGMA`, không thay đổi dữ liệu.
+- **Không bao giờ deploy từ máy local** (`npm run deploy` / `wrangler pages deploy .` trong thư mục làm việc): lệnh đó upload cả file chưa track/bị ignore trong thư mục (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`, `Pasted text.txt` …) thành file public. Deploy chỉ qua GitHub Actions `deploy.yml` (hoặc chạy lại job đó).
+
+---
+
+## R-1 — Repository files published by Pages deploy (RELEASE BLOCKER, pre-existing)
+
+**Trạng thái: BLOCKER — phải sửa và kiểm chứng TRƯỚC khi merge nhánh này.** Chủ dự án chọn phương án; runbook này không triển khai.
+
+Bằng chứng (controller kiểm tra trên production bằng request `HEAD` chỉ đọc, 2026-09-27): các URL sau đều trả **200**:
+
+- `https://hienlegarden.vn/wrangler.toml`
+- `https://hienlegarden.vn/BACKEND.md`
+- `https://hienlegarden.vn/migrations/0001_init.sql`
+- `https://hienlegarden.vn/lib/auth.js`
+- `https://hienlegarden.vn/package.json`
+- `https://hienlegarden.vn/test/auth.test.js`
+- `https://hienlegarden.vn/scripts/seed-manager.js`
+- `https://hienlegarden.vn/docs/superpowers/plans/…md`
+- `https://hienlegarden.vn/.assetsignore`
+
+Cơ chế: `deploy.yml` chạy `wrangler pages deploy .` với thư mục gốc repo. Wrangler 3.114 (`pages deploy`) chỉ bỏ qua một danh sách cứng (`_worker.js`, `_redirects`, `_headers`, `_routes.json`, `functions`, `**/.DS_Store`, `**/node_modules`, `**/.git`). File `.assetsignore` trong repo **không** được Pages đọc (chỉ đường Workers assets dùng), `.gitignore` cũng không. Mọi file được track đều thành static asset public.
+
+Tác động:
+- Mã nguồn backend (`lib/`, cách kiểm tra quyền), toàn bộ schema (`migrations/`), test, script, `package*.json`, D1 database id trong `wrangler.toml`, và tài liệu bảo mật (`docs/superpowers/*`, `BACKEND.md`) đều công khai.
+- **Không có secret** trong các file được track (đã quét) — secret nằm trong biến môi trường Pages.
+- Production hiện tại **đã** lộ các file trên. Merge nhánh này mà chưa sửa sẽ lộ **thêm** `docs/releases/*` (runbook này: ngưỡng WAF, cơ chế khoá 2FA, điểm yếu preview/rollback), `docs/superpowers/specs/*`, `.github/workflows/*.yml`, `.env.example`.
+- Deploy từ máy local còn tệ hơn: lộ cả file không track (`.dev.vars` có thể chứa secret thật, `.superpowers/` chứa báo cáo audit).
+
+Phương án (chủ dự án chọn):
+
+(a) **Khuyến nghị — deploy từ thư mục build sạch** chỉ chứa file public. Ví dụ một bước trong CI (thay đổi `deploy.yml`, cần review riêng) copy danh sách cho phép vào `./dist` rồi `wrangler pages deploy dist`. Danh sách từ cây repo hiện tại:
+   - Trang/thư mục public: `index.html`, `admin/`, `assets/`, `bang-gia/`, `cam-nang/`, `gioi-thieu/`, `tri-an-khach-hang/`, `images/`, `videos/`
+   - File gốc: `apple-touch-icon.png`, `favicon-32.png`, `favicon-512.png`, `favicon.svg`, `manifest.json`, `robots.txt`, `sitemap.xml`, `sw.js`, `_redirects` (hiện không có `_headers`/`_routes.json`)
+   - Không copy: `lib/`, `migrations/`, `test/`, `scripts/`, `docs/`, `BACKEND.md`, `wrangler.toml`, `package*.json`, `vitest.config.js`, dotfiles, `.github/`.
+   - Pages Functions: `functions/` được wrangler build từ thư mục làm việc (cwd), không phải từ thư mục output, và `functions/` import `../lib/*` lúc bundle — nên `lib/` vẫn dùng được mà không bị publish. Cần kiểm chứng: `pages_build_output_dir = "."` trong `wrangler.toml` phải đổi thành `dist` (hoặc xác nhận wrangler dùng thư mục truyền trên dòng lệnh), và build thử trên môi trường không phải production.
+   - Ví dụ (minh hoạ, chưa áp dụng):
+     ```bash
+     rm -rf dist && mkdir dist
+     cp -r index.html admin assets bang-gia cam-nang gioi-thieu tri-an-khach-hang images videos \
+           apple-touch-icon.png favicon-32.png favicon-512.png favicon.svg manifest.json robots.txt sitemap.xml sw.js _redirects dist/
+     npx wrangler pages deploy dist --project-name=hien-le-garden-v4
+     ```
+
+(b) Giữ deploy thư mục gốc nhưng thêm Pages Functions middleware (`functions/_middleware.js`) hoặc quy tắc trả 404 cho các đường dẫn riêng tư (`/docs/*`, `/lib/*`, `/migrations/*`, `/test/*`, `/scripts/*`, `/.github/*`, `/*.md`, `/wrangler.toml`, `/package*.json`, `/vitest.config.js`, dotfiles). **Yếu hơn**: danh sách chặn (deny-list) dễ sót file mới; static asset có thể được phục vụ trước middleware tuỳ cấu hình `_routes`; cần test kỹ.
+
+(c) Chuyển file không public ra khỏi thư mục gốc deploy (ví dụ đưa site public vào `public/` và đặt `pages_build_output_dir = "public"`). Sạch như (a) nhưng thay đổi cấu trúc repo lớn hơn.
+
+Kiểm chứng sau khi sửa (và sau **mọi** deploy) — tất cả phải trả **404**:
+
+```bash
+for p in /wrangler.toml /BACKEND.md /package.json /package-lock.json /vitest.config.js /.assetsignore /.gitignore /.env.example \
+         /migrations/0001_init.sql /migrations/0042_permissions.sql /lib/auth.js /lib/permissions.js /test/auth.test.js \
+         /scripts/seed-manager.js /docs/releases/admin-permissions-release-runbook.md /.github/workflows/deploy.yml \
+         /.dev.vars /.superpowers/ /graphify-out/; do
+  printf '%s %s\n' "$(curl -s -o /dev/null -I -w '%{http_code}' "https://hienlegarden.vn$p")" "$p"
+done
+```
+
+Đồng thời kiểm tra trang public vẫn 200: `/`, `/tri-an-khach-hang/`, `/admin`, `/manifest.json`, `/sw.js`, `/api/public-config`.
 
 ---
 
@@ -29,7 +88,7 @@ Quy ước:
 | Bộ lọc nhật ký thao tác (`functions/api/audit-log/index.js`) | Whitelist lọc thêm `role_permissions_change`, `user_permissions_change`, `account_lock/unlock`, `2fa_*`, `notification_destination_change` | — | — | Smoke §12 audit | Không ảnh hưởng dữ liệu |
 | `.gitignore` | Bỏ qua `.dev.vars`, `.dev.vars.*`, `.env`, `.env.*` (trừ `.env.example`), `*.local` | — | — | `git check-ignore -v --no-index .dev.vars` | Không |
 | Admin UI / trang Phân quyền (`admin/*.html`, `admin/*.js`, `admin/users.html` tab Vai trò) | Nav và nút theo mã quyền; trang chỉnh quyền vai trò (chỉ admin) + override từng tài khoản; khoá/mở khoá | — | Deploy cùng API (cùng một lần deploy Pages) | Smoke §12 | Rollback cùng code |
-| Workflow deploy `.github/workflows/deploy.yml` | **Không đổi** | Repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions | §8 | — |
+| Workflow deploy `.github/workflows/deploy.yml` | **Không đổi trong nhánh này** — nhưng deploy thư mục gốc làm lộ file repo (**R-1, blocker**) | R-1 đã sửa và kiểm chứng; repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions | §8; probe R-1 trả 404 | — |
 | Workflow test `.github/workflows/test.yml` (mới) | CI test cho PR / chạy tay, không secret, không deploy | — | — | Run xanh trên PR | Không ảnh hưởng production |
 
 ---
@@ -64,15 +123,16 @@ Lựa chọn (người dùng quyết định):
 
 Chạy lại gate:
 
-A. CI (không có tác dụng phụ lên production): workflow `.github/workflows/test.yml` chạy tự động trên mọi pull request, hoặc chạy tay:
+A. CI (không có tác dụng phụ lên production): workflow `.github/workflows/test.yml` chạy tự động trên mọi pull request. Trước khi merge, **chỉ dùng run của pull request** — `workflow_dispatch` (`gh workflow run test.yml`) chỉ hoạt động khi file workflow đã có trên nhánh mặc định `main`.
 
 ```bash
-gh workflow run test.yml --ref admin-redesign
+gh pr checks <pr-number>                     # trước merge
 gh run list --workflow=test.yml --limit 3
 gh run watch <run-id>
+gh workflow run test.yml --ref <branch>      # chỉ sau khi test.yml đã có trên main
 ```
 
-Kết quả mong đợi: bước "Vitest isolated (excluding 3 R2 files)" xanh; bước "R2 isolated — known vitest-pool-workers 0.5.x limitation" có thể đỏ nhưng được đánh dấu `continue-on-error` (job vẫn xanh). Bước đó đỏ chỉ chấp nhận được nếu lỗi là assertion `.sqlite-shm` / "Isolated storage failed", không phải assertion của test.
+Kết quả mong đợi: bước "Vitest isolated (excluding 3 R2 files)" xanh; bước "R2 isolated — known vitest-pool-workers 0.5.x limitation" có thể đỏ nhưng được đánh dấu `continue-on-error` (job vẫn xanh). Vì `continue-on-error`, job xanh **không** chứng minh 3 file R2 đạt: luôn mở log bước đó. Chỉ chấp nhận khi lỗi là `.sqlite-shm` / "Isolated storage failed"; nếu log có dòng dạng `Tests  N failed` với assertion của test → coi là FAIL thật.
 
 B. Local WSL (công thức đã dùng):
 
@@ -151,25 +211,28 @@ File export chứa PII khách, hash mật khẩu và secret TOTP: lưu **ngoài 
 
 ```bash
 umask 077
-mkdir -p "$HOME/hlg-backups"
+BK="$HOME/hlg-backups"          # chọn thư mục KHÔNG đồng bộ đám mây (không nằm trong OneDrive/Dropbox)
+mkdir -p "$BK"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-npx wrangler d1 export hien_le_garden_crm --remote --output="$HOME/hlg-backups/hien_le_garden_crm-$TS-pre0042.sql"
+npx wrangler d1 export hien_le_garden_crm --remote --output="$BK/hien_le_garden_crm-$TS-pre0042.sql"
 ```
+
+Trên Git Bash/Windows, `umask`/`chmod` không có tác dụng trên NTFS (sẽ không thấy `-rw-------`); thay vào đó đặt file trong thư mục chỉ tài khoản của bạn đọc được và kiểm tra `$HOME` không bị OneDrive đồng bộ (Known Folder Move). Trên WSL/Linux/macOS, quyền 600 áp dụng bình thường.
 
 Lưu ý: export có thể làm chậm/chặn request tới DB trong lúc chạy — làm trong khung giờ ít khách, ngay trước khi migrate.
 
 Kiểm tra file backup:
 
 ```bash
-F="$HOME/hlg-backups/hien_le_garden_crm-$TS-pre0042.sql"
+F="$BK/hien_le_garden_crm-$TS-pre0042.sql"
 test -s "$F" && echo "non-empty OK"
-ls -l "$F"                                  # kích thước > 0, quyền -rw-------
-grep -c "CREATE TABLE staff_accounts" "$F"  # phải >= 1
-grep -c "CREATE TABLE bookings" "$F"        # phải >= 1
-grep -c "INSERT INTO \"staff_accounts\"\|INSERT INTO staff_accounts" "$F"   # xấp xỉ số tài khoản ở §4
+ls -l "$F"                                                   # kích thước > 0 (quyền -rw------- trên Linux/macOS)
+grep -cE 'CREATE TABLE "?staff_accounts"?[ (]' "$F"          # phải >= 1 (tên có thể có nháy kép do RENAME ở 0007)
+grep -cE 'CREATE TABLE "?bookings"?[ (]' "$F"                # phải >= 1
+grep -cE 'INSERT INTO "?staff_accounts"?[ (]' "$F"           # bằng tổng số tài khoản ở §4
 ```
 
-So số dòng: đếm `INSERT` của `staff_accounts` trong file phải bằng tổng `COUNT(*)` ở §4 (cú pháp tên bảng trong file export có thể có hoặc không có dấu nháy — lệnh grep trên bắt cả hai). Không mở file bằng công cụ đồng bộ đám mây.
+So số dòng: đếm `INSERT` của `staff_accounts` trong file phải bằng tổng `COUNT(*)` ở §4. Migration 0007 dựng lại bảng bằng `ALTER TABLE … RENAME TO staff_accounts`, nên SQLite lưu (và export ghi) `CREATE TABLE "staff_accounts"(…)` có nháy kép — các biểu thức grep trên chấp nhận cả hai dạng. Chỉ đọc file, không sửa. Không mở file bằng công cụ đồng bộ đám mây.
 
 D1 Time Travel — ghi lại bookmark ngay trước migrate:
 
@@ -274,17 +337,19 @@ Nếu bất kỳ kiểm tra nào lệch → **NO-GO cho merge**, dừng và phâ
 
 | Name | Secret or plain | Scope (Production/Preview) | Required | Fail behavior when missing | Set command (placeholder) |
 |---|---|---|---|---|---|
-| `BREVO_API_KEY` | Secret | Production; Preview chỉ khi có môi trường preview tách DB (§10) | Có (email voucher, gửi email khách) | `sendPromoEmail` nhận lỗi từ Brevo → log `Brevo send failed <status>`; form góp ý **vẫn tạo voucher (201)**, `message_log.status = 'failed'`; gửi email từ trang Khách hàng thất bại | `npx wrangler pages secret put BREVO_API_KEY --project-name=hien-le-garden-v4` (nhập `<brevo-api-key>` khi được hỏi) |
-| `TELEGRAM_BOT_TOKEN` | Secret | Production | Có | Mọi lệnh gửi Telegram lỗi → log `Telegram send failed` / `Telegram send threw`; booking vẫn được tạo nhưng **không có thông báo** cho lễ tân; khách không nhận mã qua deep link | `npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=hien-le-garden-v4` |
+| `BREVO_API_KEY` | Secret | Production (**đã có sẵn** — chỉ đặt nếu `pages secret list` không có); Preview chỉ khi có môi trường preview tách DB (§10) | Có (email voucher, gửi email khách) | `sendPromoEmail` nhận lỗi từ Brevo → log `Brevo send failed <status>`; form góp ý **vẫn tạo voucher (201)**, `message_log.status = 'failed'`; gửi email từ trang Khách hàng thất bại | `npx wrangler pages secret put BREVO_API_KEY --project-name=hien-le-garden-v4` (nhập `<brevo-api-key>` khi được hỏi) |
+| `TELEGRAM_BOT_TOKEN` | Secret | Production (**đã có sẵn** — chỉ đặt nếu thiếu, tránh gõ nhầm token đang chạy) | Có | Mọi lệnh gửi Telegram lỗi → log `Telegram send failed` / `Telegram send threw`; booking vẫn được tạo nhưng **không có thông báo** cho lễ tân; khách không nhận mã qua deep link | `npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=hien-le-garden-v4` |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret (1–256 ký tự `A-Z a-z 0-9 _ -`) | Production | Có | Webhook trả **401 cho mọi update (fail closed)** → deep link khách `/start <id>` và `/start staff_booking_notify` ngừng hoạt động; `getWebhookInfo.last_error_message` báo 401. Thông báo booking mới (gửi đi) **không** bị ảnh hưởng | xem §9 (đọc từ biến, pipe vào `wrangler pages secret put TELEGRAM_WEBHOOK_SECRET`) |
-| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | Plain (chat id, không phải bí mật; đặt là secret cũng được) | Production | Có (nếu muốn đổi nơi nhận) | Rỗng/không đặt → **đổi nơi nhận bị tắt**: `/start staff_booking_notify` bị bỏ qua im lặng; nơi nhận đang lưu trong `notification_settings` vẫn nhận thông báo bình thường | Dashboard → Variables → `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` = `<hotel-chat-id>` (nhiều id: phân tách bằng dấu phẩy) |
-| `TURNSTILE_SITE_KEY` | Plain (public) | Production; Preview nếu test form ở preview | Có | `/api/public-config` trả `{"turnstileSiteKey": null}` → widget không hiện → không có token → **mọi lần gửi góp ý 403** | Dashboard → Variables → `TURNSTILE_SITE_KEY` = `<turnstile-site-key>` |
+| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | Không bí mật (chat id) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production | Có (nếu muốn đổi nơi nhận) | Rỗng/không đặt → **đổi nơi nhận bị tắt**: `/start staff_booking_notify` bị bỏ qua im lặng; nơi nhận đang lưu trong `notification_settings` vẫn nhận thông báo bình thường | `printf '%s' '<hotel-chat-id>' \| npx wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS --project-name=hien-le-garden-v4` (nhiều id: phân tách bằng dấu phẩy) |
+| `TURNSTILE_SITE_KEY` | Public (không bí mật) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production; Preview nếu test form ở preview | Có | `/api/public-config` trả `{"turnstileSiteKey": null}` → widget không hiện → không có token → **mọi lần gửi góp ý 403** | `npx wrangler pages secret put TURNSTILE_SITE_KEY --project-name=hien-le-garden-v4` (nhập `<turnstile-site-key>`) |
 | `TURNSTILE_SECRET_KEY` | Secret | Production; Preview nếu test form ở preview | Có | `verifyTurnstile` trả false → **`POST /api/feedback` 403 cho mọi request (fail closed)**, trước khi chạm DB/Brevo | `npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name=hien-le-garden-v4` |
 
 Bindings (không phải biến): `DB` → D1 `hien_le_garden_crm`, `RECEIPTS` → R2 `hien-le-garden-finance-receipts`, khai báo trong `wrangler.toml` — xem cảnh báo §10.
 
 Ghi chú:
-- `wrangler pages secret put` mặc định ghi vào môi trường **production**. Với Preview, dùng dashboard (tab Preview) hoặc kiểm tra `npx wrangler pages secret put --help` để biết cờ chọn môi trường của phiên bản wrangler đang dùng.
+- **Vì sao đặt cả biến không bí mật bằng `pages secret put`:** `wrangler.toml` có `pages_build_output_dir`, nên Cloudflare Pages coi `wrangler.toml` là nguồn cấu hình cho biến thường (plain vars): biến thường trên dashboard có thể bị khoá hoặc bị thay bằng `[vars]` (hiện không có) ở mỗi lần deploy bằng wrangler → `TURNSTILE_SITE_KEY` rỗng (mọi góp ý 403) hoặc allowlist rỗng (im lặng). Secret không bị ảnh hưởng. Code đọc `env.X` như nhau cho secret và biến thường. (Phương án khác: thêm `[vars]` vào `wrangler.toml` — thay đổi config cần review, chưa làm.)
+- **Cổng kiểm tra bắt buộc sau deploy:** `curl -s https://hienlegarden.vn/api/public-config` phải trả `turnstileSiteKey` **khác null**; `npx wrangler pages secret list --project-name=hien-le-garden-v4` phải liệt kê đủ 6 tên.
+- `wrangler pages secret put` mặc định ghi vào môi trường **production**. Wrangler 3.114 chấp nhận cờ ẩn `--env preview` (không hiện trong `--help`); nếu không chắc, dùng dashboard → tab Preview.
 - Kiểm tra tên (không lộ giá trị): `npx wrangler pages secret list --project-name=hien-le-garden-v4`.
 - Không bao giờ dán giá trị thật vào dòng lệnh; nhập khi wrangler hỏi, hoặc pipe từ biến đã `read -s` (§9).
 
@@ -296,8 +361,9 @@ Thứ tự bắt buộc: **freeze → backup → migrate → deploy ngay → rec
 
 | Mốc | Việc | Ghi chú |
 |---|---|---|
-| T−1 ngày | Preflight §4, chuẩn bị giá trị §7, widget Turnstile, WAF §11 (có thể bật trước) | Code cũ không bị ảnh hưởng bởi WAF |
-| T−30 phút | Đặt biến/secret production §7 (có hiệu lực ở deploy kế tiếp, code cũ bỏ qua) | Bao gồm `TELEGRAM_WEBHOOK_SECRET` |
+| Trước ngày release | **R-1 đã sửa và kiểm chứng** (probe 404) trên production — blocker | Xem mục R-1 |
+| T−1 ngày | Preflight §4, chuẩn bị giá trị §7, widget Turnstile, soạn sẵn rule WAF §11 (**chưa bật**); ghi lại thời lượng thực tế của một run `deploy.yml` gần nhất (tab Actions) để ước lượng mốc T0 + x; PR đã được duyệt và merge được (không chờ review/required check) | "~5–10 phút" bên dưới chỉ là ước lượng — `deploy.yml` cài wrangler mỗi lần chạy |
+| T−30 phút | Đọc nơi nhận hiện tại (READ-ONLY, §9f) và **xác nhận với khách sạn** đó đúng là nhóm của khách sạn; đặt biến/secret production §7 (có hiệu lực ở deploy kế tiếp, code cũ bỏ qua) | Bao gồm `TELEGRAM_WEBHOOK_SECRET`, allowlist = chat id đã xác nhận. Không allowlist một chat chưa xác nhận |
 | T−20 phút | Telegram §9 bước a–c: `setWebhook` với `secret_token` (code cũ bỏ qua header) | Kiểm tra `getWebhookInfo` không lỗi |
 | T−15 phút | Gửi thông báo freeze §6.1 | |
 | T−5 phút | Backup §5 (export + bookmark Time Travel), kiểm tra file | |
@@ -305,8 +371,9 @@ Thứ tự bắt buộc: **freeze → backup → migrate → deploy ngay → rec
 | T0 + ≤5 phút | Merge PR `admin-redesign` → `main` (GitHub UI, "Create a merge commit") → `deploy.yml` tự chạy | Không để khoảng cách dài giữa migrate và merge |
 | T0 + ~5–10 phút | Xác nhận deploy xong (bên dưới) | |
 | Ngay sau đó | Reconcile: chạy lại truy vấn đối soát §6.3 (mong đợi 0 dòng) + truy vấn "override bất thường" | Dòng nào xuất hiện = có người đổi quyền bằng UI cũ trong cửa sổ → sửa bằng trang Phân quyền mới |
-| Tiếp | Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
-| +60 phút | Theo dõi §13; kết thúc freeze bằng tin nhắn "Đã xong bảo trì" | |
+| Tiếp | Probe R-1 (404), `public-config` khác null, Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
+| Sau smoke test | Bật rule WAF §11 (hoặc bật sớm hơn chỉ khi có ngoại lệ cho IP của người vận hành) | Tránh tự chặn IP khách sạn trong lúc smoke test |
+| +60 phút | Theo dõi §13; kết thúc freeze bằng tin nhắn "Đã xong bảo trì"; khối "Release accepted" §15 | |
 
 Xác nhận deploy đã xong:
 
@@ -318,7 +385,8 @@ npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environmen
 
 - Deployment production mới nhất phải có commit = merge commit vừa tạo (hoặc HEAD `main`).
 - Trên trình duyệt: mở `https://hienlegarden.vn/admin/login.html` (tải lại cứng), đăng nhập admin → menu mới có mục Phân quyền/Vai trò trong trang Tài khoản.
-- `curl -s https://hienlegarden.vn/api/public-config` → `{"turnstileSiteKey":"<...>"}` (không null) chứng tỏ code mới + biến mới đã có hiệu lực.
+- **Cổng bắt buộc:** `curl -s https://hienlegarden.vn/api/public-config` → `{"turnstileSiteKey":"<...>"}` (**không null**) chứng tỏ code mới + biến mới đã có hiệu lực. Null → đặt lại `TURNSTILE_SITE_KEY` bằng `pages secret put` (§7) và chạy lại job deploy.
+- **Cổng bắt buộc:** chạy vòng lặp probe ở mục R-1 — mọi đường dẫn riêng tư trả 404, trang public trả 200.
 
 ---
 
@@ -326,7 +394,7 @@ npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environmen
 
 Nguyên lý: code cũ **không** đọc header `X-Telegram-Bot-Api-Secret-Token`; code mới **bắt buộc** header khớp. Vì vậy đăng ký `secret_token` với Telegram **trước** deploy: trong khoảng giữa, code cũ vẫn nhận update (bỏ qua header); ngay khi code mới lên, header đã có sẵn.
 
-Vệ sinh shell (áp dụng cho cả mục này):
+Vệ sinh shell (áp dụng cho cả mục này). Các lệnh dưới đây dành cho **bash** (Git Bash, WSL, Linux; trên macOS chạy `bash` trước — zsh dùng `setopt HIST_IGNORE_SPACE` và `read -s "?prompt"`):
 
 ```bash
 export HISTCONTROL=ignorespace:ignoredups   # lệnh bắt đầu bằng dấu cách sẽ không vào history
@@ -341,7 +409,7 @@ umask 077
  TG_SECRET="$(openssl rand -hex 32)"
 ```
 
-Lưu `TG_SECRET` vào trình quản lý mật khẩu (dán trực tiếp từ clipboard nếu cần: `printf '%s' "$TG_SECRET" | clip.exe` trên WSL / `pbcopy` trên macOS — không in ra màn hình).
+Lưu `TG_SECRET` vào trình quản lý mật khẩu (dán trực tiếp từ clipboard nếu cần: `printf '%s' "$TG_SECRET" | clip.exe` trên WSL / `pbcopy` trên macOS — không in ra màn hình). Trên Windows, lịch sử clipboard (Win+V, đồng bộ đám mây) có thể giữ secret: xoá lịch sử clipboard sau khi dán.
 
 (0) Ghi lại URL webhook hiện tại (để dùng lại đúng URL):
 
@@ -349,7 +417,7 @@ Lưu `TG_SECRET` vào trình quản lý mật khẩu (dán trực tiếp từ cl
  printf 'url = "https://api.telegram.org/bot%s/getWebhookInfo"\n' "$TG_TOKEN" | curl -sS -K -
 ```
 
-Token được đưa vào curl qua `-K -` (stdin), không nằm trong tham số dòng lệnh nên không lộ trong `ps`/history. Mong đợi `"url":"https://hienlegarden.vn/api/telegram/webhook"` (hoặc domain production thật đang dùng).
+Token được đưa vào curl qua `-K -` (stdin), không nằm trong tham số dòng lệnh nên không lộ trong `ps`/history. Mong đợi `"url":"https://hienlegarden.vn/api/telegram/webhook"` (hoặc domain production thật đang dùng). Ghi lại cả `max_connections`, `ip_address`, `allowed_updates` nếu có — `setWebhook` đặt lại các giá trị không truyền về mặc định, nên nếu khác mặc định phải truyền lại ở bước (c).
 
 (b) Đặt secret cho production (có hiệu lực ở lần deploy kế tiếp):
 
@@ -357,7 +425,7 @@ Token được đưa vào curl qua `-K -` (stdin), không nằm trong tham số 
  printf '%s' "$TG_SECRET" | npx wrangler pages secret put TELEGRAM_WEBHOOK_SECRET --project-name=hien-le-garden-v4
 ```
 
-Đồng thời đặt allowlist `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS = <hotel-chat-id>` (§7) — giá trị là chat id của nhóm khách sạn đang nhận thông báo (lấy từ `SELECT booking_notify_chat_id FROM notification_settings` ở bước f, sau khi xác nhận đó đúng là nhóm khách sạn).
+Đồng thời đặt allowlist `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS = <hotel-chat-id>` bằng `pages secret put` (§7). Giá trị lấy **ngay bây giờ (T−30)** bằng truy vấn READ-ONLY ở bước (f), rồi **xác nhận với khách sạn** (ví dụ gửi tin thử vào nhóm hoặc so với chat id admin đã biết) rằng đó đúng là nhóm của khách sạn. Nếu không xác nhận được (có thể nơi nhận đã bị chiếm trước bản fix) → **không** đưa id đó vào allowlist; dùng chat id đã biết chắc của khách sạn.
 
 (c) Đăng ký lại webhook với cùng `secret_token` — **trước khi deploy**:
 
@@ -376,7 +444,7 @@ Mong đợi `{"ok":true,"result":true,"description":"Webhook was set"}`. Lưu ý
  curl -sS -K "$F"; shred -u "$F" 2>/dev/null || rm -f "$F"
 ```
 
-Kiểm tra lại `getWebhookInfo` (bước 0): `url` đúng, `last_error_message` rỗng hoặc lỗi cũ (thời điểm `last_error_date` trước bước c).
+Kiểm tra lại `getWebhookInfo` (bước 0): `url` đúng, `last_error_message` rỗng hoặc lỗi cũ (thời điểm `last_error_date` trước bước c). Lưu ý: `getWebhookInfo` **không** cho biết `secret_token` đã được đặt hay chưa — bằng chứng thành công ở bước này chỉ là `"ok":true` của `setWebhook`; xác nhận thật là ở bước (e) sau deploy (không có 401).
 
 (d) Deploy (merge vào `main`, §8).
 
@@ -415,8 +483,8 @@ Do đó **không** deploy preview của nhánh này lên project hiện tại ch
    - Dashboard: Workers & Pages → `hien-le-garden-v4` → Settings → Bindings → chọn **Preview** → D1 `DB` = DB preview, R2 `RECEIPTS` = bucket preview.
    - Lưu ý: khi `wrangler.toml` có `pages_build_output_dir`, Cloudflare có thể coi file này là nguồn cấu hình và khoá chỉnh binding trên dashboard. Khi đó cách duy nhất là thêm khối `[env.preview]` với `d1_databases`/`r2_buckets` riêng vào `wrangler.toml` — đây là **thay đổi cấu hình cần duyệt**, chưa làm trong release này.
    - Đặt biến Preview: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` (widget có hostname preview), **không** đặt `BREVO_API_KEY` production (hoặc dùng key sandbox), **không** đặt `TELEGRAM_BOT_TOKEN` production.
-2. **Project staging riêng** (ví dụ `hien-le-garden-v4-staging`): D1/R2 riêng; deploy từ một bản copy tạm của repo (ngoài repo) có `wrangler.toml` trỏ tới DB/bucket staging, `npx wrangler pages deploy . --project-name=hien-le-garden-v4-staging`. Không commit `wrangler.toml` đã sửa.
-3. **Chỉ test local**: `npx wrangler pages dev .` với D1 local (`wrangler d1 migrations apply hien_le_garden_crm --local`), `.dev.vars` chứa site key/secret thật của một widget có hostname `localhost`, **không** có `BREVO_API_KEY` (email sẽ log `failed`, voucher vẫn tạo local). Không chạm production.
+2. **Project staging riêng** (ví dụ `hien-le-garden-v4-staging`): D1/R2 riêng; deploy từ một `git clone` **sạch** vào thư mục tạm trống (không phải thư mục làm việc, `git status --ignored` không có gì thêm), sửa `wrangler.toml` trong bản clone đó trỏ tới DB/bucket staging, rồi `npx wrangler pages deploy . --project-name=hien-le-garden-v4-staging` (tốt hơn: deploy thư mục allowlist như R-1 (a)). Không commit `wrangler.toml` đã sửa. Staging cũng bị R-1 nếu deploy thư mục gốc.
+3. **Chỉ test local**: `npx wrangler pages dev .` với D1 local (`wrangler d1 migrations apply hien_le_garden_crm --local`), `.dev.vars` chứa site key/secret thật của một widget có hostname `localhost`, **không** có `BREVO_API_KEY` (email sẽ log `failed`, voucher vẫn tạo local). Không chạm production. Xoá `.dev.vars` (hoặc thay secret thật bằng test key) sau khi test xong; không bao giờ chạy `wrangler pages deploy` từ thư mục có `.dev.vars`.
 
 ### Checklist Turnstile (chạy trên preview đã tách binding, staging, hoặc local; phần "production" chạy sau deploy)
 
@@ -447,14 +515,18 @@ curl -sS -o /dev/null -w "%{http_code}\n" -X POST "https://<host>/api/feedback" 
 
 ## 11. Đề xuất WAF rate limiting
 
+**Thời điểm bật:** sau khi smoke test §12 xong (smoke test gửi khoảng 10–15 POST login/2FA từ một IP trong vài phút — vượt ngưỡng dưới đây và sẽ chặn cả nhân viên/khách dùng chung IP khách sạn trong 10 phút). Nếu muốn bật trước, thêm ngoại lệ (skip) cho IP của người vận hành trong khung release và gỡ ngay sau đó.
+
+**So khớp đường dẫn:** dùng tiền tố (`starts_with(http.request.uri.path, "/api/bookings")`) hoặc `matches`, không dùng so sánh bằng — `/api/bookings/` (thêm dấu `/`) hay đường dẫn khác hoa/thường có thể lọt qua phép so sánh `eq`. Query string không nằm trong `http.request.uri.path` nên không ảnh hưởng. Lưu ý tiền tố `/api/bookings` với method POST cũng khớp các POST của nhân viên dưới `/api/bookings/<id>/...` (xác nhận, nhận phòng…) — chấp nhận được với ngưỡng theo IP ở giờ thấp điểm, hoặc dùng `matches "^/api/bookings/?$"` nếu gói hỗ trợ regex.
+
 Khả năng rate limiting của Cloudflare (số rule, khoảng thời gian đếm, đặc tính đếm như IP/header, thời gian chặn, kiểu hành động) **phụ thuộc gói** của zone `hienlegarden.vn`. Trước khi cấu hình, mở Security → WAF → Rate limiting rules và xem các giá trị được phép; điều chỉnh bảng dưới cho khớp. Không coi các con số dưới đây là giới hạn gói.
 
 | Path | Method | Suggested threshold | Window | Key | Action | Rationale |
 |---|---|---|---|---|---|---|
-| `/api/auth/login` | POST | 10 requests | 10 phút | IP | Block 10 phút | Vài nhân viên, thường đăng nhập 1–2 lần/ca; 10 cho phép gõ sai vài lần kể cả khi nhiều máy lễ tân chung một IP NAT; đủ chặn dò mật khẩu |
-| `/api/auth/verify-2fa` | POST | 10 requests | 10 phút | IP | Block 10 phút | Code đã giới hạn 5 mã sai/token; WAF chặn việc xin token mới liên tục để dò tiếp |
-| `/api/feedback` | POST | 5 requests | 10 phút | IP | Block 10 phút | Khách thật gửi 1 lần (lần 2 đã bị 409); 5 chừa chỗ cho lỗi mạng/Turnstile; hạn chế relay email |
-| `/api/bookings` | POST | 5 requests | 10 phút | IP | Block 10 phút | Khách đặt 1–2 yêu cầu; chặn spam booking + Telegram. `GET /api/bookings` là của nhân viên, không nằm trong rule |
+| `/api/auth/login` (tiền tố) | POST | 10 requests | 10 phút | IP | Block 10 phút | Vài nhân viên, thường đăng nhập 1–2 lần/ca; 10 cho phép gõ sai vài lần kể cả khi nhiều máy lễ tân chung một IP NAT; đủ chặn dò mật khẩu |
+| `/api/auth/verify-2fa` (tiền tố) | POST | 10 requests | 10 phút | IP | Block 10 phút | Code đã giới hạn 5 mã sai/token; WAF chặn việc xin token mới liên tục để dò tiếp |
+| `/api/feedback` (tiền tố) | POST | 5 requests | 10 phút | IP | Block 10 phút | Khách thật gửi 1 lần (lần 2 đã bị 409); 5 chừa chỗ cho lỗi mạng/Turnstile; hạn chế relay email |
+| `/api/bookings` (`^/api/bookings/?$` nếu có regex, không thì tiền tố) | POST | 5 requests | 10 phút | IP | Block 10 phút | Khách đặt 1–2 yêu cầu; chặn spam booking + Telegram. `GET /api/bookings` là của nhân viên, không nằm trong rule |
 
 Lưu ý:
 - Khách dùng 4G có thể chung IP (CGNAT). Nếu lễ tân báo khách bị chặn, nâng ngưỡng feedback/booking lên 10.
@@ -464,8 +536,10 @@ Lưu ý:
 Phương án khi chỉ có **1 rule**: gộp 4 đường dẫn, đếm chung theo IP:
 
 ```
-(http.request.method eq "POST" and http.request.uri.path in {"/api/auth/login" "/api/auth/verify-2fa" "/api/feedback" "/api/bookings"})
+(http.request.method eq "POST" and (starts_with(lower(http.request.uri.path), "/api/auth/login") or starts_with(lower(http.request.uri.path), "/api/auth/verify-2fa") or starts_with(lower(http.request.uri.path), "/api/feedback") or starts_with(lower(http.request.uri.path), "/api/bookings")))
 ```
+
+(Nếu trình soạn biểu thức của gói không hỗ trợ `lower()`/`starts_with()`, dùng `matches` với regex tương đương hoặc liệt kê cả dạng có `/` cuối.)
 
 Ngưỡng đề xuất: 15 request / 10 phút / IP, Block 10 phút (đăng nhập + 2FA của một ca vài người ≈ 4–8 request; một khách góp ý + đặt phòng ≈ 2–3). Hạn chế: đếm chung nên nhân viên thử sai nhiều ở quầy có thể tự chặn cả booking từ cùng IP (hiếm).
 
@@ -475,7 +549,13 @@ Kiểm tra sau khi bật: Security → Events lọc theo rule; không có sự k
 
 ## 12. Smoke test production (PASS/FAIL)
 
-Dùng tài khoản test riêng khi có thể (tạo bằng admin, đặt tên `test-release-<ngày>`, xoá ở cuối). Bài test tạo dữ liệu production được đánh dấu **[TẠO DỮ LIỆU]** kèm cách dọn. Không chụp màn hình có SĐT/email khách.
+Dùng tài khoản test riêng khi có thể — **[TẠO DỮ LIỆU: dòng `staff_accounts` + audit]** (tạo bằng admin, đặt tên `test-release-<ngày>`, xoá ở cuối). Trang góp ý bị service worker (`sw.js`) cache: test form trong **cửa sổ ẩn danh** hoặc tải lại cứng, nếu không lần tải đầu có thể là trang cũ không có widget → 403. WAF chưa bật trong lúc smoke test (§11). Bài test tạo dữ liệu production được đánh dấu **[TẠO DỮ LIỆU]** kèm cách dọn. Không chụp màn hình có SĐT/email khách.
+
+### Lộ file repo (R-1)
+
+| # | Kiểm tra | Mong đợi | PASS/FAIL |
+|---|---|---|---|
+| R1 | Vòng lặp probe ở mục R-1 | Mọi đường dẫn riêng tư 404; trang public 200 | |
 
 ### Xác thực
 
@@ -602,13 +682,14 @@ Nguyên tắc:
 - **Ưu tiên roll-forward** (sửa nhỏ + deploy lại) khi code mới đã được dùng.
 - Rollback code về `9675840` **sau khi** người dùng đã thao tác bằng code mới là **hồi quy bảo mật**: code cũ không lọc `locked_at` (tài khoản bị khoá đăng nhập lại được), bỏ qua override deny và chỉnh sửa bảng quyền vai trò, observer lấy lại quyền cũ, 4 cờ cũ (không được code mới cập nhật) sống lại với giá trị trước migration; webhook Telegram lại không xác thực; form góp ý lại không có Turnstile; FA-1..FA-5 mở lại.
 - Nếu buộc phải rollback code: trước đó đổi mật khẩu các tài khoản đang bị khoá (thay cho khoá), đồng bộ 4 cờ cũ theo override hiện tại qua UI cũ ngay sau rollback, và ghi biên bản.
-- Rollback code: Cloudflare dashboard → Workers & Pages → project → Deployments → deployment production trước đó → "Rollback to this deployment" (nhanh nhất), hoặc `git revert -m 1 <merge-commit>` rồi push lên `main` (qua PR). Kiểm tra biến môi trường sau rollback (deployment cũ không dùng các biến mới, không hại).
-- Time Travel restore chỉ khi dữ liệu bị hỏng — mất mọi ghi sau bookmark.
+- Rollback code: Cloudflare dashboard → Workers & Pages → project → Deployments → deployment production trước đó → "Rollback to this deployment" (nhanh nhất), hoặc `git revert -m 1 <merge-commit>` rồi push lên `main` (qua PR). Nếu revert merge, lần merge lại sau này cần revert-của-revert (nếu không git coi các commit cũ đã có mặt). Kiểm tra biến môi trường sau rollback (deployment cũ không dùng các biến mới, không hại).
+- **Không bao giờ deploy tay từ máy local** (`npm run deploy` / `wrangler pages deploy .` trong thư mục làm việc): nó publish cả file local chưa track/bị ignore (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`…) và, nếu chạy từ nhánh khác `main`, tạo preview trên DB production. Cách deploy lại duy nhất: chạy lại job GitHub Actions (`gh run rerun <run-id>` hoặc nút "Re-run jobs" trong tab Actions), hoặc push/merge commit mới lên `main`.
+- Time Travel restore chỉ khi dữ liệu bị hỏng — mất mọi ghi sau bookmark. Restore về bookmark trước 0042 **sau khi đã deploy** cũng xoá bảng/cột 0042 và dòng 0042 trong `d1_migrations` → code mới trả 500: phải rollback code trước, hoặc áp dụng lại 0042 ngay sau restore.
 
 | Failure point | Safe action | DB rollback needed? | Code rollback safe? | Data reconciliation |
 |---|---|---|---|---|
 | Migration lỗi trước deploy | Không merge. Code cũ tiếp tục chạy. Kiểm tra trạng thái bằng §6.3 (`sqlite_master`, `PRAGMA table_info`, `d1_migrations`). Nếu áp dụng dở dang: phân tích, rồi chọn (a) hoàn tất thủ công các câu lệnh còn thiếu và ghi `d1_migrations`, hoặc (b) Time Travel restore về bookmark §5 (freeze đang bật nên mất ít ghi) | Chỉ khi áp dụng dở dang và chọn (b) | Không cần (chưa deploy) | So số booking/order trước–sau nếu restore |
-| Migration OK, deploy lỗi (Actions đỏ) | Code cũ vẫn chạy trên schema mới (an toàn). Giữ freeze. Sửa nguyên nhân (secret Actions, lỗi mạng) → chạy lại job (`gh run rerun <id>`) hoặc `npm run deploy` từ `main` | Không | Không liên quan | Chạy đối soát §6.3 ngay trước khi deploy lại (bắt thay đổi cờ bằng UI cũ) |
+| Migration OK, deploy lỗi (Actions đỏ) | Code cũ vẫn chạy trên schema mới (an toàn). Giữ freeze. Sửa nguyên nhân (secret Actions, lỗi mạng) → chạy lại job (`gh run rerun <id>` / "Re-run jobs"). **Không** deploy từ máy local | Không | Không liên quan | Chạy đối soát §6.3 ngay trước khi deploy lại (bắt thay đổi cờ bằng UI cũ) |
 | Deploy OK, smoke test lỗi | Phân loại: lỗi hiển thị/1 quyền → sửa quyền bằng trang Phân quyền hoặc roll-forward fix. Lỗi 500 diện rộng → kiểm tra 0042 + log; nếu không sửa được trong 30 phút và chưa ai đổi quyền/khoá bằng code mới → rollback code chấp nhận được | Không | Có điều kiện: an toàn **chỉ khi** chưa có khoá/deny/sửa bảng vai trò bằng code mới (kiểm tra `audit_log` action `account_lock`, `user_permissions_change`, `role_permissions_change`) | Sau rollback: đối chiếu cờ cũ với override |
 | Telegram lỗi (401 trong getWebhookInfo, không có thông báo) | Roll-forward: đặt lại secret = giá trị đã đăng ký (§9b) + deploy lại, hoặc `setWebhook` lại với secret đang có (§9c). Token sai → đặt lại `TELEGRAM_BOT_TOKEN` + deploy | Không | Không cần; rollback chỉ vì Telegram là không tương xứng | Update Telegram bị 401 sẽ được Telegram gửi lại trong một thời gian; kiểm tra `pending_update_count`; hỏi lễ tân booking nào không có thông báo (xem trang Lễ tân) |
 | Turnstile lỗi (mọi góp ý 403) | Roll-forward: kiểm tra `public-config`, hostname widget, cặp site/secret key, deploy lại sau khi sửa biến. Tạm thời: lễ tân ghi nhận góp ý thủ công | Không | Không nên (mở lại relay email) | Không có dữ liệu sai; chỉ mất lượt góp ý trong thời gian lỗi |
@@ -616,7 +697,7 @@ Nguyên tắc:
 | Phát hiện lỗi sau khi người dùng đã thay đổi bảo mật bằng code mới (khoá, deny, sửa vai trò) | **Roll-forward** (fix + deploy). Không rollback code | Không | **Không** — hồi quy bảo mật (xem trên) | Không cần |
 
 Tiêu chí STOP / GO trong quá trình:
-- STOP trước migrate: không có admin đăng nhập được; backup rỗng/thiếu `CREATE TABLE staff_accounts`; `migrations list` còn file khác ngoài 0042.
+- STOP trước migrate: không có admin đăng nhập được; backup rỗng hoặc không có DDL của `staff_accounts` (grep §5, chấp nhận tên có nháy kép); `migrations list` còn file khác ngoài 0042; R-1 chưa sửa.
 - STOP trước merge: bất kỳ kiểm tra §6.3 nào lệch; migration lỗi.
 - ROLLBACK xem xét (≤30 phút sau deploy): 5xx diện rộng không giải thích được **và** chưa có thay đổi bảo mật bằng code mới.
 - Ngoài các trường hợp trên: roll-forward.
@@ -627,18 +708,31 @@ Tiêu chí STOP / GO trong quá trình:
 
 GO chỉ khi tất cả đều ✓:
 
+- [ ] **R-1 fixed and verified (private paths return 404) BEFORE merging this branch.**
+- [ ] Pages production branch = `main`; project là Direct Upload (không có Git integration — nếu có, việc push nhánh/mở PR tự build preview trên DB production).
+- [ ] PR đã được duyệt và merge được ngay (không bị chặn bởi review/required check) trước khi migrate.
+- [ ] `CLOUDFLARE_API_TOKEN` (repo secret) còn hiệu lực — run `deploy.yml` gần nhất thành công; đã ghi thời lượng run.
 - [ ] Linux gate: 79/79 migrations + 80 files/1488 tests PASS isolated; quyết định về 3 file R2 đã ghi nhận (§3); run `test.yml` trên PR xanh.
 - [ ] PR `admin-redesign` → `main` đã review, không có commit ngoài phạm vi.
 - [ ] Preflight §4: ≥1 admin đăng nhập được (đã thử), 2FA sẵn sàng.
 - [ ] 6 biến §7 đã đặt cho Production (kiểm tra bằng `pages secret list` + dashboard).
 - [ ] Telegram §9 a–c xong: `setWebhook` với `secret_token` OK, `getWebhookInfo` không lỗi mới.
 - [ ] Widget Turnstile có hostname production; checklist §10 đã chạy trên môi trường **không** dùng DB production (hoặc quyết định chỉ kiểm tra trên production sau deploy).
-- [ ] WAF §11 đã cấu hình (hoặc quyết định hoãn có ghi nhận).
+- [ ] Rule WAF §11 đã soạn sẵn, sẽ bật sau smoke test (hoặc có ngoại lệ IP người vận hành; hoặc quyết định hoãn có ghi nhận).
 - [ ] Không có preview deployment nào của nhánh này trên project production.
 - [ ] Freeze đã thông báo và được xác nhận.
 - [ ] Backup §5 hợp lệ + bookmark Time Travel đã ghi.
 - [ ] Người vận hành rảnh 60 phút sau deploy; lễ tân biết khung bảo trì.
 
 NO-GO nếu bất kỳ mục nào ở trên chưa đạt, hoặc: đang cao điểm khách, không liên lạc được người có token bot Telegram, hoặc không ai có quyền Cloudflare để rollback.
+
+Release accepted (sau deploy) chỉ khi:
+
+- [ ] Probe R-1: mọi đường dẫn riêng tư 404.
+- [ ] `/api/public-config` trả site key khác null.
+- [ ] Đối soát §6.3 không có dòng nào không giải thích được.
+- [ ] Mọi mục §12 PASS (hoặc FAIL đã có quyết định ghi nhận).
+- [ ] §13 sạch trong 60 phút; WAF đã bật.
+- [ ] Đã dọn dữ liệu test; đã thông báo kết thúc freeze.
 
 Sau release (ghi biên bản): giờ migrate, merge commit, deployment id, kết quả §6.3/§12, sự cố và cách xử lý, thời điểm kết thúc freeze.
