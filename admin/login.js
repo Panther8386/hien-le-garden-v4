@@ -45,7 +45,24 @@ document.getElementById('twoFactorForm').addEventListener('submit', async (event
   });
 
   if (!response.ok) {
-    errorEl.textContent = 'Mã xác thực không đúng';
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401 && body.pendingToken) {
+      // Token dùng một lần: server cấp token mới cho lần thử tiếp theo.
+      pendingToken = body.pendingToken;
+      errorEl.textContent = `Mã xác thực không đúng. Còn ${body.attemptsLeft} lần thử.`;
+      event.target.reset();
+      return;
+    }
+    if (response.status === 401) {
+      // Hết hạn hoặc quá số lần thử: quay lại bước nhập mật khẩu.
+      pendingToken = null;
+      event.target.reset();
+      document.getElementById('twoFactorForm').hidden = true;
+      document.getElementById('loginForm').hidden = false;
+      document.getElementById('loginError').textContent = body.error || 'Phiên xác thực đã hết hạn, vui lòng đăng nhập lại';
+      return;
+    }
+    errorEl.textContent = body.error || 'Mã xác thực không đúng';
     return;
   }
 

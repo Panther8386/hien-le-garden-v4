@@ -1,4 +1,7 @@
 import { verifyPassword, createSession, createPending2FAToken } from '../../../lib/auth.js';
+import { readJsonBody } from '../../../lib/readJsonBody.js';
+
+const MAX_BODY_BYTES = 4096;
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), {
@@ -8,13 +11,12 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env }) {
-  let body;
-  try {
-    body = await request.json();
-  } catch (err) {
+  const parsed = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
+  if (!parsed.ok) return parsed.response;
+  const { username, password } = parsed.body;
+  if (typeof username !== 'string' || typeof password !== 'string') {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
-  const { username, password } = body;
 
   const account = await env.DB.prepare(
     `SELECT id, password_hash, role, totp_enabled AS totpEnabled, locked_at AS lockedAt FROM staff_accounts WHERE username = ?`
