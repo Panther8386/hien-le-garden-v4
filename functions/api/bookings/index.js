@@ -3,23 +3,36 @@ import { hasPermission } from '../../../lib/permissions.js';
 import { redactContact } from '../../../lib/redactContact.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
 import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
+import { readJsonBody } from '../../../lib/readJsonBody.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 const VALID_ROOM_TYPES = Object.keys(ROOM_TYPES);
-const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_BODY_BYTES = 16384;
+const MAX_EMAIL_LENGTH = 254;
+const MAX_GUESTS_COUNT = 50;
+const WHITESPACE = /\s/;
+
+// Kiểm tra email tuyến tính (không dùng regex dễ backtracking): đúng một '@',
+// phần local không rỗng, domain có '.' không nằm ở đầu/cuối, không có khoảng trắng.
+// Nhận chuỗi đã trim.
+function isValidEmail(email) {
+  if (email.length < 1 || email.length > MAX_EMAIL_LENGTH) return false;
+  const at = email.indexOf('@');
+  if (at <= 0 || at !== email.lastIndexOf('@')) return false;
+  const domain = email.slice(at + 1);
+  if (domain.length < 3 || !domain.slice(1, -1).includes('.')) return false;
+  return !WHITESPACE.test(email);
+}
 
 export async function onRequestPost({ request, env }) {
-  let body;
-  try {
-    body = await request.json();
-  } catch (err) {
-    return jsonError('Dữ liệu không hợp lệ', 400);
-  }
-  body = body || {};
+  // Thứ tự: giới hạn body → parse JSON → kiểm tra trường → ghi DB → Telegram.
+  const parsed = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
 
   const { guestName, phone, email, roomType, checkIn, checkOut, guestsCount, notes } = body;
 
@@ -35,13 +48,17 @@ export async function onRequestPost({ request, env }) {
   if (phone.length > 200) {
     return jsonError('Số điện thoại quá dài', 400);
   }
-  if (email !== undefined && email !== null && (typeof email !== 'string' || !EMAIL_FORMAT.test(email))) {
-    return jsonError('Email không hợp lệ', 400);
+  let cleanEmail = null;
+  if (email !== undefined && email !== null && email !== '') {
+    if (typeof email !== 'string' || !isValidEmail(email.trim())) {
+      return jsonError('Email không hợp lệ', 400);
+    }
+    cleanEmail = email.trim();
   }
   if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 2000)) {
     return jsonError('Ghi chú không hợp lệ', 400);
   }
-  if (guestsCount !== undefined && guestsCount !== null && (!Number.isInteger(guestsCount) || guestsCount < 1)) {
+  if (guestsCount !== undefined && guestsCount !== null && (!Number.isInteger(guestsCount) || guestsCount < 1 || guestsCount > MAX_GUESTS_COUNT)) {
     return jsonError('Số khách không hợp lệ', 400);
   }
   if (!VALID_ROOM_TYPES.includes(roomType)) {
@@ -63,7 +80,7 @@ export async function onRequestPost({ request, env }) {
     `INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, guests_count, notes, status, source, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'website', ?)`
   )
-    .bind(guestName.trim(), phone.trim(), email || null, roomType, checkIn, checkOut, guestsCount || null, notes || null, now)
+    .bind(guestName.trim(), phone.trim(), cleanEmail, roomType, checkIn, checkOut, guestsCount || null, notes || null, now)
     .run();
 
   const notifySetting = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
