@@ -42,8 +42,12 @@ export async function onRequestPost({ request, env, params }) {
   let orderUpdate;
   try {
     orderUpdate = await env.DB.prepare(
-      `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'`
-    ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id).run();
+      // The total predicate rejects a stale total: if an item was added/voided after the SUM above,
+      // changes = 0 and the income row is removed below (same path as a lost close/void race).
+      `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ?
+       WHERE id = ? AND status = 'open'
+         AND (SELECT COALESCE(SUM(amount), 0) FROM dine_in_order_items WHERE order_id = ? AND status = 'posted') = ?`
+    ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id, params.id, totals.total).run();
   } catch (err) {
     // Unexpected DB error after the income row was created: remove it so no orphan income remains.
     try {

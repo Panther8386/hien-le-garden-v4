@@ -110,6 +110,46 @@ describe('FA-5 order close', () => {
     expect(await count(`SELECT COUNT(*) AS n FROM finance_transactions`)).toBe(0);
   });
 
+  it('stale total: an item added between the SUM read and the write → 409, order still open, no income row', async () => {
+    const { orderId } = await openOrderWithItem();
+    const racedEnv = envWithHookBefore(/UPDATE dine_in_orders SET status = 'closed'/, async () => {
+      expect((await add(orderId)).status).toBe(201);
+    });
+    const res = await close(orderId, racedEnv);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('Bàn này vừa được chốt hoặc huỷ bởi thao tác khác, vui lòng tải lại');
+    expect((await orderRow(orderId)).status).toBe('open');
+    expect(await count(`SELECT COUNT(*) AS n FROM finance_transactions`)).toBe(0);
+  });
+
+  it('stale total: an item voided between the SUM read and the write → 409, order still open, no income row', async () => {
+    const { orderId, itemId } = await openOrderWithItem();
+    await env.DB.prepare(
+      `INSERT INTO dine_in_order_items (order_id, menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at)
+       VALUES (?, ?, 'Cà phê', 30000, 1, 30000, 'posted', 'le_tan_race', '2026-09-04T08:02:00Z')`
+    ).bind(orderId, menuItemId).run();
+    const racedEnv = envWithHookBefore(/UPDATE dine_in_orders SET status = 'closed'/, async () => {
+      expect((await voidI(orderId, itemId)).status).toBe(200);
+    });
+    const res = await close(orderId, racedEnv);
+    expect(res.status).toBe(409);
+    expect((await orderRow(orderId)).status).toBe('open');
+    expect(await count(`SELECT COUNT(*) AS n FROM finance_transactions`)).toBe(0);
+  });
+
+  it('a normal close still works and records the posted total', async () => {
+    const { orderId } = await openOrderWithItem();
+    const res = await close(orderId);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.totalAmount).toBe(30000);
+    const row = await env.DB.prepare(`SELECT status, total_amount, finance_transaction_id FROM dine_in_orders WHERE id = ?`).bind(orderId).first();
+    expect(row.status).toBe('closed');
+    expect(row.total_amount).toBe(30000);
+    const tx = await env.DB.prepare(`SELECT amount FROM finance_transactions WHERE id = ?`).bind(row.finance_transaction_id).first();
+    expect(tx.amount).toBe(30000);
+  });
+
   it('a DB error on the close write removes the just-created income row (no orphan finance row)', async () => {
     const { orderId } = await openOrderWithItem();
     const failingEnv = envWithHookBefore(/UPDATE dine_in_orders SET status = 'closed'/, async () => {
