@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -7,6 +8,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env }) {
   const auth = await requireAuth(request, env, 'rooms.layout');
   if (auth instanceof Response) return auth;
+  // The room map is only visible with bookings.view; reordering it requires the same.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không đủ quyền', 403);
 
   let body;
   try {

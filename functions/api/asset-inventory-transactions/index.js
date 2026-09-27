@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -117,6 +118,8 @@ function insertInStatement(env, p) {
 export async function onRequestPost({ request, env }) {
   const auth = await requireAuth(request, env, 'assets.count');
   if (auth instanceof Response) return auth;
+  // Writes that reference asset records by body id require seeing them (row-independent).
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không đủ quyền', 403);
 
   let body;
   try {

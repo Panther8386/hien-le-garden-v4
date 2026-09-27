@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -34,6 +35,8 @@ export async function onRequestGet({ request, env }) {
 export async function onRequestPatch({ request, env }) {
   const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
+  // The opening balance is only visible with finance.view_all; editing it requires the same.
+  if (!hasPermission(auth, 'finance.view_all')) return jsonError('Không đủ quyền', 403);
 
   let body;
   try {

@@ -428,3 +428,115 @@ describe('assets & inventory by-id mutations require assets.view', () => {
     expect((await linePatch({ request: jsonReq(token, 'PATCH', { actualQuantity: 1 }), env, params: { id: String(f.lineId) } })).status).toBe(200);
   });
 });
+
+// ---------- fix round 1 ----------
+import { onRequestPatch as userPassword } from '../functions/api/users/[id]/password.js';
+import { onRequestPatch as userDisable2fa } from '../functions/api/users/[id]/disable-2fa.js';
+import { onRequestPost as invTxCreate } from '../functions/api/asset-inventory-transactions/index.js';
+import { onRequestPost as assetCreate } from '../functions/api/assets/index.js';
+import { onRequestPost as batchCreate } from '../functions/api/asset-inventory-batches/index.js';
+import { onRequestPost as foodLotCreate } from '../functions/api/asset-inventory-food-lots/index.js';
+import { onRequestPatch as openingBalancePatch } from '../functions/api/finance/opening-balance.js';
+import { onRequestPatch as roomsReorder } from '../functions/api/rooms/reorder.js';
+
+async function staffRow(role, { totp = false } = {}) {
+  const r = await env.DB.prepare(
+    `INSERT INTO staff_accounts (username, password_hash, role, created_at, totp_secret, totp_enabled) VALUES (?, 'old-hash', ?, '2026-09-27T00:00:00Z', ?, ?)`
+  ).bind(`mv_target_${++seq}`, role, totp ? 'SECRET' : null, totp ? 1 : 0).run();
+  const id = r.meta.last_row_id;
+  await createSession(env.DB, id);
+  return id;
+}
+
+describe('users/[id] security endpoints require users.manage', () => {
+  const snap = (id) => async () => ({
+    staff: await rows(`SELECT password_hash, totp_secret, totp_enabled FROM staff_accounts WHERE id = ?`, id),
+    sessions: await rows(`SELECT COUNT(*) AS n FROM sessions WHERE staff_id = ?`, id),
+    audit: await rows(`SELECT COUNT(*) AS n FROM audit_log`),
+  });
+
+  it('users.security granted + users.manage denied: password reset and 2FA disable answer like a missing account', async () => {
+    const token = await actor('manager', [['users.security', 'grant'], ['users.manage', 'deny']]);
+    const target = await staffRow('reception', { totp: true });
+    await expectLikeMissing((t, id) => userPassword({ request: jsonReq(t, 'PATCH', { password: 'newpassword123' }), env, params: { id: String(id) } }), token, target, snap(target));
+    await expectLikeMissing((t, id) => userDisable2fa({ request: jsonReq(t, 'PATCH'), env, params: { id: String(id) } }), token, target, snap(target));
+  });
+
+  it('regression: manager with users.manage + users.security, and admin, still reset/disable', async () => {
+    const manager = await actor('manager', [['users.security', 'grant']]);
+    const t1 = await staffRow('reception', { totp: true });
+    expect((await userPassword({ request: jsonReq(manager, 'PATCH', { password: 'newpassword123' }), env, params: { id: String(t1) } })).status).toBe(200);
+    expect((await userDisable2fa({ request: jsonReq(manager, 'PATCH'), env, params: { id: String(t1) } })).status).toBe(200);
+    const t2 = await staffRow('manager', { totp: true });
+    expect((await userPassword({ request: jsonReq(adminToken, 'PATCH', { password: 'newpassword123' }), env, params: { id: String(t2) } })).status).toBe(200);
+    expect((await userDisable2fa({ request: jsonReq(adminToken, 'PATCH'), env, params: { id: String(t2) } })).status).toBe(200);
+  });
+});
+
+describe('body-addressed asset creates require assets.view', () => {
+  const counts = async () => ({
+    assets: await rows(`SELECT COUNT(*) AS n FROM assets`),
+    batches: await rows(`SELECT COUNT(*) AS n FROM asset_inventory_batches`),
+    lines: await rows(`SELECT COUNT(*) AS n FROM asset_inventory_lines`),
+    tx: await rows(`SELECT COUNT(*) AS n FROM asset_inventory_transactions`),
+    lots: await rows(`SELECT COUNT(*) AS n FROM asset_inventory_food_lots`),
+  });
+
+  it('create-permission holders with assets.view denied are refused (403) and nothing is written', async () => {
+    const token = await actor('manager', [['assets.view', 'deny'], ['assets.config', 'grant']]);
+    const f = await assetFixture();
+    const food = await env.DB.prepare(`INSERT INTO asset_categories (management_type, name, default_unit, is_active, created_by, created_at) VALUES ('food_beverage', ?, 'chai', 1, 'x', '2026-09-07T00:00:00Z')`).bind(`Nước MV ${++seq}`).run();
+    const foodCat = food.meta.last_row_id;
+    const before = await counts();
+    const calls = [
+      invTxCreate({ request: jsonReq(token, 'POST', { categoryId: foodCat, locationId: f.locationId, movementType: 'opening', quantity: 5 }), env }),
+      assetCreate({ request: jsonReq(token, 'POST', { categoryId: f.categoryId, name: 'Mới', sourceType: 'handover_a', locationId: f.locationId }), env }),
+      batchCreate({ request: jsonReq(token, 'POST', { locationId: f.locationId, label: 'Đợt mới' }), env }),
+      foodLotCreate({ request: jsonReq(token, 'POST', { categoryId: foodCat, locationId: f.locationId }), env }),
+    ];
+    for (const res of await Promise.all(calls)) {
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'Không đủ quyền' });
+    }
+    expect(await counts()).toEqual(before);
+  });
+
+  it('regression: default manager still creates an asset and a batch', async () => {
+    const token = await actor('manager');
+    const f = await assetFixture();
+    expect((await assetCreate({ request: jsonReq(token, 'POST', { categoryId: f.categoryId, name: 'Mới', sourceType: 'handover_a', locationId: f.locationId }), env })).status).toBe(201);
+    expect((await batchCreate({ request: jsonReq(token, 'POST', { locationId: f.locationId, label: 'Đợt mới' }), env })).status).toBe(201);
+  });
+});
+
+describe('finance/opening-balance PATCH requires finance.view_all; rooms/reorder requires bookings.view', () => {
+  const obSnap = () => rows(`SELECT * FROM finance_opening_balance ORDER BY id`);
+  const activeOrder = async () => (await rows(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`)).map((r) => r.id);
+
+  it('finance.manage without finance.view_all is refused (403) and writes nothing', async () => {
+    const token = await actor('manager', [['finance.view_all', 'deny']]);
+    const before = await obSnap();
+    const res = await openingBalancePatch({ request: jsonReq(token, 'PATCH', { period: '2026-09', openingBalance: 123 }), env });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Không đủ quyền' });
+    expect(await obSnap()).toEqual(before);
+  });
+
+  it('rooms.layout without bookings.view is refused (403) and the order is unchanged', async () => {
+    const token = await actor('reception', [['rooms.layout', 'grant'], ['bookings.view', 'deny']]);
+    const order = await activeOrder();
+    const res = await roomsReorder({ request: jsonReq(token, 'PATCH', { order: [...order].reverse() }), env });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Không đủ quyền' });
+    expect(await activeOrder()).toEqual(order);
+  });
+
+  it('regression: default manager sets the opening balance; reception + rooms.layout reorders', async () => {
+    const manager = await actor('manager');
+    expect((await openingBalancePatch({ request: jsonReq(manager, 'PATCH', { period: '2026-09', openingBalance: 456 }), env })).status).toBe(200);
+    const layout = await actor('reception', [['rooms.layout', 'grant']]);
+    const reversed = [...(await activeOrder())].reverse();
+    expect((await roomsReorder({ request: jsonReq(layout, 'PATCH', { order: reversed }), env })).status).toBe(200);
+    expect(await activeOrder()).toEqual(reversed);
+  });
+});

@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { guardTarget } from '../../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
@@ -8,6 +9,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'users.security');
   if (auth instanceof Response) return auth;
+  // Viewing accounts requires users.manage: without it answer like a missing account.
+  if (!hasPermission(auth, 'users.manage')) return jsonError('Không tìm thấy tài khoản', 404);
 
   const target = await env.DB.prepare(
     `SELECT id, username, role, totp_enabled AS totpEnabled FROM staff_accounts WHERE id = ?`

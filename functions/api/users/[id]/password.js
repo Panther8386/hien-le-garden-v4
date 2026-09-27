@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { hashPassword } from '../../../../lib/auth.js';
 import { guardTarget } from '../../../../lib/staffGuards.js';
 
@@ -9,6 +10,8 @@ function jsonError(message, status) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await requireAuth(request, env, 'users.security');
   if (auth instanceof Response) return auth;
+  // Viewing accounts requires users.manage: without it answer like a missing account.
+  if (!hasPermission(auth, 'users.manage')) return jsonError('Không tìm thấy tài khoản', 404);
 
   if (String(params.id) === String(auth.staffId)) {
     return jsonError('Không thể tự đặt lại mật khẩu của chính mình bằng chức năng này', 400);
