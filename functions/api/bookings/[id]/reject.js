@@ -31,12 +31,19 @@ export async function onRequestPost({ request, env, params }) {
   if (reason) newValue += ` — Lý do: ${reason}`;
   const now = new Date().toISOString();
 
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE id = ?`).bind(reason || null, params.id),
+  // One D1 batch = one transaction. The audit row is written FIRST and only if the booking is
+  // still 'pending'; the guarded UPDATE follows. Both see the same state, so if a competing
+  // transition landed after the pre-check, neither statement changes anything.
+  const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
-       VALUES ('booking_reject', 'booking', ?, ?, 'pending', ?, ?, ?)`
-    ).bind(booking.id, booking.guest_name, newValue, auth.username, now),
+       SELECT 'booking_reject', 'booking', ?, ?, 'pending', ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'pending')`
+    ).bind(booking.id, booking.guest_name, newValue, auth.username, now, params.id),
+    env.DB.prepare(`UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE id = ? AND status = 'pending'`).bind(reason || null, params.id),
   ]);
+  if (results[1].meta.changes === 0) {
+    return jsonError('Yêu cầu này không còn ở trạng thái chờ xử lý', 400);
+  }
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

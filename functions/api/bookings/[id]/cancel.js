@@ -63,17 +63,21 @@ export async function onRequestPost({ request, env, params }) {
       refundFinanceTransactionId = insert.meta.last_row_id;
     }
 
+    // One D1 batch = one transaction. The audit row is written FIRST and only while the booking is
+    // still 'confirmed'; the guarded UPDATE follows. If a competing transition landed after the
+    // pre-check, neither statement changes anything (no orphan audit row).
     const results = await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
+         SELECT 'booking_cancel', 'booking', ?, ?, 'confirmed', ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'confirmed')`
+      ).bind(booking.id, booking.guest_name, newValue, auth.username, now, params.id),
       env.DB.prepare(
         `UPDATE bookings SET status = 'cancelled', cancel_reason = ?, refund_percent_applied = ?, refund_finance_transaction_id = ?, cancel_refund_payment_method = ? WHERE id = ? AND status = 'confirmed'`
       ).bind(reason || null, refundPercentApplied, refundFinanceTransactionId, resolvedPaymentMethod, params.id),
-      env.DB.prepare(
-        `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
-         VALUES ('booking_cancel', 'booking', ?, ?, 'confirmed', ?, ?, ?)`
-      ).bind(booking.id, booking.guest_name, newValue, auth.username, now),
     ]);
 
-    if (results[0].meta.changes === 0) {
+    if (results[1].meta.changes === 0) {
       // Thao tác khác vừa xử lý đặt phòng này giữa lúc đọc và ghi (race condition).
       if (refundFinanceTransactionId) {
         await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(refundFinanceTransactionId).run();

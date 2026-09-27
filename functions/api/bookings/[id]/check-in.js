@@ -18,6 +18,11 @@ export async function onRequestPost({ request, env, params }) {
     return jsonError('Chỉ có thể check-in từ trạng thái đã xác nhận', 400);
   }
 
-  await env.DB.prepare(`UPDATE bookings SET status = 'checked_in' WHERE id = ?`).bind(params.id).run();
+  // Guarded write: a competing transition (e.g. cancel) that landed after the pre-check above
+  // must win — never overwrite a booking that is no longer 'confirmed'.
+  const update = await env.DB.prepare(`UPDATE bookings SET status = 'checked_in' WHERE id = ? AND status = 'confirmed'`).bind(params.id).run();
+  if (update.meta.changes === 0) {
+    return jsonError('Chỉ có thể check-in từ trạng thái đã xác nhận', 400);
+  }
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

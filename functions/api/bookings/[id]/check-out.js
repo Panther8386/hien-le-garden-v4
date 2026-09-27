@@ -104,20 +104,28 @@ export async function onRequestPost({ request, env, params }) {
       createdTransactionIds.push(insert.meta.last_row_id);
     }
 
-    const statements = [
-      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in'`).bind(resolvedPaymentMethod, params.id),
-    ];
+    // One D1 batch = one transaction. The side effects (room cleaning flag, settling pending service
+    // items) run FIRST and only while the booking is still 'checked_in'; the guarded status UPDATE
+    // runs LAST. All statements see the same state, so a request that lost the race changes nothing.
+    const stillCheckedIn = `EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'checked_in')`;
+    const statements = [];
     if (booking.room_id) {
-      statements.push(env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ?`).bind(now, booking.room_id));
+      statements.push(
+        env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ? AND ${stillCheckedIn}`)
+          .bind(now, booking.room_id, params.id)
+      );
     }
     statements.push(
       env.DB.prepare(
-        `UPDATE booking_service_items SET payment_status = 'paid', payment_method = ? WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending'`
-      ).bind(resolvedPaymentMethod, params.id)
+        `UPDATE booking_service_items SET payment_status = 'paid', payment_method = ? WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending' AND ${stillCheckedIn}`
+      ).bind(resolvedPaymentMethod, params.id, params.id)
+    );
+    statements.push(
+      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in'`).bind(resolvedPaymentMethod, params.id)
     );
 
     const results = await env.DB.batch(statements);
-    if (results[0].meta.changes === 0) {
+    if (results[results.length - 1].meta.changes === 0) {
       // Thao tác khác vừa check-out đặt phòng này giữa lúc đọc và ghi (race condition).
       await cleanupCreatedTransactions();
       return jsonError('Đặt phòng này vừa được check-out bởi thao tác khác, vui lòng tải lại', 409);

@@ -63,17 +63,17 @@ export async function onRequestPost({ request, env, params }) {
   const now = new Date().toISOString();
   const [firstRoom, ...extraRooms] = rooms;
 
-  const statements = [
-    env.DB.prepare(
-      `UPDATE bookings SET status = 'confirmed', room_type = ?, room_id = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ?`
-    ).bind(firstRoom.roomType, firstRoom.roomId, auth.username, now, params.id),
-  ];
-
+  // One D1 batch = one transaction. The split bookings for the extra rooms are inserted FIRST and
+  // only while the original booking is still 'pending'; the guarded UPDATE runs LAST. All statements
+  // see the same state, so if a competing transition (reject, another confirm) landed after the
+  // pre-check, nothing is inserted and the UPDATE changes 0 rows.
+  const statements = [];
   for (const r of extraRooms) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO bookings (guest_name, phone, email, room_type, room_id, check_in, check_out, guests_count, notes, status, source, created_at, confirmed_by, confirmed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)`
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'pending')`
       ).bind(
         booking.guest_name,
         booking.phone,
@@ -87,12 +87,21 @@ export async function onRequestPost({ request, env, params }) {
         booking.source,
         now,
         auth.username,
-        now
+        now,
+        params.id
       )
     );
   }
+  statements.push(
+    env.DB.prepare(
+      `UPDATE bookings SET status = 'confirmed', room_type = ?, room_id = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ? AND status = 'pending'`
+    ).bind(firstRoom.roomType, firstRoom.roomId, auth.username, now, params.id)
+  );
 
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
+  if (results[results.length - 1].meta.changes === 0) {
+    return jsonError('Yêu cầu này không còn ở trạng thái chờ xử lý', 400);
+  }
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
