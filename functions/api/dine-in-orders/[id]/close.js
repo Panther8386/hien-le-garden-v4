@@ -39,9 +39,20 @@ export async function onRequestPost({ request, env, params }) {
   ).bind(totals.total, note, now.slice(0, 10), auth.username, now).run();
   const financeTransactionId = txInsert.meta.last_row_id;
 
-  const orderUpdate = await env.DB.prepare(
-    `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'`
-  ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id).run();
+  let orderUpdate;
+  try {
+    orderUpdate = await env.DB.prepare(
+      `UPDATE dine_in_orders SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'`
+    ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id).run();
+  } catch (err) {
+    // Unexpected DB error after the income row was created: remove it so no orphan income remains.
+    try {
+      await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).run();
+    } catch (cleanupErr) {
+      // Ignore cleanup errors — do not mask the original failure.
+    }
+    return jsonError('Có lỗi khi chốt bàn, vui lòng thử lại', 500);
+  }
 
   if (orderUpdate.meta.changes === 0) {
     // Another request already closed/voided this order between our read and this write (TOCTOU).

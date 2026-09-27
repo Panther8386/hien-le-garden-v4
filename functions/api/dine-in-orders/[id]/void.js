@@ -21,13 +21,20 @@ export async function onRequestPost({ request, env, params }) {
   const now = new Date().toISOString();
   const entityLabel = `${order.tableLabel} — ${totals.n} món, ${totals.total.toLocaleString('vi-VN')}đ`;
 
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE dine_in_orders SET status = 'voided' WHERE id = ?`).bind(params.id),
+  // One D1 batch = one transaction. The audit row is written FIRST and only while the order is
+  // still 'open'; the guarded UPDATE follows. If a competing close/void landed after the pre-check,
+  // neither statement changes anything (the closed order keeps its income row, no orphan audit).
+  const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
-       VALUES ('dine_in_order_void', 'dine_in_order', ?, ?, 'open', 'voided', ?, ?)`
-    ).bind(order.id, entityLabel, auth.username, now),
+       SELECT 'dine_in_order_void', 'dine_in_order', ?, ?, 'open', 'voided', ?, ?
+       WHERE EXISTS (SELECT 1 FROM dine_in_orders WHERE id = ? AND status = 'open')`
+    ).bind(order.id, entityLabel, auth.username, now, params.id),
+    env.DB.prepare(`UPDATE dine_in_orders SET status = 'voided' WHERE id = ? AND status = 'open'`).bind(params.id),
   ]);
+  if (results[1].meta.changes === 0) {
+    return jsonError('Chỉ có thể huỷ bàn khi còn đang mở', 400);
+  }
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
