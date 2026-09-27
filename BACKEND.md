@@ -88,6 +88,8 @@ Thêm một quyền mới:
 
 ## Deploy
 
+Release of the admin permissions branch (migration 0042, Telegram webhook secret, Turnstile, WAF, smoke tests, rollback): follow [docs/releases/admin-permissions-release-runbook.md](docs/releases/admin-permissions-release-runbook.md).
+
 Automatic: `.github/workflows/deploy.yml` runs `wrangler pages deploy .` on every push to `main`, via `cloudflare/wrangler-action`. Needs two repo secrets (Settings → Secrets and variables → Actions):
 - `CLOUDFLARE_API_TOKEN` — create at Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template.
 - `CLOUDFLARE_ACCOUNT_ID` — shown in `wrangler whoami`, or the dashboard URL (`dash.cloudflare.com/<account-id>/...`).
