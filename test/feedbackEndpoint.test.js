@@ -484,4 +484,21 @@ describe('POST /api/feedback — Brevo failure', () => {
     expect(logRow.status).toBe('failed');
     expect(await rowCount()).toBe(1);
   });
+
+  it('BREVO_API_KEY unset → still 201 with the voucher; message_log email failed; no request to Brevo (L-6)', async () => {
+    const { BREVO_API_KEY, ...envWithoutBrevo } = env;
+    expect(BREVO_API_KEY).toBe('test-key'); // the shared env does carry a key; this test removes it
+    expect('BREVO_API_KEY' in envWithoutBrevo).toBe(false);
+    const fetchMock = stubFetch();
+    const response = await submitFeedback({ request: post(validBody()), env: envWithoutBrevo });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.promoCode).toMatch(/^HLG-/);
+    expect(await rowCount()).toBe(1);
+    const logs = await env.DB.prepare('SELECT feedback_id, channel, status FROM message_log').all();
+    expect(logs.results).toEqual([{ feedback_id: body.feedbackId, channel: 'email', status: 'failed' }]);
+    expect(callsTo(fetchMock, BREVO_URL)).toHaveLength(0);
+    expect(callsTo(fetchMock, SITEVERIFY_URL)).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
