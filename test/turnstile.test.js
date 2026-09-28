@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { verifyTurnstile } from '../lib/turnstile.js';
+import { verifyTurnstile, parseAllowedHostnames } from '../lib/turnstile.js';
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const env = { TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_ALLOWED_HOSTNAMES: 'hienlegarden.vn' };
@@ -136,13 +136,107 @@ describe('verifyTurnstile', () => {
     });
 
     it('supports several comma-separated hostnames with whitespace/case/trailing-dot normalization', async () => {
-      const e = { TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_ALLOWED_HOSTNAMES: ' HienLeGarden.vn , www.hienlegarden.vn. ,' };
+      const e = { TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_ALLOWED_HOSTNAMES: ' HienLeGarden.vn , www.hienlegarden.vn. ' };
       for (const hostname of ['hienlegarden.vn', 'WWW.HIENLEGARDEN.VN', 'hienlegarden.vn.']) {
         stub(async () => Response.json({ ...OK, hostname }));
         expect(await verifyTurnstile(e, 'tok')).toBe(true);
       }
       stub(async () => Response.json({ ...OK, hostname: 'staging.hien-le-garden-v4.pages.dev' }));
       expect(await verifyTurnstile(e, 'tok')).toBe(false);
+    });
+
+    describe('response hostname is ASCII-only before normalization (L-1)', () => {
+      const e = { TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_ALLOWED_HOSTNAMES: 'hienlegarden.vn,staging.hien-le-garden-v4.pages.dev,ok.test,xn--hinlegarden-yfb.vn' };
+      async function check(hostname) {
+        stub(async () => Response.json({ ...OK, hostname }));
+        return verifyTurnstile(e, 'tok');
+      }
+
+      it('accepts the production and staging hosts, ASCII uppercase and one trailing dot', async () => {
+        for (const h of ['hienlegarden.vn', 'staging.hien-le-garden-v4.pages.dev', 'HIENLEGARDEN.VN', 'Staging.Hien-Le-Garden-V4.Pages.Dev', 'hienlegarden.vn.', 'ok.test', 'OK.TEST']) {
+          expect(await check(h), h).toBe(true);
+        }
+      });
+
+      it('rejects KELVIN SIGN (U+212A) that toLowerCase() would fold onto an allowed "k"', async () => {
+        expect('o\u212A.test'.toLowerCase()).toBe('ok.test'); // the collision this guards against
+        expect(await check('o\u212A.test')).toBe(false);
+      });
+
+      it('rejects other non-ASCII and lookalikes; punycode only matches as exact ASCII', async () => {
+        for (const h of ['hi\u00EAnlegarden.vn', '\uFF48ienlegarden.vn', 'h\u0130enlegarden.vn', 'hienlegarden.vn\u200B', '\uFEFFhienlegarden.vn', 'hienlegarden.v\u0578', 'xn--hienlegarden.vn']) {
+          expect(await check(h), JSON.stringify(h)).toBe(false);
+        }
+        expect(await check('xn--hinlegarden-yfb.vn')).toBe(true);
+        expect(await check('XN--HINLEGARDEN-YFB.VN')).toBe(true);
+      });
+
+      it('rejects control characters, spaces and separators instead of trimming them', async () => {
+        for (const h of ['hienlegarden.vn\n', '\nhienlegarden.vn', 'hienlegarden.vn\u0000', 'hien\tlegarden.vn', ' hienlegarden.vn', 'hienlegarden.vn ', 'hien legarden.vn', 'hienlegarden.vn:443', 'hienlegarden.vn/x', 'hienlegarden.vn,ok.test', 'hienlegarden.vn..']) {
+          expect(await check(h), JSON.stringify(h)).toBe(false);
+        }
+      });
+
+      it('rejects an empty or missing hostname', async () => {
+        expect(await check('')).toBe(false);
+        expect(await check('.')).toBe(false);
+        stub(async () => Response.json({ success: true }));
+        expect(await verifyTurnstile(e, 'tok')).toBe(false);
+      });
+    });
+
+    describe('allowlist validation fails closed on ANY invalid entry (L-2)', () => {
+      it('accepts valid exact hostnames', () => {
+        expect([...parseAllowedHostnames('hienlegarden.vn')]).toEqual(['hienlegarden.vn']);
+        expect([...parseAllowedHostnames('staging.hien-le-garden-v4.pages.dev')]).toEqual(['staging.hien-le-garden-v4.pages.dev']);
+        expect([...parseAllowedHostnames('example.com')]).toEqual(['example.com']);
+        expect([...parseAllowedHostnames(' Example.COM. , hienlegarden.vn')]).toEqual(['example.com', 'hienlegarden.vn']);
+        expect(parseAllowedHostnames(`${'a'.repeat(63)}.vn`)).not.toBeNull();
+      });
+
+      it.each([
+        ['unset', undefined],
+        ['non-string', 123],
+        ['blank', '  '],
+        ['empty entry between', 'a.com,,b.com'],
+        ['trailing comma', 'hienlegarden.vn,'],
+        ['leading comma', ',hienlegarden.vn'],
+        ['single label localhost', 'localhost'],
+        ['single label', 'hienlegarden'],
+        ['dash only', '-'],
+        ['dot only', '.'],
+        ['a..', 'a..'],
+        ['double trailing dot', 'hienlegarden.vn..'],
+        ['leading dot', '.hienlegarden.vn'],
+        ['empty label', 'a..b'],
+        ['label starts with -', '-hien.vn'],
+        ['label ends with -', 'hien-.vn'],
+        ['label > 63', `${'a'.repeat(64)}.vn`],
+        ['entry > 253', `${'a.'.repeat(126)}vn`],
+        ['wildcard', '*.hienlegarden.vn'],
+        ['scheme', 'https://hienlegarden.vn'],
+        ['path', 'hienlegarden.vn/path'],
+        ['port', 'hienlegarden.vn:443'],
+        ['IPv4 literal', '1.2.3.4'],
+        ['IPv6 literal', '[::1]'],
+        ['underscore', 'hien_le.vn'],
+        ['non-ASCII', 'hi\u00EAnlegarden.vn'],
+        ['Kelvin sign', 'o\u212A.test'],
+        ['internal space', 'hien legarden.vn'],
+        ['denied pages.dev', 'pages.dev'],
+        ['denied workers.dev', 'workers.dev'],
+        ['denied trycloudflare.com', 'trycloudflare.com'],
+        ['denied PAGES.DEV. (normalized)', 'PAGES.DEV.'],
+        ['one bad entry poisons a good list', 'hienlegarden.vn,pages.dev'],
+        ['prototype key', 'constructor'],
+      ])('rejects %s', async (_label, value) => {
+        expect(parseAllowedHostnames(value)).toBeNull();
+        const fetchMock = stub(async () => Response.json(OK));
+        const e = { TURNSTILE_SECRET_KEY: 'test-secret' };
+        if (value !== undefined) e.TURNSTILE_ALLOWED_HOSTNAMES = value;
+        expect(await verifyTurnstile(e, 'tok')).toBe(false);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
     });
 
     it('does not log the secret or token on hostname or config rejection', async () => {
