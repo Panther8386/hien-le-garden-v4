@@ -12,3 +12,18 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "RECEIPTS"
 bucket_name = "hien-le-garden-finance-receipts"
+
+# Preview/staging (any deploy with --branch other than the production branch "main").
+# Non-inheritable: these fully replace the top-level (production) D1/R2 bindings.
+# Gate: `npm run check:staging` must exit 0 before any remote command with --env preview.
+[env.preview]
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "hien_le_garden_crm_staging"
+database_id = "1e91a577-df12-4ff7-8730-c022be25a3c9"
+migrations_dir = "migrations"
+
+[[env.preview.r2_buckets]]
+binding = "RECEIPTS"
+bucket_name = "hien-le-garden-finance-receipts-staging"
