@@ -36,6 +36,9 @@ jobs:
       - name: Boundary check self-test (planted private files must fail the check)
         run: node scripts/check-dist.mjs --self-test
 
+      - name: Post-deploy probe self-test (local fixture servers only, no real hosts)
+        run: node scripts/probe-private-urls.mjs --self-test
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -51,6 +54,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Staging binding guard self-test (temp wrangler.toml copies)
+        run: node scripts/check-staging-bindings.mjs --self-test
+
+      # Informational only until [env.preview] exists: today it exits 2
+      # ("preview uses PRODUCTION bindings"). Make it blocking when staging lands.
+      - name: Staging binding guard on wrangler.toml (informational, non-blocking)
+        continue-on-error: true
+        run: node scripts/check-staging-bindings.mjs
 
       - name: Vitest isolated (excluding 3 R2 files)
         run: npx vitest run --exclude test/assetInventoryLines.test.js --exclude test/assetPhotos.test.js --exclude test/financeAttachments.test.js

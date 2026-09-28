@@ -32,4 +32,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Same wrangler as package-lock.json: the dist/Functions/env semantics were verified on 3.114.17.
+          wranglerVersion: "3.114.17"
           command: pages deploy dist --project-name=hien-le-garden-v4

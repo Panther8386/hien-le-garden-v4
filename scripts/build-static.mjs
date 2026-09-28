@@ -11,11 +11,11 @@
 // - Source = git-TRACKED files only (`git ls-files -z`), read from the working
 //   tree. Untracked/ignored local files (.dev.vars, graphify-out/, stray
 //   images, ...) can never enter dist/.
-// - Every tracked top-level entry must be classified as PUBLIC or PRIVATE
-//   below; an unclassified entry fails the build (a new top-level folder must
+// - Every tracked top-level entry must be classified as PUBLIC or PRIVATE in
+//   scripts/dist-policy.mjs; an unclassified entry fails the build (a new top-level folder must
 //   be decided on explicitly, never silently published or silently dropped).
-// - Inside public directories only allowlisted file extensions are copied;
-//   anything else is reported and excluded.
+// - Inside public directories only the extensions allowlisted for that
+//   directory are copied; anything else is reported and excluded.
 // - dist/ is wiped first; nothing is written outside <repo>/dist; symlinks are
 //   never followed (a tracked symlink fails the build).
 //
@@ -28,63 +28,10 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PUBLIC_FILES, PUBLIC_DIRS, PRIVATE_ENTRIES, allowlistReason } from './dist-policy.mjs';
 
-// Public top-level FILES, copied as-is (no extension filter).
-export const PUBLIC_FILES = new Set([
-  'index.html',
-  '_redirects', // Pages reads it from the upload directory as routing config
-  'favicon.svg',
-  'favicon-32.png',
-  'favicon-512.png',
-  'apple-touch-icon.png',
-  'manifest.json',
-  'robots.txt',
-  'sitemap.xml',
-  'sw.js',
-]);
-
-// Public top-level DIRECTORIES; files inside are extension-filtered.
-export const PUBLIC_DIRS = new Set([
-  'admin',
-  'assets',
-  'bang-gia',
-  'cam-nang',
-  'gioi-thieu',
-  'tri-an-khach-hang',
-  'images',
-  'videos',
-]);
-
-// Tracked top-level entries that must never be published.
-export const PRIVATE_ENTRIES = new Set([
-  'functions', // built by wrangler from cwd, not uploaded as assets
-  'lib',
-  'migrations',
-  'test',
-  'scripts',
-  'docs',
-  '.github',
-  'BACKEND.md',
-  'wrangler.toml',
-  'package.json',
-  'package-lock.json',
-  'vitest.config.js',
-  '.gitignore',
-  '.assetsignore',
-  '.env.example',
-]);
-
-// Extensions allowed inside PUBLIC_DIRS. Derived from the tracked tree
-// (html, css, js, png, jpg, webp, mp4) plus inert web media/font types.
-export const PUBLIC_EXTENSIONS = new Set([
-  '.html', '.css', '.js',
-  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.ico', '.avif',
-  '.mp4', '.webm',
-  '.woff', '.woff2',
-]);
-
-// Name patterns excluded even when the extension is allowed.
-const DENY_IN_PUBLIC = [/\.test\.js$/i, /\.spec\.js$/i, /\.map$/i, /(^|\/)\./];
+// Allowlists live in scripts/dist-policy.mjs (shared with check-dist.mjs).
+export { PUBLIC_FILES, PUBLIC_DIRS, PRIVATE_ENTRIES } from './dist-policy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -131,11 +78,8 @@ export function build({ quiet = false } = {}) {
     if (PRIVATE_ENTRIES.has(top)) continue;
     if (!isNested && PUBLIC_FILES.has(top)) { selected.push(rel); continue; }
     if (isNested && PUBLIC_DIRS.has(top)) {
-      const inner = rel.slice(top.length + 1);
-      const ext = path.posix.extname(rel).toLowerCase();
-      if (!PUBLIC_EXTENSIONS.has(ext)) { excluded.push({ rel, reason: `extension "${ext || '(none)'}" not allowlisted` }); continue; }
-      const deny = DENY_IN_PUBLIC.find((re) => re.test(inner));
-      if (deny) { excluded.push({ rel, reason: `name matches ${deny}` }); continue; }
+      const reason = allowlistReason(rel);
+      if (reason) { excluded.push({ rel, reason }); continue; }
       selected.push(rel);
       continue;
     }
@@ -143,7 +87,7 @@ export function build({ quiet = false } = {}) {
   }
   if (unclassified.size) {
     throw new Error(
-      'unclassified tracked top-level entries (add each to PUBLIC_FILES/PUBLIC_DIRS or PRIVATE_ENTRIES in scripts/build-static.mjs):\n  '
+      'unclassified tracked top-level entries (add each to PUBLIC_FILES/PUBLIC_DIRS or PRIVATE_ENTRIES in scripts/dist-policy.mjs):\n  '
       + [...unclassified].sort().join('\n  '),
     );
   }

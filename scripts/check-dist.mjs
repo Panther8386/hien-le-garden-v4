@@ -4,32 +4,25 @@
 //   node scripts/check-dist.mjs              check <repo>/dist
 //   node scripts/check-dist.mjs <dir>        check another directory
 //   node scripts/check-dist.mjs --self-test  prove the check FAILS on planted
-//                                            private files and PASSES on a
-//                                            clean copy of dist/
+//                                            private / non-allowlisted files
+//                                            and PASSES on a clean copy of dist/
 //
-// Fails (exit 1, offending paths listed) when any private path is present or
-// any required public asset is missing. Symlinks are never followed; a symlink
-// inside dist/ is itself a failure.
+// Two independent gates, both must pass (exit 1 otherwise, offending paths listed):
+//   1. denylist  — no private path (case-insensitive: LIB/, Wrangler.toml, .ENV ...)
+//   2. allowlist — every file is a PUBLIC_FILES entry, or lives in a PUBLIC_DIRS
+//                  directory with an extension allowed for that directory
+//                  (scripts/dist-policy.mjs, shared with build-static.mjs)
+// plus: every REQUIRED public asset is present; no symlinks (never followed).
 
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REQUIRED, allowlistReason } from './dist-policy.mjs';
 
-export const REQUIRED = [
-  'index.html',
-  '_redirects',
-  'manifest.json',
-  'robots.txt',
-  'sitemap.xml',
-  'sw.js',
-  'favicon.svg',
-  'admin/login.html',
-  'admin/admin.css',
-  'tri-an-khach-hang/index.html',
-  'bang-gia/index.html',
-];
+export { REQUIRED };
 
+// All comparisons below are on lowercased segments/basenames.
 // Private top-level directories (top level only: admin/lib/qrcode.min.js is a
 // legitimate public file, so "lib/**" means <dist>/lib/**).
 const PRIVATE_TOP_DIRS = new Set(['functions', 'lib', 'migrations', 'test', 'scripts', 'docs', '.github']);
@@ -37,27 +30,24 @@ const PRIVATE_TOP_DIRS = new Set(['functions', 'lib', 'migrations', 'test', 'scr
 const PRIVATE_ANY_DIRS = new Set(['.superpowers', 'graphify-out', '.git', 'node_modules', 'test-results', '.wrangler', '.claude']);
 // Private file basenames at any depth.
 const PRIVATE_BASENAMES = new Set([
-  'wrangler.toml', 'package.json', 'package-lock.json', 'BACKEND.md',
+  'wrangler.toml', 'package.json', 'package-lock.json', 'backend.md',
   '.assetsignore', '.gitignore', 'vitest.config.js',
 ]);
 
 export function privateReason(relPosix) {
-  const segs = relPosix.split('/');
+  const segs = relPosix.toLowerCase().split('/');
   const base = segs[segs.length - 1];
-  if (PRIVATE_TOP_DIRS.has(segs[0]) && segs.length > 1) return `private top-level dir ${segs[0]}/`;
+  if (segs.length > 1 && PRIVATE_TOP_DIRS.has(segs[0])) return `private top-level dir ${segs[0]}/`;
   for (const s of segs) {
     if (PRIVATE_ANY_DIRS.has(s)) return `private dir ${s}/`;
     if (s.startsWith('.env')) return 'segment starts with .env';
     if (s.startsWith('.dev.vars')) return 'segment starts with .dev.vars';
   }
   if (PRIVATE_BASENAMES.has(base)) return `private file ${base}`;
-  if (/^readme/i.test(base)) return 'README*';
-  if (/\.md$/i.test(base)) return '*.md';
-  if (/\.map$/i.test(base)) return '*.map';
-  if (/\.lock$/i.test(base)) return '*.lock';
-  if (/\.log$/i.test(base)) return '*.log';
-  if (/\.sql$/i.test(base)) return '*.sql';
-  if (/\.test\.js$/i.test(base)) return '*.test.js';
+  if (base.startsWith('readme')) return 'README*';
+  for (const ext of ['.md', '.map', '.lock', '.log', '.sql', '.test.js']) {
+    if (base.endsWith(ext)) return `*${ext}`;
+  }
   return null;
 }
 
@@ -80,11 +70,10 @@ export function checkDir(dir) {
   if (!existsSync(dir) || !lstatSync(dir).isDirectory()) {
     return { ok: false, violations: [], missing: [], symlinks: [], error: `not a directory: ${dir}`, count: 0 };
   }
-  if (lstatSync(dir).isSymbolicLink()) return { ok: false, violations: [], missing: [], symlinks: [dir], count: 0 };
   const { files, symlinks } = walk(dir);
   const violations = [];
   for (const f of files) {
-    const reason = privateReason(f);
+    const reason = privateReason(f) || allowlistReason(f);
     if (reason) violations.push({ path: f, reason });
   }
   const present = new Set(files);
@@ -94,14 +83,15 @@ export function checkDir(dir) {
 
 function report(label, res) {
   if (res.error) { console.error(`${label}: FAIL ${res.error}`); return; }
-  if (res.ok) { console.log(`${label}: PASS (${res.count} files, 0 private paths, ${REQUIRED.length}/${REQUIRED.length} required assets present)`); return; }
+  if (res.ok) { console.log(`${label}: PASS (${res.count} files, 0 private/non-allowlisted paths, ${REQUIRED.length}/${REQUIRED.length} required assets present)`); return; }
   console.error(`${label}: FAIL`);
-  for (const v of res.violations) console.error(`  private: ${v.path}  [${v.reason}]`);
+  for (const v of res.violations) console.error(`  not allowed: ${v.path}  [${v.reason}]`);
   for (const m of res.missing) console.error(`  missing required: ${m}`);
   for (const s of res.symlinks) console.error(`  symlink: ${s}`);
 }
 
 const PLANTS = [
+  // private paths (denylist)
   'lib/auth.js', 'docs/x.md', '.dev.vars', 'nested/.env.local', 'a/b/c.sql',
   'functions/api/auth/login.js', 'migrations/0001_init.sql', 'test/auth.test.js',
   'scripts/seed-manager.js', '.github/workflows/deploy.yml', '.superpowers/notes.txt',
@@ -110,6 +100,13 @@ const PLANTS = [
   'admin/admin.js.map', 'test-results/out.json', 'logs/debug.log', '.assetsignore',
   '.gitignore', 'vitest.config.js', 'admin/x.test.js', 'node_modules/pkg/index.js',
   'images/.env', 'deep/.dev.vars.production',
+  // uppercase / mixed-case variants
+  'Wrangler.toml', 'PACKAGE.JSON', 'LIB/auth.js', 'Functions/api/x.js', '.ENV', '.Env.local',
+  '.DEV.VARS', 'Docs/a.txt', '.GIT/config', 'NODE_MODULES/x.js', 'vitest.config.JS', '.GITIGNORE',
+  'Migrations/0001.txt', 'admin/README.html', 'admin/Notes.MD', 'images/DUMP.SQL',
+  // allowlist-only violations (no private pattern)
+  'random.txt', 'newdir/x.png', 'images/x.html', 'images/y.js', 'videos/a.js',
+  'videos/b.html', 'admin/data.json', 'assets/x.php', 'images/noext',
 ];
 
 function selfTest(distDir) {
@@ -129,8 +126,8 @@ function selfTest(distDir) {
       mkdirSync(path.dirname(abs), { recursive: true });
       writeFileSync(abs, 'planted by check-dist self-test\n');
       const res = checkDir(copy);
-      const caught = !res.ok && res.violations.some((v) => v.path === plant);
-      if (caught) console.log(`self-test: planted ${plant} -> FAIL as expected`);
+      const hit = res.violations.find((v) => v.path === plant);
+      if (!res.ok && hit) console.log(`self-test: planted ${plant} -> FAIL as expected [${hit.reason}]`);
       else { failures++; console.error(`self-test: planted ${plant} -> NOT DETECTED`); }
       // remove the plant's top-level entry, then restore it from dist/ if it is a real one (e.g. admin/)
       const top = plant.split('/')[0];
@@ -153,7 +150,9 @@ function selfTest(distDir) {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
-  console.log(failures ? `self-test: FAILED (${failures} problem(s))` : `self-test: OK (${PLANTS.length} planted private paths + 3 missing-asset cases detected; clean copy passes)`);
+  console.log(failures
+    ? `self-test: FAILED (${failures} problem(s))`
+    : `self-test: OK (${PLANTS.length} planted paths + 3 missing-asset cases detected; clean copy passes)`);
   return failures === 0;
 }
 
