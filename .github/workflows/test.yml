@@ -58,10 +58,11 @@ jobs:
       - name: Staging binding guard self-test (temp wrangler.toml copies)
         run: node scripts/check-staging-bindings.mjs --self-test
 
-      # Informational only until [env.preview] exists: today it exits 2
-      # ("preview uses PRODUCTION bindings"). Make it blocking when staging lands.
-      - name: Staging binding guard on wrangler.toml (informational, non-blocking)
-        continue-on-error: true
+      # Blocking: [env.preview] must bind DB/RECEIPTS to staging resources that
+      # differ from production (exit 0). Exit 1 = mismatch/shadow config,
+      # exit 2 = [env.preview] missing (preview would use PRODUCTION bindings).
+      # Runs after npm ci: the guard reads config through wrangler's own loader.
+      - name: Staging binding guard on wrangler.toml (blocking)
         run: node scripts/check-staging-bindings.mjs
 
       - name: Vitest isolated (excluding 3 R2 files)
