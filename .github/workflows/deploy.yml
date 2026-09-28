@@ -12,9 +12,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Cloudflare Pages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # R-1: upload ONLY dist/ (public allowlist built from git-tracked files).
+      # Never `pages deploy .` — that publishes wrangler.toml, migrations, lib/, docs/ ...
+      - name: Build public-only dist/ artifact
+        run: node scripts/build-static.mjs
+
+      - name: Boundary check dist/ (fails on any private path or missing public asset)
+        run: node scripts/check-dist.mjs
+
+      # Runs from the repo root (default working directory), so wrangler builds
+      # Pages Functions from ./functions (which import ../../lib/*.js) while the
+      # static upload is limited to dist/.
+      - name: Deploy dist/ to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=hien-le-garden-v4
+          command: pages deploy dist --project-name=hien-le-garden-v4
