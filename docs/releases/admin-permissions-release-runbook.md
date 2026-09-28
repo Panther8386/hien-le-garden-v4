@@ -47,7 +47,7 @@ Tác động (không đổi): mã nguồn backend, schema, test, script, `packag
 node scripts/build-static.mjs          # in số file/bytes theo thư mục; liệt kê file bị loại (vd images/.DS_Store)
 node scripts/check-dist.mjs            # mong đợi: PASS (134 files, 0 private/non-allowlisted paths, 11/11 required assets present)
 node scripts/check-dist.mjs --self-test  # mong đợi: self-test: OK (55 planted paths + 3 missing-asset cases detected; clean copy passes)
-node scripts/probe-private-urls.mjs --self-test  # mong đợi: self-test: OK (7 cases) — chỉ server giả local
+node scripts/probe-private-urls.mjs --self-test  # mong đợi: self-test: OK (39 cases) — chỉ server giả local, không mạng
 ```
 
 Trên PR: job "Release artifact boundary (R-1)" phải xanh.
@@ -65,16 +65,21 @@ Chỉ `deploy.yml` và `npm run deploy` ép build → check. Các đường tay 
 
 Hành vi Pages: `dist/` không có `404.html` cấp cao nhất → Pages coi là single-page app và trả **200 + nội dung `index.html`** cho mọi đường dẫn không tồn tại ("If your project does not include a top-level `404.html` file, Pages assumes that you are deploying a single-page application." — developers.cloudflare.com/pages/configuration/serving-pages/). Vì vậy **không** dùng mã trạng thái (kể cả `HEAD`) để kết luận: một URL riêng tư trả 200 vẫn có thể là trang chủ. Tiêu chí PASS: mã 404/410, **hoặc** 200 với body giống hệt body của `/` (trang fallback) — tức là không phải nội dung file. Mọi mã khác (3xx, 401/403/429, 4xx khác, 5xx) là INCONCLUSIVE. Đã kiểm chứng local bằng `wrangler pages dev dist`: mọi URL riêng tư trả `200 text/html` với body = `index.html` (sha256 trùng).
 
-Chạy trên **cả** domain production và alias `pages.dev` production, bằng script Node (chạy được trên Windows/macOS/Linux, sha256 bằng `node:crypto`; chỉ GET, không gửi thông tin đăng nhập):
+Chạy trên domain production **và URL riêng của deployment vừa tạo** (`https://<hash>.hien-le-garden-v4.pages.dev`, in ở cuối log bước deploy của `deploy.yml` — dòng "Take a peek over at …" — hoặc `npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environment production`), bằng script Node (chạy được trên Windows/macOS/Linux, sha256 bằng `node:crypto`; chỉ GET, không gửi thông tin đăng nhập).
+
+Vì sao không dùng alias `hien-le-garden-v4.pages.dev`: đo ngày 2026-09-28 (HEAD, chỉ đọc), alias production trả **301 về `https://hienlegarden.vn`** cho mọi đường dẫn → probe luôn ra INCONCLUSIVE ở alias (đúng thiết kế: không theo redirect). Nội dung alias chính là nội dung domain production đã kiểm. URL riêng `<hash>.hien-le-garden-v4.pages.dev` **không** bị redirect (đo cùng ngày: `200`, và deployment cũ `27cd5851` vẫn trả `wrangler.toml` `application/toml`) — nên phải kiểm URL của deployment mới.
+
+Cloudflare Email Obfuscation (zone `hienlegarden.vn`): mỗi response HTML mã hoá lại địa chỉ email bằng khoá ngẫu nhiên (`/cdn-cgi/l/email-protection#<hex>`, `data-cfemail="<hex>"`), nên hai lần tải cùng trang có sha256 khác nhau. Probe chuẩn hoá **chỉ** hai chỗ này (giải mã theo thuật toán Cloudflare, chỉ khi ra địa chỉ email hợp lệ; chỉ với body `text/html`) trước khi so sánh; mọi khác biệt khác — kể cả địa chỉ email khác — vẫn là FAIL. Dòng PASS ghi rõ "after Cloudflare email-obfuscation canonicalization". Trước bản sửa này (commit sau `6a32557`), baseline production báo 12 FAIL giả vì lý do này.
 
 ```bash
-node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev
+node scripts/probe-private-urls.mjs https://hienlegarden.vn https://<hash-deploy-mới>.hien-le-garden-v4.pages.dev
 ```
 
+
 - Kiểm 25 đường dẫn riêng tư (`/wrangler.toml`, `/BACKEND.md`, `/package*.json`, `/.env.example`, `/.dev.vars`, `/migrations/*.sql`, `/lib/*.js`, `/test/…`, `/scripts/…`, `/docs/…`, `/functions/api/auth/login.js`, `/.github/workflows/deploy.yml`, `/.superpowers/`, `/graphify-out/`, `/images/.DS_Store`) và 6 trang public (`/manifest.json`, `/sw.js`, `/robots.txt`, `/admin/admin.css`, `/tri-an-khach-hang/` phải 200 với nội dung khác trang chủ; `/api/public-config` phải JSON).
-- `PASS` chỉ khi: 404/410, hoặc 200 với body trùng sha256 của `/` (trang fallback). Redirect **không** được theo. `FAIL`: 200 với body khác trang chủ (có thể là nội dung file). `INCONCLUSIVE` (**không bao giờ** tính là PASS): 3xx, 401/403/429 (WAF, Access, rate limit — có thể che file ở phía sau), mọi 4xx khác, 5xx, lỗi mạng/DNS/TLS/timeout (curl sẽ ra `000`), hoặc `/` không trả 200 (không có mốc so sánh).
+- `PASS` chỉ khi: 404/410, hoặc 200 với body trùng sha256 của `/` (trang fallback; với HTML: trùng sau khi chuẩn hoá Email Obfuscation như trên). Redirect **không** được theo. `FAIL`: 200 với body khác trang chủ (có thể là nội dung file). `INCONCLUSIVE` (**không bao giờ** tính là PASS): 3xx, 401/403/429 (WAF, Access, rate limit — có thể che file ở phía sau), mọi 4xx khác, 5xx, lỗi mạng/DNS/TLS/timeout (curl sẽ ra `000`), hoặc `/` không trả 200 (không có mốc so sánh).
 - Exit: `0` mọi dòng PASS; `1` có FAIL (**dừng — R-1 chưa sửa**); `3` không FAIL nhưng có INCONCLUSIVE (chạy lại; chưa được kết luận). Dòng cuối: `SUMMARY PASS=… FAIL=… INCONCLUSIVE=…`.
-- Script đã tự kiểm bằng `node scripts/probe-private-urls.mjs --self-test` (server giả trên 127.0.0.1: SPA fallback, 404, lộ file, 502, ngắt kết nối, trang chủ 500, host không kết nối được).
+- Script đã tự kiểm bằng `node scripts/probe-private-urls.mjs --self-test` (server giả trên 127.0.0.1: SPA fallback, 404, lộ file, 502, ngắt kết nối, trang chủ 500, host không kết nối được; Email Obfuscation với khoá ngẫu nhiên mỗi response, kèm lộ `wrangler.toml`/JS/SQL, HTML khác nội dung, địa chỉ email khác, khác biệt ngẫu nhiên không phải email, HTML trả dưới dạng text/plain; 15 kiểm tra đơn vị của bước chuẩn hoá, gồm các dạng sai định dạng phải giữ nguyên).
 - Tuỳ chọn — deployment cũ: lấy URL `<hash>.hien-le-garden-v4.pages.dev` của một deployment trước R-1 từ `npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environment production` (hoặc dashboard) rồi `node scripts/probe-private-urls.mjs https://<hash>.hien-le-garden-v4.pages.dev`. Mong đợi **FAIL** (deployment cũ vẫn chứa file) — dùng để xác nhận mức lộ còn lại và kiểm lại sau khi chủ dự án xoá deployment cũ / bật Access (khi đó mong đợi PASS nếu deployment đã bị xoá = 404; nếu bị Access chặn sẽ ra 302/403 = INCONCLUSIVE — xác nhận Access bằng trình duyệt ẩn danh thay vì probe).
 
 Ngữ nghĩa deployment: mỗi deployment Pages là một bộ file riêng (manifest của đúng thư mục upload — `formData.append("manifest", …)` trong wrangler), và Cloudflare mô tả URL deployment là "atomic and may always be visited in the future". Nên:
@@ -102,7 +107,7 @@ Staging/preview: xem [staging-isolation.md](staging-isolation.md) (thiết kế 
 | Bộ lọc nhật ký thao tác (`functions/api/audit-log/index.js`) | Whitelist lọc thêm `role_permissions_change`, `user_permissions_change`, `account_lock/unlock`, `2fa_*`, `notification_destination_change` | — | — | Smoke §12 audit | Không ảnh hưởng dữ liệu |
 | `.gitignore` | Bỏ qua `.dev.vars`, `.dev.vars.*`, `.env`, `.env.*` (trừ `.env.example`), `*.local` | — | — | `git check-ignore -v --no-index .dev.vars` | Không |
 | Admin UI / trang Phân quyền (`admin/*.html`, `admin/*.js`, `admin/users.html` tab Vai trò) | Nav và nút theo mã quyền; trang chỉnh quyền vai trò (chỉ admin) + override từng tài khoản; khoá/mở khoá | — | Deploy cùng API (cùng một lần deploy Pages) | Smoke §12 | Rollback cùng code |
-| Workflow deploy `.github/workflows/deploy.yml` + `scripts/build-static.mjs`, `scripts/check-dist.mjs`, `wrangler.toml` (`pages_build_output_dir = "dist"`) | Sửa R-1: build `dist/` (allowlist, chỉ file được track) → boundary check → `pages deploy dist` | Job "Release artifact boundary (R-1)" xanh trên PR; repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions: bước build + check xanh trước bước deploy | §8; probe R-1 (mục R-1) PASS trên `hienlegarden.vn` và `hien-le-garden-v4.pages.dev` | Rollback về deployment trước R-1 làm lộ lại file repo |
+| Workflow deploy `.github/workflows/deploy.yml` + `scripts/build-static.mjs`, `scripts/check-dist.mjs`, `wrangler.toml` (`pages_build_output_dir = "dist"`) | Sửa R-1: build `dist/` (allowlist, chỉ file được track) → boundary check → `pages deploy dist` | Job "Release artifact boundary (R-1)" xanh trên PR; repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions: bước build + check xanh trước bước deploy | §8; probe R-1 (mục R-1) PASS trên `hienlegarden.vn` và URL `<hash>.hien-le-garden-v4.pages.dev` của deployment mới (alias `hien-le-garden-v4.pages.dev` 301 về domain chính → luôn INCONCLUSIVE) | Rollback về deployment trước R-1 làm lộ lại file repo |
 | Workflow test `.github/workflows/test.yml` (mới) + `test/vitest.r2-noniso.config.js` | CI cho PR / chạy tay, không secret, không deploy: artifact boundary (build + check + self-test), Vitest isolated trừ 3 file R2, 3 file R2 non-isolated (chặn), R2 isolated (không chặn, hoãn) | — | — | Run xanh trên PR | Không ảnh hưởng production |
 
 ---
@@ -409,7 +414,7 @@ Thứ tự bắt buộc: **freeze → backup → migrate → deploy ngay → rec
 | T0 + ≤5 phút | Merge PR `admin-redesign` → `main` (GitHub UI, "Create a merge commit") → `deploy.yml` tự chạy | Không để khoảng cách dài giữa migrate và merge |
 | T0 + ~5–10 phút | Xác nhận deploy xong (bên dưới) | |
 | Ngay sau đó | Reconcile: chạy lại truy vấn đối soát §6.3 (mong đợi 0 dòng) + truy vấn "override bất thường" | Dòng nào xuất hiện = có người đổi quyền bằng UI cũ trong cửa sổ → sửa bằng trang Phân quyền mới |
-| Tiếp | Probe R-1 (`scripts/probe-private-urls.mjs`, exit 0 trên cả 2 host), `public-config` khác null, Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
+| Tiếp | Probe R-1 (`scripts/probe-private-urls.mjs` trên `hienlegarden.vn` + URL `<hash>` của deployment mới, exit 0 cả hai), `public-config` khác null, Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
 | Sau smoke test | Bật rule WAF §11 (hoặc bật sớm hơn chỉ khi có ngoại lệ cho IP của người vận hành) | Tránh tự chặn IP khách sạn trong lúc smoke test |
 | +60 phút | Theo dõi §13; kết thúc freeze bằng tin nhắn "Đã xong bảo trì"; khối "Release accepted" §15 | |
 
@@ -424,7 +429,7 @@ npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environmen
 - Deployment production mới nhất phải có commit = merge commit vừa tạo (hoặc HEAD `main`).
 - Trên trình duyệt: mở `https://hienlegarden.vn/admin/login.html` (tải lại cứng), đăng nhập admin → menu mới có mục Phân quyền/Vai trò trong trang Tài khoản.
 - **Cổng bắt buộc:** `curl -s https://hienlegarden.vn/api/public-config` → `{"turnstileSiteKey":"<...>"}` (**không null**) chứng tỏ code mới + biến mới đã có hiệu lực. Null → đặt lại `TURNSTILE_SITE_KEY` bằng `pages secret put` (§7) và chạy lại job deploy.
-- **Cổng bắt buộc:** `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev` (mục R-1) → exit 0, `SUMMARY … FAIL=0 INCONCLUSIVE=0`. Exit 3 (INCONCLUSIVE, ví dụ lỗi mạng) **không** phải PASS: chạy lại. Trong log run `deploy.yml`, bước "Boundary check dist/" phải in `PASS` trước bước deploy.
+- **Cổng bắt buộc:** `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://<hash-deploy-mới>.hien-le-garden-v4.pages.dev` (mục R-1) → exit 0, `SUMMARY … FAIL=0 INCONCLUSIVE=0`. Exit 3 (INCONCLUSIVE, ví dụ lỗi mạng) **không** phải PASS: chạy lại. Trong log run `deploy.yml`, bước "Boundary check dist/" phải in `PASS` trước bước deploy.
 
 ---
 
@@ -610,7 +615,7 @@ Dùng tài khoản test riêng khi có thể — **[TẠO DỮ LIỆU: dòng `st
 
 | # | Kiểm tra | Mong đợi | PASS/FAIL |
 |---|---|---|---|
-| R1 | `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev` (mục R-1) | exit 0: `FAIL=0 INCONCLUSIVE=0` (riêng tư: 404/410 hoặc 200 với body = trang fallback `/`; public: 200 đúng nội dung) | |
+| R1 | `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://<hash-deploy-mới>.hien-le-garden-v4.pages.dev` (mục R-1) | exit 0: `FAIL=0 INCONCLUSIVE=0` (riêng tư: 404/410 hoặc 200 với body = trang fallback `/`; public: 200 đúng nội dung) | |
 
 ### Xác thực
 
@@ -786,7 +791,7 @@ NO-GO nếu bất kỳ mục nào ở trên chưa đạt, hoặc: đang cao đi�
 
 Release accepted (sau deploy) chỉ khi:
 
-- [ ] Probe R-1: `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev` exit 0 (`FAIL=0 INCONCLUSIVE=0`).
+- [ ] Probe R-1: `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://<hash-deploy-mới>.hien-le-garden-v4.pages.dev` exit 0 (`FAIL=0 INCONCLUSIVE=0`).
 - [ ] `/api/public-config` trả site key khác null.
 - [ ] Đối soát §6.3 không có dòng nào không giải thích được.
 - [ ] Mọi mục §12 PASS (hoặc FAIL đã có quyết định ghi nhận).
