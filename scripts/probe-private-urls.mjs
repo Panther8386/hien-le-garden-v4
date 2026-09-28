@@ -8,9 +8,10 @@
 //
 // Why bodies, not status codes: dist/ has no top-level 404.html, so Cloudflare
 // Pages treats the site as a SPA and answers unknown paths with 200 + index.html.
-// A private URL is PASS when the final status is 3xx/4xx, or it is 200 with a
-// body identical (sha256) to the home page "/" (the SPA fallback) — i.e. not the file.
-// Network errors, timeouts, 5xx, or an unusable "/" baseline are INCONCLUSIVE, never PASS.
+// A private URL is PASS only when it answers 404/410, or 200 with a body identical
+// (sha256) to the home page "/" (the SPA fallback) — i.e. not the file. Redirects are
+// not followed. 3xx, 401/403/429 (e.g. WAF/Access/rate limit), any other 4xx, 5xx,
+// network errors, timeouts, or an unusable "/" baseline are INCONCLUSIVE, never PASS.
 //
 // Exit: 0 = all PASS; 1 = at least one FAIL; 3 = no FAIL but something INCONCLUSIVE.
 // Node >= 18 (global fetch), no dependencies. GET requests only; sends no credentials.
@@ -44,9 +45,9 @@ export const PUBLIC_CHECKS = [
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
-async function get(url, timeoutMs) {
+async function get(url, timeoutMs, redirect = 'follow') {
   try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'hlg-r1-probe' } });
+    const res = await fetch(url, { redirect, signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'hlg-r1-probe' } });
     const body = Buffer.from(await res.arrayBuffer());
     return { status: res.status, type: res.headers.get('content-type') || '', hash: sha256(body), size: body.length };
   } catch (err) {
@@ -67,10 +68,11 @@ export async function probe(base, { timeoutMs = 15000, log = console.log } = {})
   log(`baseline     ${origin}/  200 ${home.type} ${home.size} B sha256=${home.hash.slice(0, 16)}…`);
 
   for (const p of PRIVATE_PATHS) {
-    const r = await get(`${origin}${p}`, timeoutMs);
+    // redirects are NOT followed for private paths: a 3xx is reported, not trusted
+    const r = await get(`${origin}${p}`, timeoutMs, 'manual');
     if (r.error) emit('INCONCLUSIVE', p, `network error: ${r.error}`);
-    else if (r.status >= 500) emit('INCONCLUSIVE', p, `status ${r.status}`);
-    else if (r.status !== 200) emit('PASS', p, `status ${r.status}`);
+    else if (r.status === 404 || r.status === 410) emit('PASS', p, `status ${r.status}`);
+    else if (r.status !== 200) emit('INCONCLUSIVE', p, `status ${r.status} (only 404/410 or 200 = fallback count as PASS; 3xx/401/403/429/other 4xx/5xx may hide the file)`);
     else if (r.hash === home.hash) emit('PASS', p, '200 = SPA fallback (home page body)');
     else emit('FAIL', p, `200 ${r.type} ${r.size} B — body differs from home page: file may be served`);
   }
@@ -100,6 +102,10 @@ function fixtureServer(mode) {
     if (mode === 'leak' && url === '/wrangler.toml') { res.writeHead(200, { 'content-type': 'application/toml' }); res.end('name = "x"'); return; }
     if (mode === 'notfound' && url !== '/' && url !== '/tri-an-khach-hang/') { res.writeHead(404); res.end('nf'); return; }
     if (mode === 'err5xx' && url === '/lib/auth.js') { res.writeHead(502); res.end('bad gateway'); return; }
+    if (mode.startsWith('status') && url === '/lib/auth.js') {
+      const code = Number(mode.slice(6));
+      res.writeHead(code, code >= 300 && code < 400 ? { location: '/' } : {}); res.end('x'); return;
+    }
     if (mode === 'drop' && url === '/BACKEND.md') { req.socket.destroy(); return; }
     res.writeHead(200, { 'content-type': 'text/html' }); res.end(HOME); // SPA fallback
   });
@@ -118,6 +124,8 @@ async function selfTest() {
     ['404 for every private path', 'notfound', (c) => c.FAIL === 0 && c.INCONCLUSIVE === 0],
     ['one private file served (/wrangler.toml)', 'leak', (c) => c.FAIL === 1],
     ['502 on one private path', 'err5xx', (c) => c.FAIL === 0 && c.INCONCLUSIVE === 1],
+    ['410 on one private path (PASS)', 'status410', (c) => c.FAIL === 0 && c.INCONCLUSIVE === 0],
+    ...[301, 302, 308, 400, 401, 403, 405, 429].map((code) => [`${code} on one private path (INCONCLUSIVE)`, `status${code}`, (c) => c.FAIL === 0 && c.INCONCLUSIVE === 1]),
     ['connection dropped on one private path', 'drop', (c) => c.FAIL === 0 && c.INCONCLUSIVE === 1],
     ['home page returns 500', 'home500', (c) => c.PASS === 0 && c.INCONCLUSIVE === 1],
   ];

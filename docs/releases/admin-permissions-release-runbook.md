@@ -63,7 +63,7 @@ Chỉ `deploy.yml` và `npm run deploy` ép build → check. Các đường tay 
 
 ### Kiểm tra sau deploy (bắt buộc, sau **mọi** deploy production)
 
-Hành vi Pages: `dist/` không có `404.html` cấp cao nhất → Pages coi là single-page app và trả **200 + nội dung `index.html`** cho mọi đường dẫn không tồn tại ("If your project does not include a top-level `404.html` file, Pages assumes that you are deploying a single-page application." — developers.cloudflare.com/pages/configuration/serving-pages/). Vì vậy **không** dùng mã trạng thái (kể cả `HEAD`) để kết luận: một URL riêng tư trả 200 vẫn có thể là trang chủ. Tiêu chí PASS: mã khác 200, **hoặc** body giống hệt body của `/` (trang fallback) — tức là không phải nội dung file. Đã kiểm chứng local bằng `wrangler pages dev dist`: mọi URL riêng tư trả `200 text/html` với body = `index.html` (sha256 trùng).
+Hành vi Pages: `dist/` không có `404.html` cấp cao nhất → Pages coi là single-page app và trả **200 + nội dung `index.html`** cho mọi đường dẫn không tồn tại ("If your project does not include a top-level `404.html` file, Pages assumes that you are deploying a single-page application." — developers.cloudflare.com/pages/configuration/serving-pages/). Vì vậy **không** dùng mã trạng thái (kể cả `HEAD`) để kết luận: một URL riêng tư trả 200 vẫn có thể là trang chủ. Tiêu chí PASS: mã 404/410, **hoặc** 200 với body giống hệt body của `/` (trang fallback) — tức là không phải nội dung file. Mọi mã khác (3xx, 401/403/429, 4xx khác, 5xx) là INCONCLUSIVE. Đã kiểm chứng local bằng `wrangler pages dev dist`: mọi URL riêng tư trả `200 text/html` với body = `index.html` (sha256 trùng).
 
 Chạy trên **cả** domain production và alias `pages.dev` production, bằng script Node (chạy được trên Windows/macOS/Linux, sha256 bằng `node:crypto`; chỉ GET, không gửi thông tin đăng nhập):
 
@@ -72,10 +72,10 @@ node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-gard
 ```
 
 - Kiểm 25 đường dẫn riêng tư (`/wrangler.toml`, `/BACKEND.md`, `/package*.json`, `/.env.example`, `/.dev.vars`, `/migrations/*.sql`, `/lib/*.js`, `/test/…`, `/scripts/…`, `/docs/…`, `/functions/api/auth/login.js`, `/.github/workflows/deploy.yml`, `/.superpowers/`, `/graphify-out/`, `/images/.DS_Store`) và 6 trang public (`/manifest.json`, `/sw.js`, `/robots.txt`, `/admin/admin.css`, `/tri-an-khach-hang/` phải 200 với nội dung khác trang chủ; `/api/public-config` phải JSON).
-- `PASS`: mã cuối 3xx/4xx, hoặc 200 với body trùng sha256 của `/` (trang fallback). `FAIL`: 200 với body khác trang chủ (có thể là nội dung file). `INCONCLUSIVE` (**không bao giờ** tính là PASS): lỗi mạng/DNS/TLS/timeout (curl sẽ ra `000`), 5xx, hoặc `/` không trả 200 (không có mốc so sánh).
+- `PASS` chỉ khi: 404/410, hoặc 200 với body trùng sha256 của `/` (trang fallback). Redirect **không** được theo. `FAIL`: 200 với body khác trang chủ (có thể là nội dung file). `INCONCLUSIVE` (**không bao giờ** tính là PASS): 3xx, 401/403/429 (WAF, Access, rate limit — có thể che file ở phía sau), mọi 4xx khác, 5xx, lỗi mạng/DNS/TLS/timeout (curl sẽ ra `000`), hoặc `/` không trả 200 (không có mốc so sánh).
 - Exit: `0` mọi dòng PASS; `1` có FAIL (**dừng — R-1 chưa sửa**); `3` không FAIL nhưng có INCONCLUSIVE (chạy lại; chưa được kết luận). Dòng cuối: `SUMMARY PASS=… FAIL=… INCONCLUSIVE=…`.
 - Script đã tự kiểm bằng `node scripts/probe-private-urls.mjs --self-test` (server giả trên 127.0.0.1: SPA fallback, 404, lộ file, 502, ngắt kết nối, trang chủ 500, host không kết nối được).
-- Tuỳ chọn — deployment cũ: lấy URL `<hash>.hien-le-garden-v4.pages.dev` của một deployment trước R-1 từ `npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environment production` (hoặc dashboard) rồi `node scripts/probe-private-urls.mjs https://<hash>.hien-le-garden-v4.pages.dev`. Mong đợi **FAIL** (deployment cũ vẫn chứa file) — dùng để xác nhận mức lộ còn lại và kiểm lại sau khi chủ dự án xoá deployment cũ / bật Access (khi đó mong đợi PASS hoặc bị Access chặn = 302/403 → PASS).
+- Tuỳ chọn — deployment cũ: lấy URL `<hash>.hien-le-garden-v4.pages.dev` của một deployment trước R-1 từ `npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environment production` (hoặc dashboard) rồi `node scripts/probe-private-urls.mjs https://<hash>.hien-le-garden-v4.pages.dev`. Mong đợi **FAIL** (deployment cũ vẫn chứa file) — dùng để xác nhận mức lộ còn lại và kiểm lại sau khi chủ dự án xoá deployment cũ / bật Access (khi đó mong đợi PASS nếu deployment đã bị xoá = 404; nếu bị Access chặn sẽ ra 302/403 = INCONCLUSIVE — xác nhận Access bằng trình duyệt ẩn danh thay vì probe).
 
 Ngữ nghĩa deployment: mỗi deployment Pages là một bộ file riêng (manifest của đúng thư mục upload — `formData.append("manifest", …)` trong wrangler), và Cloudflare mô tả URL deployment là "atomic and may always be visited in the future". Nên:
 - Sau deploy sạch, domain production và alias `hien-le-garden-v4.pages.dev` chỉ phục vụ file của deployment mới.
@@ -497,7 +497,7 @@ Do đó **không** deploy preview của nhánh này lên project hiện tại ch
 
 1. **(Khuyến nghị) `[env.preview]` trong cùng project** — chi tiết ở [staging-isolation.md](staging-isolation.md). Tạo D1 `hien_le_garden_crm_staging` và R2 `hien-le-garden-finance-receipts-staging`; thêm khối `[env.preview]` với `d1_databases`/`r2_buckets` riêng vào `wrangler.toml` (**thay đổi cấu hình cần duyệt**, chưa làm trong release này).
    - **Không** gán binding trên Dashboard: khi `wrangler.toml` có `pages_build_output_dir`, file này là nguồn sự thật, dashboard chỉ xem (đã kiểm chứng). `d1_databases`/`r2_buckets` không kế thừa từ cấp cao nhất.
-   - Cổng bắt buộc trước mọi test preview: `node scripts/check-staging-bindings.mjs` phải exit 0 (hôm nay exit 2 = preview dùng binding production).
+   - Cổng bắt buộc trước mọi test preview: `node scripts/check-staging-bindings.mjs` phải exit 0 (hôm nay exit 2 = preview dùng binding production). Khi chưa có `[env.preview]`, cờ `--env preview` **lặng lẽ dùng binding PRODUCTION** (cli.js ~86633–86646): không chạy lệnh remote nào có `--env preview` trừ khi guard vừa exit 0.
    - Migrations staging: `npx wrangler d1 migrations apply hien_le_garden_crm_staging --env preview --remote`. **Không bao giờ** dùng binding `DB` hay tên `hien_le_garden_crm` mà không có `--env preview` (đó là D1 production).
    - Secret preview: đặt lại **mọi** secret bằng `npx wrangler pages secret put <NAME> --project-name=hien-le-garden-v4 --env preview` (checklist ở staging-isolation.md §4). `pages secret put` **không có `--env` ghi vào production**. Bot Telegram staging riêng; **không** đặt `BREVO_API_KEY` (gửi thất bại an toàn, không giả định Brevo có sandbox); Turnstile = widget staging riêng hoặc key test.
 2. **Project staging riêng** (ví dụ `hien-le-garden-v4-staging`): D1/R2 riêng; deploy từ một `git clone` **sạch** vào thư mục tạm trống (không phải thư mục làm việc, `git status --ignored` không có gì thêm), sửa `wrangler.toml` trong bản clone đó trỏ tới DB/bucket staging, rồi `npm run build && npm run check:dist && npx wrangler pages deploy dist --project-name=hien-le-garden-v4-staging`. Không commit `wrangler.toml` đã sửa. Cảnh báo: deploy project staging bằng `wrangler.toml` của repo (không sửa) sẽ gắn **binding production** vào staging (wrangler 3.114 `pages deploy` không nhận `--config`).
@@ -572,7 +572,7 @@ Dùng tài khoản test riêng khi có thể — **[TẠO DỮ LIỆU: dòng `st
 
 | # | Kiểm tra | Mong đợi | PASS/FAIL |
 |---|---|---|---|
-| R1 | `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev` (mục R-1) | exit 0: `FAIL=0 INCONCLUSIVE=0` (riêng tư: 3xx/4xx hoặc body = trang fallback `/`; public: 200 đúng nội dung) | |
+| R1 | `node scripts/probe-private-urls.mjs https://hienlegarden.vn https://hien-le-garden-v4.pages.dev` (mục R-1) | exit 0: `FAIL=0 INCONCLUSIVE=0` (riêng tư: 404/410 hoặc 200 với body = trang fallback `/`; public: 200 đúng nội dung) | |
 
 ### Xác thực
 

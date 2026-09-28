@@ -75,6 +75,7 @@ Các bước dưới đây do chủ dự án chạy khi đã duyệt; tài liệ
   npx wrangler d1 execute          hien_le_garden_crm_staging --env preview --remote --command "<SQL>"
   ```
   Lý do (cli.js 3.114.17): `d1 migrations apply/list` tìm DB bằng `getDatabaseInfoFromConfig(config, name)` chỉ trong `d1_databases` của **env đang chọn** (~101440, ~119512). Không có `--env preview` thì env là cấp cao nhất (chỉ có DB production) → lệnh dừng với "Couldn't find a D1 DB with the name or binding 'hien_le_garden_crm_staging'". `d1 execute` còn tra theo tên qua API nếu không có trong config (`getDatabaseByNameOrBinding`, ~101463).
+- **CẢNH BÁO — `--env preview` KHÔNG an toàn khi chưa có `[env.preview]`:** với cấu hình Pages thiếu bảng `env.preview`, wrangler giữ nguyên cấu hình cấp cao nhất (cli.js ~86633–86646) — tức là `--env preview` **lặng lẽ dùng binding PRODUCTION** (không báo lỗi; đã kiểm: `unstable_readConfig({ env: "preview" })` trên `wrangler.toml` hiện tại trả về đúng D1/R2 production). Ví dụ `d1 execute DB --env preview --remote` lúc này chạy trên D1 production. **Không bao giờ chạy lệnh remote nào có `--env preview` trừ khi `node scripts/check-staging-bindings.mjs` vừa exit 0.**
 - **CẢNH BÁO: không bao giờ dùng binding `DB` (hoặc tên `hien_le_garden_crm`) mà không có `--env preview`** — `d1 migrations apply DB --remote` / `d1 execute DB --remote` chạy trên **D1 production** (production còn migration 0042 đang chờ). Nếu gặp lỗi "Couldn't find a D1 DB", sửa bằng cách thêm `--env preview`, **không** bằng cách đổi sang `DB`.
 - Dữ liệu: seed tài khoản test bằng `node scripts/seed-manager.js <username> <password> [role]`, rồi chạy SQL in ra bằng `npx wrangler d1 execute hien_le_garden_crm_staging --env preview --remote --command "<SQL>"`. Lưu ý: comment đầu file `scripts/seed-manager.js` ghi `wrangler d1 execute hien_le_garden_crm --remote` — đó là lệnh **production**, không dùng cho staging. Không copy dữ liệu khách production.
 
@@ -121,16 +122,18 @@ Các bước dưới đây do chủ dự án chạy khi đã duyệt; tài liệ
 ## 5. Guard chống cấu hình nhầm — cổng BẮT BUỘC trước mọi test staging
 
 `scripts/check-staging-bindings.mjs` (`npm run check:staging`). Chỉ đọc `wrangler.toml`, không gọi mạng. Đọc cấu hình bằng chính loader của wrangler (`experimental_readRawConfig` để biết có bảng `[env.preview]` thật hay không; `unstable_readConfig` không env và với `env: "preview"` để lấy binding production và binding mà preview deployment sẽ nhận) — không grep/regex trên TOML, nên dòng comment `# [env.preview]`, chuỗi nháy đơn `'...'` hay inline table đều được hiểu đúng như wrangler hiểu.
+- Guard đọc **đúng file cấu hình mà wrangler sẽ đọc**: wrangler tìm `wrangler.json` → `wrangler.jsonc` → `wrangler.toml` ở thư mục hiện tại và mọi thư mục cha, và lệnh pages còn đi theo redirect `.wrangler/deploy/config.json` (cli.js `findWranglerConfig` ~84277, `findRedirectedWranglerConfig` ~84285). Nếu có bất kỳ file nào trong số đó (thư mục của `wrangler.toml` hoặc thư mục cha), wrangler sẽ dùng file khác → guard **FAIL (exit 1)**.
+- Id/tên DB/tên bucket được so sánh sau `trim().toLowerCase()` (id production viết HOA hay có khoảng trắng vẫn bị bắt).
 
 | Exit | Ý nghĩa | Hành động |
 |---|---|---|
 | 0 | Preview tách biệt: mọi binding D1/R2 của production (`DB`, `RECEIPTS`) có trong preview, không `database_id`/`database_name`/`bucket_name` nào của preview trùng production | Được test staging |
-| 1 | MISMATCH: preview trùng production, hoặc thiếu binding `DB`/`RECEIPTS` | **Dừng.** Sửa `[env.preview]` |
+| 1 | MISMATCH: preview trùng production, thiếu binding `DB`/`RECEIPTS`, wrangler từ chối cấu hình, hoặc có `wrangler.json`/`wrangler.jsonc`/`.wrangler/deploy/config.json` che `wrangler.toml` | **Dừng.** Sửa cấu hình |
 | 2 | NOT CONFIGURED: không có `[env.preview]` → "preview uses PRODUCTION bindings" | **Dừng.** Không deploy/test preview |
 
 ```bash
 node scripts/check-staging-bindings.mjs            # hôm nay: exit 2 (chưa có [env.preview])
-node scripts/check-staging-bindings.mjs --self-test  # 9 trường hợp, gồm comment "# [env.preview]" và id nháy đơn
+node scripts/check-staging-bindings.mjs --self-test  # 15 trường hợp: comment "# [env.preview]", id nháy đơn, id HOA / có khoảng trắng, wrangler.json(c), redirect .wrangler/deploy
 ```
 
 CI (`test.yml`): self-test chạy chặn; bước chạy thật trên `wrangler.toml` hiện chỉ để thông tin (`continue-on-error`) vì `[env.preview]` chưa có — chuyển thành chặn trong PR thêm `[env.preview]`.
