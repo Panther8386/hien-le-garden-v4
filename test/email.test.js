@@ -37,4 +37,15 @@ describe('sendPromoEmail', () => {
     const result = await sendPromoEmail({ BREVO_API_KEY: 'test-key' }, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
     expect(result).toBe(false);
   });
+
+  it.each([[{}], [{ BREVO_API_KEY: '' }], [{ BREVO_API_KEY: undefined }]])(
+    'returns false without calling Brevo when BREVO_API_KEY is not configured (%j)',
+    async (env) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await sendPromoEmail(env, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
+      expect(result).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 });

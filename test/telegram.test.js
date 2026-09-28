@@ -25,4 +25,15 @@ describe('sendTelegramMessage', () => {
     const result = await sendTelegramMessage({ TELEGRAM_BOT_TOKEN: 'x' }, { chatId: '1', text: 't' });
     expect(result).toBe(false);
   });
+
+  it.each([[{}], [{ TELEGRAM_BOT_TOKEN: '' }], [{ TELEGRAM_BOT_TOKEN: undefined }]])(
+    'returns false without calling Telegram when TELEGRAM_BOT_TOKEN is not configured (%j)',
+    async (env) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await sendTelegramMessage(env, { chatId: '1', text: 't' });
+      expect(result).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 });

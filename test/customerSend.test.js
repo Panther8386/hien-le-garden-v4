@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { env } from 'cloudflare:test';
+import { env as baseEnv } from 'cloudflare:test';
 import { onRequestPost as sendMessage } from '../functions/api/customers/[id]/send.js';
 import { createSession } from '../lib/auth.js';
+
+// Sender fail-safe: không có key thì không gọi API — test cần key giả.
+const env = { ...baseEnv, BREVO_API_KEY: 'test-key', TELEGRAM_BOT_TOKEN: 'test-token' };
 
 let receptionToken, emailTemplateId, telegramTemplateId;
 
