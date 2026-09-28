@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// Boundary check for dist/ before `wrangler pages deploy dist` (release item R-1).
+//
+//   node scripts/check-dist.mjs              check <repo>/dist
+//   node scripts/check-dist.mjs <dir>        check another directory
+//   node scripts/check-dist.mjs --self-test  prove the check FAILS on planted
+//                                            private files and PASSES on a
+//                                            clean copy of dist/
+//
+// Fails (exit 1, offending paths listed) when any private path is present or
+// any required public asset is missing. Symlinks are never followed; a symlink
+// inside dist/ is itself a failure.
+
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export const REQUIRED = [
+  'index.html',
+  '_redirects',
+  'manifest.json',
+  'robots.txt',
+  'sitemap.xml',
+  'sw.js',
+  'favicon.svg',
+  'admin/login.html',
+  'admin/admin.css',
+  'tri-an-khach-hang/index.html',
+  'bang-gia/index.html',
+];
+
+// Private top-level directories (top level only: admin/lib/qrcode.min.js is a
+// legitimate public file, so "lib/**" means <dist>/lib/**).
+const PRIVATE_TOP_DIRS = new Set(['functions', 'lib', 'migrations', 'test', 'scripts', 'docs', '.github']);
+// Private directory names at ANY depth.
+const PRIVATE_ANY_DIRS = new Set(['.superpowers', 'graphify-out', '.git', 'node_modules', 'test-results', '.wrangler', '.claude']);
+// Private file basenames at any depth.
+const PRIVATE_BASENAMES = new Set([
+  'wrangler.toml', 'package.json', 'package-lock.json', 'BACKEND.md',
+  '.assetsignore', '.gitignore', 'vitest.config.js',
+]);
+
+export function privateReason(relPosix) {
+  const segs = relPosix.split('/');
+  const base = segs[segs.length - 1];
+  if (PRIVATE_TOP_DIRS.has(segs[0]) && segs.length > 1) return `private top-level dir ${segs[0]}/`;
+  for (const s of segs) {
+    if (PRIVATE_ANY_DIRS.has(s)) return `private dir ${s}/`;
+    if (s.startsWith('.env')) return 'segment starts with .env';
+    if (s.startsWith('.dev.vars')) return 'segment starts with .dev.vars';
+  }
+  if (PRIVATE_BASENAMES.has(base)) return `private file ${base}`;
+  if (/^readme/i.test(base)) return 'README*';
+  if (/\.md$/i.test(base)) return '*.md';
+  if (/\.map$/i.test(base)) return '*.map';
+  if (/\.lock$/i.test(base)) return '*.lock';
+  if (/\.log$/i.test(base)) return '*.log';
+  if (/\.sql$/i.test(base)) return '*.sql';
+  if (/\.test\.js$/i.test(base)) return '*.test.js';
+  return null;
+}
+
+function walk(root) {
+  const files = [];
+  const symlinks = [];
+  const stack = [''];
+  while (stack.length) {
+    const relDir = stack.pop();
+    for (const ent of readdirSync(path.join(root, relDir), { withFileTypes: true })) {
+      const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
+      if (ent.isSymbolicLink()) { symlinks.push(rel); continue; }
+      if (ent.isDirectory()) stack.push(rel); else files.push(rel);
+    }
+  }
+  return { files: files.sort(), symlinks: symlinks.sort() };
+}
+
+export function checkDir(dir) {
+  if (!existsSync(dir) || !lstatSync(dir).isDirectory()) {
+    return { ok: false, violations: [], missing: [], symlinks: [], error: `not a directory: ${dir}`, count: 0 };
+  }
+  if (lstatSync(dir).isSymbolicLink()) return { ok: false, violations: [], missing: [], symlinks: [dir], count: 0 };
+  const { files, symlinks } = walk(dir);
+  const violations = [];
+  for (const f of files) {
+    const reason = privateReason(f);
+    if (reason) violations.push({ path: f, reason });
+  }
+  const present = new Set(files);
+  const missing = REQUIRED.filter((r) => !present.has(r));
+  return { ok: !violations.length && !missing.length && !symlinks.length, violations, missing, symlinks, count: files.length };
+}
+
+function report(label, res) {
+  if (res.error) { console.error(`${label}: FAIL ${res.error}`); return; }
+  if (res.ok) { console.log(`${label}: PASS (${res.count} files, 0 private paths, ${REQUIRED.length}/${REQUIRED.length} required assets present)`); return; }
+  console.error(`${label}: FAIL`);
+  for (const v of res.violations) console.error(`  private: ${v.path}  [${v.reason}]`);
+  for (const m of res.missing) console.error(`  missing required: ${m}`);
+  for (const s of res.symlinks) console.error(`  symlink: ${s}`);
+}
+
+const PLANTS = [
+  'lib/auth.js', 'docs/x.md', '.dev.vars', 'nested/.env.local', 'a/b/c.sql',
+  'functions/api/auth/login.js', 'migrations/0001_init.sql', 'test/auth.test.js',
+  'scripts/seed-manager.js', '.github/workflows/deploy.yml', '.superpowers/notes.txt',
+  'graphify-out/graph.json', '.git/config', 'wrangler.toml', 'package.json',
+  'package-lock.json', 'yarn.lock', 'BACKEND.md', 'README.txt', 'admin/notes.md',
+  'admin/admin.js.map', 'test-results/out.json', 'logs/debug.log', '.assetsignore',
+  '.gitignore', 'vitest.config.js', 'admin/x.test.js', 'node_modules/pkg/index.js',
+  'images/.env', 'deep/.dev.vars.production',
+];
+
+function selfTest(distDir) {
+  const base = checkDir(distDir);
+  if (base.error) { console.error(`self-test: ${base.error} — run node scripts/build-static.mjs first`); return false; }
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'check-dist-selftest-'));
+  let failures = 0;
+  try {
+    const copy = path.join(tmp, 'dist');
+    cpSync(distDir, copy, { recursive: true, verbatimSymlinks: true });
+    const clean = checkDir(copy);
+    if (clean.ok) console.log(`self-test: clean copy PASS as expected (${clean.count} files)`);
+    else { failures++; console.error('self-test: clean copy unexpectedly FAILED'); report('  clean copy', clean); }
+
+    for (const plant of PLANTS) {
+      const abs = path.join(copy, ...plant.split('/'));
+      mkdirSync(path.dirname(abs), { recursive: true });
+      writeFileSync(abs, 'planted by check-dist self-test\n');
+      const res = checkDir(copy);
+      const caught = !res.ok && res.violations.some((v) => v.path === plant);
+      if (caught) console.log(`self-test: planted ${plant} -> FAIL as expected`);
+      else { failures++; console.error(`self-test: planted ${plant} -> NOT DETECTED`); }
+      // remove the plant's top-level entry, then restore it from dist/ if it is a real one (e.g. admin/)
+      const top = plant.split('/')[0];
+      rmSync(path.join(copy, top), { recursive: true, force: true });
+      if (existsSync(path.join(distDir, top))) cpSync(path.join(distDir, top), path.join(copy, top), { recursive: true });
+    }
+
+    for (const req of ['index.html', 'admin/login.html', '_redirects']) {
+      const abs = path.join(copy, ...req.split('/'));
+      rmSync(abs, { force: true });
+      const res = checkDir(copy);
+      if (!res.ok && res.missing.includes(req)) console.log(`self-test: removed ${req} -> FAIL as expected`);
+      else { failures++; console.error(`self-test: removed ${req} -> NOT DETECTED`); }
+      cpSync(path.join(distDir, ...req.split('/')), abs);
+    }
+
+    const final = checkDir(copy);
+    if (final.ok) console.log('self-test: restored copy PASS as expected');
+    else { failures++; console.error('self-test: restored copy unexpectedly FAILED'); report('  restored copy', final); }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  console.log(failures ? `self-test: FAILED (${failures} problem(s))` : `self-test: OK (${PLANTS.length} planted private paths + 3 missing-asset cases detected; clean copy passes)`);
+  return failures === 0;
+}
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  const args = process.argv.slice(2);
+  const defaultDist = path.resolve(scriptDir, '..', 'dist');
+  if (args.includes('--self-test')) {
+    process.exit(selfTest(defaultDist) ? 0 : 1);
+  }
+  const target = path.resolve(args[0] || defaultDist);
+  const res = checkDir(target);
+  report(`check-dist ${path.relative(process.cwd(), target) || '.'}`, res);
+  process.exit(res.ok ? 0 : 1);
+}
