@@ -114,7 +114,7 @@ Staging/preview: xem [staging-isolation.md](staging-isolation.md) (thiết kế 
 - [ ] Linux test gate đã quyết định (§3).
 - [ ] **Khuyến nghị cho chủ dự án (chưa cấu hình trong repo):** bật branch protection cho `main` (GitHub → Settings → Branches/Rulesets) với *required status checks* `Release artifact boundary (R-1)` và `test` của workflow `test.yml`, và "Require a pull request before merging". Thiếu cấu hình này thì các bước "chặn" trong `test.yml` chỉ hiển thị đỏ, **không** ngăn merge. (`deploy.yml` vẫn tự build + check trước khi deploy, nên R-1 được giữ kể cả khi thiếu branch protection.)
 - [ ] Preflight admin production đạt (§4): có ít nhất 1 admin đăng nhập được, biết mật khẩu và (nếu bật) có app 2FA.
-- [ ] Đã chuẩn bị giá trị cho 6 biến môi trường (§7) — lưu trong trình quản lý mật khẩu, không dán vào chat/ticket.
+- [ ] Đã chuẩn bị giá trị cho 7 biến môi trường (§7) — lưu trong trình quản lý mật khẩu, không dán vào chat/ticket.
 - [ ] Widget Turnstile đã tạo với hostname production (§10).
 - [ ] Đã biết chat id Telegram của nhóm khách sạn đang nhận thông báo (giá trị allowlist, §9f).
 - [ ] Đã chọn khung giờ ít khách (ví dụ sáng sớm), có người trực lễ tân được báo trước, có 60 phút theo dõi sau deploy.
@@ -359,16 +359,37 @@ Nếu bất kỳ kiểm tra nào lệch → **NO-GO cho merge**, dừng và phâ
 | `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | Không bí mật (chat id) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production | Có (nếu muốn đổi nơi nhận) | Rỗng/không đặt → **đổi nơi nhận bị tắt**: `/start staff_booking_notify` bị bỏ qua im lặng; nơi nhận đang lưu trong `notification_settings` vẫn nhận thông báo bình thường | `printf '%s' '<hotel-chat-id>' \| npx wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS --project-name=hien-le-garden-v4` (nhiều id: phân tách bằng dấu phẩy) |
 | `TURNSTILE_SITE_KEY` | Public (không bí mật) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production; Preview nếu test form ở preview | Có | `/api/public-config` trả `{"turnstileSiteKey": null}` → widget không hiện → không có token → **mọi lần gửi góp ý 403** | `npx wrangler pages secret put TURNSTILE_SITE_KEY --project-name=hien-le-garden-v4` (nhập `<turnstile-site-key>`) |
 | `TURNSTILE_SECRET_KEY` | Secret | Production; Preview nếu test form ở preview | Có | `verifyTurnstile` trả false → **`POST /api/feedback` 403 cho mọi request (fail closed)**, trước khi chạm DB/Brevo | `npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name=hien-le-garden-v4` |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | Không bí mật nhưng **đặt bằng `pages secret put`** | Production: **PENDING** (đề xuất `hienlegarden.vn` — xem manifest §7.1); Preview: `staging.hien-le-garden-v4.pages.dev` | Có | Thiếu/rỗng/sai định dạng → **mọi góp ý 403** (không gọi siteverify); hostname Turnstile trả về không nằm trong danh sách → 403, log `Turnstile hostname not allowed <hostname>` | `printf '%s' 'hienlegarden.vn' \| npx wrangler pages secret put TURNSTILE_ALLOWED_HOSTNAMES --project-name=hien-le-garden-v4` |
 
 Bindings (không phải biến): `DB` → D1 `hien_le_garden_crm`, `RECEIPTS` → R2 `hien-le-garden-finance-receipts`, khai báo trong `wrangler.toml` — xem cảnh báo §10.
 
 Ghi chú:
 - **Vì sao đặt cả biến không bí mật bằng `pages secret put`:** `wrangler.toml` có `pages_build_output_dir`, nên Cloudflare Pages coi `wrangler.toml` là nguồn cấu hình cho biến thường (plain vars): biến thường trên dashboard có thể bị khoá hoặc bị thay bằng `[vars]` (hiện không có) ở mỗi lần deploy bằng wrangler → `TURNSTILE_SITE_KEY` rỗng (mọi góp ý 403) hoặc allowlist rỗng (im lặng). Secret không bị ảnh hưởng. Code đọc `env.X` như nhau cho secret và biến thường. (Phương án khác: thêm `[vars]` vào `wrangler.toml` — thay đổi config cần review, chưa làm.)
 - **Hiện trạng production đọc ngày 2026-09-28 (chỉ tên):** `pages secret list --env production` chỉ có `TELEGRAM_BOT_TOKEN`; `pages download config` không có biến plain-text nào. Nghĩa là `BREVO_API_KEY`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` **đều phải đặt trước deploy** (nếu không: góp ý 403, webhook 401, không gửi email).
-- **Cổng kiểm tra bắt buộc sau deploy:** `curl -s https://hienlegarden.vn/api/public-config` phải trả `turnstileSiteKey` **khác null**; `npx wrangler pages secret list --project-name=hien-le-garden-v4` phải liệt kê đủ 6 tên.
+- **Cổng kiểm tra bắt buộc sau deploy:** `curl -s https://hienlegarden.vn/api/public-config` phải trả `turnstileSiteKey` **khác null**; `npx wrangler pages secret list --project-name=hien-le-garden-v4` phải liệt kê đủ 7 tên.
 - `wrangler pages secret put` mặc định ghi vào môi trường **production**. Wrangler 3.114 chấp nhận cờ ẩn `--env preview` (không hiện trong `--help`); nếu không chắc, dùng dashboard → tab Preview.
 - Kiểm tra tên (không lộ giá trị): `npx wrangler pages secret list --project-name=hien-le-garden-v4`.
 - Không bao giờ dán giá trị thật vào dòng lệnh; nhập khi wrangler hỏi, hoặc pipe từ biến đã `read -s` (§9).
+
+---
+
+### 7.1 Manifest cấu hình production (lập 2026-09-28 — CHƯA đặt giá trị nào)
+
+Trạng thái đọc ngày 2026-09-28 (chỉ tên, `pages secret list --env production` + `pages download config`). Không ghi giá trị thật ở đây. Mọi lệnh **không** có `--env preview` (mặc định = production) — chỉ chạy trong cửa sổ release, sau GO.
+
+| Variable | Hiện trạng production | Giá trị / nguồn cần đặt | Kiểm tra sau khi đặt |
+|---|---|---|---|
+| `BREVO_API_KEY` | **THIẾU** | API key Brevo production (tài khoản gửi `khuyenmai@hienlegarden.vn`), từ trình quản lý mật khẩu | `pages secret list` có tên; sau deploy: 1 góp ý test có email → `message_log.status = 'success'` |
+| `TELEGRAM_BOT_TOKEN` | **CÓ** (secret) | Giữ nguyên — không đặt lại trừ khi thay bot | `getMe` bằng token (ngoài repo) trả đúng bot; booking test → tin nhắn tới nhóm lễ tân |
+| `TELEGRAM_WEBHOOK_SECRET` | **THIẾU** | Chuỗi ngẫu nhiên mới 32–64 ký tự `A-Za-z0-9_-`, dùng đúng giá trị đó cho `setWebhook secret_token` (§9) | `getWebhookInfo`: không có `last_error_message` 401 mới sau §9 |
+| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | **THIẾU** | Chat id nhóm lễ tân production (phân tách dấu phẩy) | `/start staff_booking_notify` từ nhóm đó được chấp nhận; từ chat khác bị bỏ qua |
+| `TURNSTILE_SITE_KEY` | **THIẾU** | Site key của widget **production** (hostname `hienlegarden.vn`; KHÔNG phải widget `hien-le-garden-staging`) | `curl -s https://hienlegarden.vn/api/public-config` → `turnstileSiteKey` khác null và ≠ site key staging |
+| `TURNSTILE_SECRET_KEY` | **THIẾU** | Secret của cùng widget production | Góp ý thật trên `https://hienlegarden.vn/tri-an-khach-hang/` → 201; token giả → 403 |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | **THIẾU** (biến mới) | `hienlegarden.vn` | Như trên; không có log `Turnstile hostname not allowed` với hostname hợp lệ |
+
+Allowlist hostname production đề xuất: **chỉ `hienlegarden.vn`**. Căn cứ (HEAD chỉ đọc, 2026-09-28): `https://www.hienlegarden.vn/tri-an-khach-hang/` → 301 về `https://hienlegarden.vn/tri-an-khach-hang/`; `https://hien-le-garden-v4.pages.dev/tri-an-khach-hang/` → 301 về cùng URL; canonical và mọi link trong repo dùng `https://hienlegarden.vn`. Form vì vậy chỉ render trên `hienlegarden.vn` → không cần `www.hienlegarden.vn` hay `hien-le-garden-v4.pages.dev`. Nếu sau này bỏ redirect `www`, thêm `www.hienlegarden.vn` vào cả widget production lẫn biến này.
+
+Widget production: kiểm tra trong Dashboard → Turnstile rằng widget production chỉ có hostname `hienlegarden.vn` (và `www.hienlegarden.vn` nếu cần) — **không** có `pages.dev`, `staging.*`, `localhost`.
 
 ---
 
@@ -737,12 +758,12 @@ GO chỉ khi tất cả đều ✓:
 - [ ] Linux gate: 79/79 migrations + 80 files/1488 tests PASS isolated; R2 tests: Linux non-isolated PASS 53/53; isolated mode blocked by test-library limitation; upgrade deferred (§3); run `test.yml` trên PR xanh (gồm bước R2 non-isolated chặn).
 - [ ] PR `admin-redesign` → `main` đã review, không có commit ngoài phạm vi.
 - [ ] Preflight §4: ≥1 admin đăng nhập được (đã thử), 2FA sẵn sàng.
-- [ ] 6 biến §7 đã đặt cho Production (kiểm tra bằng `pages secret list` + dashboard).
+- [ ] 7 biến §7 (gồm `TURNSTILE_ALLOWED_HOSTNAMES`) đã đặt cho Production (kiểm tra bằng `pages secret list` + dashboard).
 - [ ] Telegram §9 a–c xong: `setWebhook` với `secret_token` OK, `getWebhookInfo` không lỗi mới.
 - [ ] Widget Turnstile có hostname production; checklist §10 đã chạy trên môi trường **không** dùng DB production (hoặc quyết định chỉ kiểm tra trên production sau deploy).
 - [ ] Rule WAF §11 đã soạn sẵn, sẽ bật sau smoke test (hoặc có ngoại lệ IP người vận hành; hoặc quyết định hoãn có ghi nhận).
 - [ ] Mọi preview deployment dùng `--branch=staging` sau khi `npm run check:staging` exit 0 (binding staging — staging-isolation.md §0); không có preview nào deploy khi thiếu `[env.preview]`.
-- [ ] Production có đủ 6 biến §7 (ngày 2026-09-28 mới có `TELEGRAM_BOT_TOKEN`).
+- [ ] Production có đủ 7 biến §7 (ngày 2026-09-28 mới có `TELEGRAM_BOT_TOKEN`).
 - [ ] Freeze đã thông báo và được xác nhận.
 - [ ] Backup §5 hợp lệ + bookmark Time Travel đã ghi.
 - [ ] Người vận hành rảnh 60 phút sau deploy; lễ tân biết khung bảo trì.

@@ -12,7 +12,7 @@
 | Secret Preview | **không có** (đã kiểm `pages secret list --env preview`); không có biến plain-text (kiểm `pages download config`) |
 | Telegram | **DISABLED** (không có token → `sendTelegramMessage` bỏ qua, không gọi API — commit `b299280`; webhook không có secret → 401 mọi update) |
 | Brevo | **DISABLED** (không có key → `sendPromoEmail` bỏ qua, không gọi API; caller ghi `failed`) |
-| Turnstile | **PENDING** — chưa có widget staging; không có secret → `POST /api/feedback` 403 (fail closed, đã kiểm trên staging) |
+| Turnstile | **PASS** — widget `hien-le-garden-staging` (hostname duy nhất `staging.hien-le-garden-v4.pages.dev`, Managed); secret Preview: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_ALLOWED_HOSTNAMES=staging.hien-le-garden-v4.pages.dev`; browser test 2026-09-28 (deployment `a02c5975`) |
 | Tài khoản | `staging_admin` (role admin) chỉ trên D1 staging; mật khẩu sinh ngẫu nhiên, lưu ở `.superpowers/staging/staging-admin.local.txt` (git-ignored) |
 
 Lệnh deploy preview (duy nhất, chạy từ gốc repo):
@@ -33,8 +33,24 @@ Secret staging khi cần bật tích hợp (luôn có `--env preview`; không c�
 | `BREVO_API_KEY` | để trống (mặc định); nếu cần test email: key riêng + chỉ gửi tới hộp thư test do mình kiểm soát | Không (thiếu → tắt an toàn) | gửi email thật |
 | `TURNSTILE_SITE_KEY` | site key widget **staging** (hostname `staging.hien-le-garden-v4.pages.dev`) | Có để test form góp ý | không |
 | `TURNSTILE_SECRET_KEY` | secret widget staging | Có để test form góp ý | gọi siteverify |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | `staging.hien-le-garden-v4.pages.dev` | Có (thiếu → góp ý 403) | không |
 
 Ví dụ: `npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name=hien-le-garden-v4 --env preview`.
+
+Browser test Turnstile 2026-09-28 (Chrome thật, profile tạm, `navigator.webdriver=false`, trên `https://staging.hien-le-garden-v4.pages.dev/tri-an-khach-hang/`):
+
+| Ca | Kết quả | Log server |
+|---|---|---|
+| Widget render, site key staging | PASS (iframe `challenges.cloudflare.com`, key `0x4AA…` = widget staging) | — |
+| Gửi hợp lệ qua form | 201, 1 voucher, 1 `message_log` `email:failed` | `Brevo send skipped: BREVO_API_KEY not configured` (không gọi Brevo) |
+| Dùng lại token | 403 | `Turnstile rejected timeout-or-duplicate` |
+| Thiếu token | 403 | (chặn trước siteverify) |
+| Token giả | 403 | `Turnstile rejected invalid-input-response` |
+| Trùng góp ý (cùng SĐT/email, token mới hợp lệ) | 409 thông báo trùng, không tạo voucher mới | — |
+| Hostname | Chấp nhận với allowlist chỉ gồm `staging.hien-le-garden-v4.pages.dev` → hostname siteverify = hostname staging | không có `hostname not allowed` |
+| Console | Không lỗi từ trang; chỉ log nội bộ iframe Turnstile (debug, WebGPU, font, PAT 401) | — |
+
+Production không đổi (SELECT chỉ đọc trước/sau: 8 feedback, 0 message_log, không dòng `STAGING%`). Dữ liệu test đã xoá khỏi D1 staging (feedback, message_log, template marker, giao dịch marker + 3 audit_log); giữ schema, 42 migration, `staging_admin`.
 
 Kết quả smoke test staging 2026-09-28: probe R-1 `PASS=62 FAIL=0 INCONCLUSIVE=0` (alias + URL deploy); `/api/public-config` 200, `/api/auth/me` 401 → login 200 (cookie HttpOnly/Secure/SameSite) → `me` role admin 38 quyền → logout → 401; marker D1 (template `STAGING-MARKER-…`) có ở staging, **0** ở production (SELECT chỉ đọc); marker R2 (`finance-receipts/1/…-staging-r2-marker.png`) có ở bucket staging, production báo "key does not exist", đã xoá sau test.
 
