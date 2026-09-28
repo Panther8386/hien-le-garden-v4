@@ -10,12 +10,12 @@ const DEDUPE_ERROR =
   'Bạn đã nhận ưu đãi cho lần góp ý này. Ưu đãi hiện tại vẫn còn hiệu lực. Nếu chưa nhận được mã, vui lòng liên hệ lễ tân.';
 const TURNSTILE_ERROR = 'Xác minh chống spam không thành công. Vui lòng thử lại.';
 
-const env = { ...baseEnv, TURNSTILE_SECRET_KEY: TEST_SECRET, BREVO_API_KEY: 'test-key' };
+const env = { ...baseEnv, TURNSTILE_SECRET_KEY: TEST_SECRET, TURNSTILE_ALLOWED_HOSTNAMES: 'staging.example.test', BREVO_API_KEY: 'test-key' };
 
 // Routes stubbed fetch calls by URL. `siteverify` / `brevo` return the Response
 // (or throw) for their host; any other URL is a test bug.
 function stubFetch({
-  siteverify = () => Response.json({ success: true }),
+  siteverify = () => Response.json({ success: true, hostname: 'staging.example.test' }),
   brevo = () => new Response('{}', { status: 201 }),
 } = {}) {
   const fn = vi.fn(async (input) => {
@@ -246,6 +246,22 @@ describe('POST /api/feedback — Turnstile bot protection', () => {
     });
     const response = await submitFeedback({ request: post(validBody()), env });
     await expectRejected403(response, fetchMock);
+  });
+
+  it('success from a hostname outside TURNSTILE_ALLOWED_HOSTNAMES → 403, no row, no Brevo', async () => {
+    for (const hostname of ['example.com', 'hienlegarden.vn', undefined]) {
+      const fetchMock = stubFetch({ siteverify: () => Response.json({ success: true, hostname }) });
+      const response = await submitFeedback({ request: post(validBody()), env });
+      await expectRejected403(response, fetchMock);
+    }
+  });
+
+  it('TURNSTILE_ALLOWED_HOSTNAMES unset → 403 without calling siteverify (fail closed)', async () => {
+    const fetchMock = stubFetch();
+    const { TURNSTILE_ALLOWED_HOSTNAMES, ...noAllowlist } = env;
+    const response = await submitFeedback({ request: post(validBody()), env: noAllowlist });
+    await expectRejected403(response, fetchMock);
+    expect(callsTo(fetchMock, SITEVERIFY_URL)).toHaveLength(0);
   });
 
   it('replayed token (siteverify timeout-or-duplicate) → 403, no row', async () => {
