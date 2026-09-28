@@ -18,12 +18,20 @@
 //       and no preview database_id / database_name / bucket_name equals production)
 //   1 = MISMATCH: preview would touch production, or a binding is missing
 //   2 = NOT CONFIGURED: no [env.preview] -> preview uses PRODUCTION bindings
+//   (--self-test: 0 = every fixture case produced its expected reason, else 1)
 // Also exit 1 when wrangler.json / wrangler.jsonc / .wrangler/deploy/config.json
 // (this dir or any ancestor) would make wrangler read a different config.
 // Ids, names and buckets are compared after trim().toLowerCase().
+// Every result also carries a machine-checkable REASON (printed as the last
+// line `REASON: <code>`): PASS (0), MISMATCH (1, preview touches production or
+// a binding is missing), NOT_CONFIGURED (2), SHADOW (1, another config file
+// would be read), MALFORMED (1, the TOML cannot be parsed), INVALID (1, the TOML
+// parses but wrangler's own validation rejects it, e.g. an upper-case bucket name).
+// The self-test asserts the reason, so a parse error can never stand in for a
+// MISMATCH / NOT_CONFIGURED / SHADOW / INVALID result.
 // Never calls the network, never prints secrets (wrangler.toml holds none).
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -61,17 +69,17 @@ export function checkStagingBindings(configPath) {
   const lines = [];
   const shadows = shadowingConfigs(configPath);
   if (shadows.length) {
-    return { code: 1, lines: ['FAIL: another wrangler config would be used instead of this wrangler.toml:', ...shadows.map((f) => `  - ${f}`)] };
+    return { code: 1, reason: 'SHADOW', lines: ['FAIL: another wrangler config would be used instead of this wrangler.toml:', ...shadows.map((f) => `  - ${f}`)] };
   }
   let raw;
   try {
     ({ rawConfig: raw } = wrangler.experimental_readRawConfig({ config: configPath }));
   } catch (err) {
-    return { code: 1, lines: [`FAIL: cannot parse ${configPath}: ${err.message}`] };
+    return { code: 1, reason: 'MALFORMED', lines: [`FAIL: cannot parse ${configPath}: ${err.message}`] };
   }
   const hasPreview = raw && raw.env && typeof raw.env === 'object' && raw.env.preview && typeof raw.env.preview === 'object';
   if (!hasPreview) {
-    return { code: 2, lines: ['NOT CONFIGURED: no [env.preview] in wrangler.toml — preview uses PRODUCTION bindings (D1/R2). Do not run preview/staging tests.'] };
+    return { code: 2, reason: 'NOT_CONFIGURED', lines: ['NOT CONFIGURED: no [env.preview] in wrangler.toml — preview uses PRODUCTION bindings (D1/R2). Do not run preview/staging tests.'] };
   }
   let prod;
   let prev;
@@ -79,7 +87,7 @@ export function checkStagingBindings(configPath) {
     prod = wrangler.unstable_readConfig({ config: configPath }, { hideWarnings: true });
     prev = wrangler.unstable_readConfig({ config: configPath, env: 'preview' }, { hideWarnings: true });
   } catch (err) {
-    return { code: 1, lines: [`FAIL: wrangler rejected the config: ${err.message}`] };
+    return { code: 1, reason: 'INVALID', lines: [`FAIL: wrangler rejected the config: ${err.message}`] };
   }
   const prodD1 = prod.d1_databases || [];
   const prodR2 = prod.r2_buckets || [];
@@ -112,95 +120,170 @@ export function checkStagingBindings(configPath) {
   }
 
   if (problems.length) {
-    return { code: 1, lines: ['FAIL: preview bindings are not isolated from production:', ...problems.map((x) => `  - ${x}`)] };
+    return { code: 1, reason: 'MISMATCH', problems, lines: ['FAIL: preview bindings are not isolated from production:', ...problems.map((x) => `  - ${x}`)] };
   }
   lines.push('OK: preview is isolated from production');
   for (const d of prevD1) lines.push(`  D1 ${d.binding} -> ${d.database_name} (${d.database_id})`);
   for (const b of prevR2) lines.push(`  R2 ${b.binding} -> ${b.bucket_name}`);
-  return { code: 0, lines };
+  return { code: 0, reason: 'PASS', lines };
 }
 
-function selfTest() {
-  const base = readFileSync(path.resolve(scriptDir, '..', 'wrangler.toml'), 'utf8');
-  const PROD_ID = 'bf3ed73c-96de-494c-a3f9-e905f2bf8c48';
-  const S_ID = '11111111-2222-3333-4444-555555555555';
-  const goodPreview = `
+// ---------------------------------------------------------------------------
+// Self-test. Independent of the real wrangler.toml (never read here): every
+// case is BASELINE (a fixed, production-only fixture config) + a case-specific
+// block, written to a temp dir. Each case asserts an outcome CLASS (reason +
+// exit code) and, for MISMATCH, the specific problem, so a TOML parse error can
+// only ever satisfy the case that is explicitly about malformed TOML.
+const FIXTURE_PROD_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001';
+const FIXTURE_PROD_DB = 'fixture_crm_prod';
+const FIXTURE_PROD_BUCKET = 'fixture-receipts-prod';
+const FIXTURE_STAGING_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-000000000002';
+const FIXTURE_STAGING_DB = 'fixture_crm_staging';
+const FIXTURE_STAGING_BUCKET = 'fixture-receipts-staging';
+
+const BASELINE = `name = "fixture-app"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "${FIXTURE_PROD_DB}"
+database_id = "${FIXTURE_PROD_ID}"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "RECEIPTS"
+bucket_name = "${FIXTURE_PROD_BUCKET}"
+`;
+
+const EXIT_FOR = { PASS: 0, MISMATCH: 1, NOT_CONFIGURED: 2, SHADOW: 1, MALFORMED: 1, INVALID: 1 };
+
+function selfTestCases() {
+  const P = FIXTURE_PROD_ID;
+  const S = FIXTURE_STAGING_ID;
+  const good = `
 [env.preview]
 
 [[env.preview.d1_databases]]
 binding = "DB"
-database_name = "hien_le_garden_crm_staging"
-database_id = "${S_ID}"
+database_name = "${FIXTURE_STAGING_DB}"
+database_id = "${S}"
 migrations_dir = "migrations"
 
 [[env.preview.r2_buckets]]
 binding = "RECEIPTS"
-bucket_name = "hien-le-garden-finance-receipts-staging"
+bucket_name = "${FIXTURE_STAGING_BUCKET}"
 `;
-  const cases = [
-    ['current wrangler.toml (no [env.preview])', '', 2],
+  const swap = (from, to) => {
+    if (!good.includes(from)) throw new Error(`self-test fixture bug: "${from}" not in the good preview block`);
+    return good.replace(from, () => to);
+  };
+  const TQ = '"""';
+  const TL = "'''";
+  // [label, extra TOML, expected reason, expected detail (a MISMATCH problem, else a substring of the output), sidecar files]
+  return [
+    ['baseline only (no [env.preview])', '', 'NOT_CONFIGURED'],
     ['commented-out # [env.preview] with staging ids', `
 # [env.preview]
 # [[env.preview.d1_databases]]
 # binding = "DB"
-# database_id = "${S_ID}"
+# database_id = "${S}"
 # bucket_name = "some-staging"
-`, 2],
-    ['valid isolated [env.preview]', goodPreview, 0],
+`, 'NOT_CONFIGURED'],
+    ['valid isolated [env.preview]', good, 'PASS'],
     ['preview DB = production id as single-quoted literal + second DB double-quoted staging', `
 [env.preview]
 
 [[env.preview.d1_databases]]
 binding = 'DB'
-database_name = 'hien_le_garden_crm_x'
-database_id = '${PROD_ID}'
+database_name = 'fixture_crm_x'
+database_id = '${P}'
 
 [[env.preview.d1_databases]]
 binding = "DB2"
-database_name = "hien_le_garden_crm_staging"
-database_id = "${S_ID}"
+database_name = "${FIXTURE_STAGING_DB}"
+database_id = "${S}"
 
 [[env.preview.r2_buckets]]
 binding = "RECEIPTS"
-bucket_name = "hien-le-garden-finance-receipts-staging"
-`, 1],
-    ['preview R2 bucket = production (single-quoted)', goodPreview.replace('"hien-le-garden-finance-receipts-staging"', "'hien-le-garden-finance-receipts'"), 1],
-    ['preview D1 database_name = production name, different id', goodPreview.replace('"hien_le_garden_crm_staging"', '"hien_le_garden_crm"'), 1],
-    ['preview without r2_buckets (RECEIPTS missing)', goodPreview.split('[[env.preview.r2_buckets]]')[0], 1],
-    ['preview D1 under another binding name (DB missing)', goodPreview.replace('binding = "DB"', 'binding = "STAGING_DB"'), 1],
-    ['preview DB = production id in UPPER CASE', goodPreview.replace('"' + S_ID + '"', '"' + PROD_ID.toUpperCase() + '"'), 1],
-    ['preview DB = production id with leading/trailing whitespace', goodPreview.replace('"' + S_ID + '"', '"  ' + PROD_ID + ' "'), 1],
-    ['preview R2 bucket = production in mixed case', goodPreview.replace('"hien-le-garden-finance-receipts-staging"', '"Hien-Le-Garden-Finance-Receipts"'), 1],
-    ['valid preview but wrangler.json next to wrangler.toml', goodPreview, 1, { 'wrangler.json': '{"name":"x"}' }],
-    ['valid preview but wrangler.jsonc next to wrangler.toml', goodPreview, 1, { 'wrangler.jsonc': '{"name":"x"}' }],
-    ['valid preview but .wrangler/deploy/config.json redirect', goodPreview, 1, { '.wrangler/deploy/config.json': '{"configPath":"../../wrangler.toml"}' }],
+bucket_name = "${FIXTURE_STAGING_BUCKET}"
+`, 'MISMATCH', 'D1 DB database_id equals PRODUCTION'],
+    ['preview R2 bucket = production (single-quoted)', swap(`"${FIXTURE_STAGING_BUCKET}"`, `'${FIXTURE_PROD_BUCKET}'`), 'MISMATCH', 'R2 RECEIPTS bucket_name equals PRODUCTION'],
+    ['preview D1 database_name = production name, different id', swap(`"${FIXTURE_STAGING_DB}"`, `"${FIXTURE_PROD_DB}"`), 'MISMATCH', 'D1 DB database_name equals PRODUCTION'],
+    ['preview without r2_buckets (RECEIPTS missing)', good.split('[[env.preview.r2_buckets]]')[0], 'MISMATCH', 'R2 binding RECEIPTS is missing'],
+    ['preview D1 under another binding name (DB missing)', swap('binding = "DB"', 'binding = "STAGING_DB"'), 'MISMATCH', 'D1 binding DB is missing'],
+    ['preview DB = production id in UPPER CASE', swap(`"${S}"`, `"${P.toUpperCase()}"`), 'MISMATCH', 'D1 DB database_id equals PRODUCTION'],
+    ['preview DB = production id with leading/trailing whitespace', swap(`"${S}"`, `"  ${P} "`), 'MISMATCH', 'D1 DB database_id equals PRODUCTION'],
+    // wrangler itself refuses upper-case bucket names, so a mixed-case copy of the
+    // production bucket can never be deployed; the guard must refuse it as INVALID
+    // (before 2026-09-28 this case "passed" without reaching the comparison).
+    ['preview R2 bucket = production in mixed case (wrangler rejects it)', swap(`"${FIXTURE_STAGING_BUCKET}"`, '"Fixture-Receipts-PROD"'), 'INVALID', 'bucket_name="Fixture-Receipts-PROD" is invalid'],
+    ['preview DB = production id as multiline basic string', swap(`"${S}"`, `${TQ}\n${P}${TQ}`), 'MISMATCH', 'D1 DB database_id equals PRODUCTION'],
+    ['preview R2 bucket = production as multiline literal string', swap(`"${FIXTURE_STAGING_BUCKET}"`, `${TL}\n${FIXTURE_PROD_BUCKET}${TL}`), 'MISMATCH', 'R2 RECEIPTS bucket_name equals PRODUCTION'],
+    ['empty [env.preview] table', '\n[env.preview]\n', 'MISMATCH', 'D1 binding DB is missing'],
     ['inline-table form with production id', `
 [env.preview]
-d1_databases = [ { binding = 'DB', database_name = 'x', database_id = '${PROD_ID}' } ]
-r2_buckets = [ { binding = 'RECEIPTS', bucket_name = 'hien-le-garden-finance-receipts-staging' } ]
-`, 1],
+d1_databases = [ { binding = 'DB', database_name = 'x', database_id = '${P}' } ]
+r2_buckets = [ { binding = 'RECEIPTS', bucket_name = '${FIXTURE_STAGING_BUCKET}' } ]
+`, 'MISMATCH', 'D1 DB database_id equals PRODUCTION'],
+    ['valid preview but wrangler.json next to wrangler.toml', good, 'SHADOW', null, { 'wrangler.json': '{"name":"x"}' }],
+    ['valid preview but wrangler.jsonc next to wrangler.toml', good, 'SHADOW', null, { 'wrangler.jsonc': '{"name":"x"}' }],
+    ['valid preview but .wrangler/deploy/config.json redirect', good, 'SHADOW', null, { '.wrangler/deploy/config.json': '{"configPath":"../../wrangler.toml"}' }],
+    ['MALFORMED: duplicate [env.preview] table (explicit parse-error case)', good + good, 'MALFORMED'],
   ];
+}
+
+function selfTest() {
+  const wrangler = require('wrangler');
+  const cases = selfTestCases();
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'staging-guard-selftest-'));
   let failures = 0;
+  let parsed = 0;
+  const fail = (msg) => { failures++; console.log(`self-test: BAD  ${msg}`); };
   try {
-    cases.forEach(([label, extra, want, sidecars = {}], i) => {
+    // The harness itself must not sit under a shadowing config.
+    const hostShadows = shadowingConfigs(path.join(tmp, 'wrangler.toml'));
+    if (hostShadows.length) fail(`temp dir is shadowed by ${hostShadows.join(', ')}; cannot run the self-test here`);
+
+    cases.forEach(([label, extra, want, detail = null, sidecars = {}], i) => {
       const file = path.join(tmp, `case${i}`, 'wrangler.toml');
       mkdirSync(path.dirname(file), { recursive: true });
-      writeFileSync(file, base + extra);
+      writeFileSync(file, BASELINE + extra);
+
+      // Regression guard (H-1): every non-MALFORMED fixture must parse, and the
+      // MALFORMED one must not. Checked before any sidecar file exists.
+      let parseError = null;
+      try { wrangler.experimental_readRawConfig({ config: file }); } catch (err) { parseError = err; }
+      if (want === 'MALFORMED') {
+        if (!parseError) { fail(`${label} -> fixture unexpectedly parses (a MALFORMED case must be a parse error)`); return; }
+      } else if (parseError) {
+        fail(`${label} -> fixture does not parse (${String(parseError.message).split('\n')[0]}); a parse error cannot stand in for ${want}`);
+        return;
+      } else {
+        parsed++;
+      }
+
       for (const [rel, body] of Object.entries(sidecars)) {
         const f = path.join(path.dirname(file), ...rel.split('/'));
         mkdirSync(path.dirname(f), { recursive: true });
         writeFileSync(f, body);
       }
-      const { code, lines } = checkStagingBindings(file);
-      const ok = code === want;
-      if (!ok) failures++;
-      console.log(`self-test: ${ok ? 'ok  ' : 'BAD '} ${label} -> exit ${code} (expected ${want}) | ${lines[0]}${lines[1] ? ' ' + lines[1].trim() : ''}`);
+      const res = checkStagingBindings(file);
+      const wantCode = EXIT_FOR[want];
+      const detailOk = !detail || (res.reason === 'MISMATCH' ? (res.problems || []) : res.lines).some((x) => x.includes(detail));
+      const ok = res.reason === want && res.code === wantCode && detailOk;
+      const summary = `${res.lines[0]}${res.lines[1] ? ' ' + res.lines[1].trim() : ''}`;
+      if (ok) console.log(`self-test: ok   ${label} -> ${res.reason}/exit ${res.code} | ${summary}`);
+      else fail(`${label} -> ${res.reason}/exit ${res.code} (expected ${want}/exit ${wantCode}${detail ? `, detail "${detail}"` : ''}) | ${summary}`);
     });
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
-  console.log(failures ? `self-test: FAILED (${failures} case(s))` : `self-test: OK (${cases.length} cases)`);
+  const nonMalformed = cases.filter((c) => c[2] !== 'MALFORMED').length;
+  if (parsed !== nonMalformed) fail(`only ${parsed}/${nonMalformed} non-MALFORMED fixtures parsed`);
+  else console.log(`self-test: ok   all ${parsed} non-MALFORMED fixtures parse (no duplicate [env.preview])`);
+  console.log(failures ? `self-test: FAILED (${failures} problem(s))` : `self-test: OK (${cases.length} cases)`);
   return failures === 0;
 }
 
@@ -209,7 +292,8 @@ if (invokedDirectly) {
   const args = process.argv.slice(2);
   if (args.includes('--self-test')) process.exit(selfTest() ? 0 : 1);
   const configPath = path.resolve(args[0] || path.resolve(scriptDir, '..', 'wrangler.toml'));
-  const { code, lines } = checkStagingBindings(configPath);
+  const { code, reason, lines } = checkStagingBindings(configPath);
   for (const l of lines) (code === 0 ? console.log : console.error)(l);
+  (code === 0 ? console.log : console.error)(`REASON: ${reason}`);
   process.exit(code);
 }
