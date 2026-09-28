@@ -1,23 +1,23 @@
 # Runbook phát hành — Phân quyền admin (nhánh `admin-redesign`)
 
-- Nhánh: `admin-redesign`. Code runtime được kiểm thử ở `289cbab` (bằng chứng Linux §3); các commit sau đó chỉ là tài liệu/CI (runbook, `.env.example`, `.github/workflows/test.yml`), không đổi code chạy. Production hiện tại: `main` = `9675840`.
+- Nhánh: `admin-redesign`. Code runtime được kiểm thử ở `289cbab` (bằng chứng Linux §3); các commit sau đó chỉ là tài liệu/CI/đóng gói (runbook, `.env.example`, workflows, `scripts/build-static.mjs`, `scripts/check-dist.mjs`, `pages_build_output_dir = "dist"` trong `wrangler.toml`), không đổi code trong `functions/` hay `lib/`. Production hiện tại: `main` = `9675840`.
 - Hạ tầng: Cloudflare Pages project `hien-le-garden-v4` (static + Pages Functions), D1 `hien_le_garden_crm` (binding `DB`), R2 `hien-le-garden-finance-receipts` (binding `RECEIPTS`).
-- Deploy: `.github/workflows/deploy.yml` chạy `wrangler pages deploy . --project-name=hien-le-garden-v4` khi có push lên `main`.
+- Deploy: `.github/workflows/deploy.yml` khi có push lên `main`: `node scripts/build-static.mjs` → `node scripts/check-dist.mjs` → `wrangler pages deploy dist --project-name=hien-le-garden-v4` (chạy từ repo root để Functions build từ `./functions` + `./lib`).
 - Runbook này chỉ là tài liệu. Mọi lệnh `--remote` bên dưới do người vận hành tự chạy, đúng thứ tự, đúng thời điểm. Không lệnh nào trong tài liệu chứa giá trị secret thật: `<...>` là chỗ cần điền.
 
 Quy ước:
 - Chạy lệnh trong **Git Bash / WSL / macOS / Linux** (cách trích dẫn `"..."` + `'...'` trong SQL giả định shell POSIX). PowerShell cần sửa lại dấu nháy.
 - `npx wrangler ...` dùng wrangler của repo (`^3.78`). Đăng nhập trước bằng `npx wrangler login` với tài khoản có quyền trên project.
 - Cột "READ-ONLY" = chỉ `SELECT`/`PRAGMA`, không thay đổi dữ liệu.
-- **Không bao giờ deploy từ máy local** (`npm run deploy` / `wrangler pages deploy .` trong thư mục làm việc): lệnh đó upload cả file chưa track/bị ignore trong thư mục (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`, `Pasted text.txt` …) thành file public. Deploy chỉ qua GitHub Actions `deploy.yml` (hoặc chạy lại job đó).
+- **Không bao giờ deploy từ máy local.** Tuyệt đối không `wrangler pages deploy .` (publish cả thư mục repo, kể cả file chưa track như `.dev.vars`, `.superpowers/`, `graphify-out/`, `Pasted text.txt` …). `npm run deploy` giờ = build → check → `pages deploy dist`: `dist/` chỉ chứa file được git track theo allowlist nên file không track không lọt nữa, nhưng nó lấy nội dung working tree (sửa chưa commit cũng lên) và chạy từ nhánh khác `main` sẽ tạo preview trên D1/R2 production. Deploy production chỉ qua GitHub Actions `deploy.yml` (hoặc chạy lại job đó).
 
 ---
 
 ## R-1 — Repository files published by Pages deploy (RELEASE BLOCKER, pre-existing)
 
-**Trạng thái: BLOCKER — phải sửa và kiểm chứng TRƯỚC khi merge nhánh này.** Chủ dự án chọn phương án; runbook này không triển khai.
+**Trạng thái: remediation prepared in pipeline; existing production remains exposed until the clean artifact is deployed.** (Đã sửa trong pipeline; production hiện tại vẫn lộ file cho tới khi artifact sạch được deploy.) Phương án chủ dự án chọn: (a) deploy thư mục `dist/` chỉ chứa file public (allowlist). Middleware trả 404 **không** được coi là cách sửa.
 
-Bằng chứng (controller kiểm tra trên production bằng request `HEAD` chỉ đọc, 2026-09-27): các URL sau đều trả **200**:
+Bằng chứng lộ (controller kiểm tra trên production bằng request `HEAD` chỉ đọc, 2026-09-27): các URL sau đều trả **200**:
 
 - `https://hienlegarden.vn/wrangler.toml`
 - `https://hienlegarden.vn/BACKEND.md`
@@ -29,45 +29,61 @@ Bằng chứng (controller kiểm tra trên production bằng request `HEAD` ch�
 - `https://hienlegarden.vn/docs/superpowers/plans/…md`
 - `https://hienlegarden.vn/.assetsignore`
 
-Cơ chế: `deploy.yml` chạy `wrangler pages deploy .` với thư mục gốc repo. Wrangler 3.114 (`pages deploy`) chỉ bỏ qua một danh sách cứng (`_worker.js`, `_redirects`, `_headers`, `_routes.json`, `functions`, `**/.DS_Store`, `**/node_modules`, `**/.git`). File `.assetsignore` trong repo **không** được Pages đọc (chỉ đường Workers assets dùng), `.gitignore` cũng không. Mọi file được track đều thành static asset public.
+Cơ chế lỗi: `deploy.yml` cũ chạy `wrangler pages deploy .` với thư mục gốc repo. Wrangler 3.114 (`pages deploy`) chỉ bỏ qua một danh sách cứng (`_worker.js`, `_redirects`, `_headers`, `_routes.json`, `functions`, `**/.DS_Store`, `**/node_modules`, `**/.git`). `.assetsignore` **không** được Pages đọc (chỉ đường Workers assets dùng), `.gitignore` cũng không. Mọi file được track đều thành static asset public.
 
-Tác động:
-- Mã nguồn backend (`lib/`, cách kiểm tra quyền), toàn bộ schema (`migrations/`), test, script, `package*.json`, D1 database id trong `wrangler.toml`, và tài liệu bảo mật (`docs/superpowers/*`, `BACKEND.md`) đều công khai.
-- **Không có secret** trong các file được track (đã quét) — secret nằm trong biến môi trường Pages.
-- Production hiện tại **đã** lộ các file trên. Merge nhánh này mà chưa sửa sẽ lộ **thêm** `docs/releases/*` (runbook này: ngưỡng WAF, cơ chế khoá 2FA, điểm yếu preview/rollback), `docs/superpowers/specs/*`, `.github/workflows/*.yml`, `.env.example`.
-- Deploy từ máy local còn tệ hơn: lộ cả file không track (`.dev.vars` có thể chứa secret thật, `.superpowers/` chứa báo cáo audit).
+Tác động (không đổi): mã nguồn backend, schema, test, script, `package*.json`, D1 database id, tài liệu bảo mật đang công khai trên production. **Không có secret** trong file được track (đã quét).
 
-Phương án (chủ dự án chọn):
+### Cách sửa đã chuẩn bị (commit trên nhánh này)
 
-(a) **Khuyến nghị — deploy từ thư mục build sạch** chỉ chứa file public. Ví dụ một bước trong CI (thay đổi `deploy.yml`, cần review riêng) copy danh sách cho phép vào `./dist` rồi `wrangler pages deploy dist`. Danh sách từ cây repo hiện tại:
-   - Trang/thư mục public: `index.html`, `admin/`, `assets/`, `bang-gia/`, `cam-nang/`, `gioi-thieu/`, `tri-an-khach-hang/`, `images/`, `videos/`
-   - File gốc: `apple-touch-icon.png`, `favicon-32.png`, `favicon-512.png`, `favicon.svg`, `manifest.json`, `robots.txt`, `sitemap.xml`, `sw.js`, `_redirects` (hiện không có `_headers`/`_routes.json`)
-   - Không copy: `lib/`, `migrations/`, `test/`, `scripts/`, `docs/`, `BACKEND.md`, `wrangler.toml`, `package*.json`, `vitest.config.js`, dotfiles, `.github/`.
-   - Pages Functions: `functions/` được wrangler build từ thư mục làm việc (cwd), không phải từ thư mục output, và `functions/` import `../lib/*` lúc bundle — nên `lib/` vẫn dùng được mà không bị publish. Cần kiểm chứng: `pages_build_output_dir = "."` trong `wrangler.toml` phải đổi thành `dist` (hoặc xác nhận wrangler dùng thư mục truyền trên dòng lệnh), và build thử trên môi trường không phải production.
-   - Ví dụ (minh hoạ, chưa áp dụng):
-     ```bash
-     rm -rf dist && mkdir dist
-     cp -r index.html admin assets bang-gia cam-nang gioi-thieu tri-an-khach-hang images videos \
-           apple-touch-icon.png favicon-32.png favicon-512.png favicon.svg manifest.json robots.txt sitemap.xml sw.js _redirects dist/
-     npx wrangler pages deploy dist --project-name=hien-le-garden-v4
-     ```
+- `scripts/build-static.mjs` (`npm run build`): dựng `dist/` chỉ từ file **được git track** (`git ls-files -z`), theo allowlist: file gốc `index.html`, `_redirects`, `favicon.svg`, `favicon-32.png`, `favicon-512.png`, `apple-touch-icon.png`, `manifest.json`, `robots.txt`, `sitemap.xml`, `sw.js`; thư mục `admin/`, `assets/`, `bang-gia/`, `cam-nang/`, `gioi-thieu/`, `tri-an-khach-hang/`, `images/`, `videos/` với allowlist đuôi file (html, css, js, ảnh, video, font). Mục cấp cao nhất mới mà chưa được phân loại public/private → **build lỗi**. File không track (`.dev.vars`, `graphify-out/`, ảnh thử…) không bao giờ vào `dist/`.
+- `scripts/check-dist.mjs` (`npm run check:dist`): lỗi nếu `dist/` có đường dẫn riêng tư (`functions/`, `lib/`, `migrations/`, `test/`, `scripts/`, `docs/`, `.github/`, `.superpowers/`, `graphify-out/`, `.git/`, `.env*`, `.dev.vars*`, `wrangler.toml`, `package*.json`, `*.lock`, `*.md`, `README*`, `*.map`, `*.log`, `*.sql`, `*.test.js`, `node_modules/`, `test-results/`, `.assetsignore`, `.gitignore`, `vitest.config.js`) hoặc thiếu file public bắt buộc. `--self-test` cài file riêng tư giả vào một bản sao `dist/` và chứng minh check thất bại với từng file.
+- `wrangler.toml`: `pages_build_output_dir = "dist"` (một lệnh `wrangler pages deploy` trần cũng nhắm `dist`). Pages Functions vẫn được wrangler build từ `./functions` của thư mục đang chạy (import `../lib/*.js` lúc bundle) → phải chạy wrangler từ **repo root**; `lib/` không bị publish.
+- `.github/workflows/deploy.yml`: checkout → Node 22 → `node scripts/build-static.mjs` → `node scripts/check-dist.mjs` → `pages deploy dist --project-name=hien-le-garden-v4`.
+- `.github/workflows/test.yml` (PR): job "Release artifact boundary (R-1)" chạy build + check + self-test (chặn merge nếu đỏ).
 
-(b) Giữ deploy thư mục gốc nhưng thêm Pages Functions middleware (`functions/_middleware.js`) hoặc quy tắc trả 404 cho các đường dẫn riêng tư (`/docs/*`, `/lib/*`, `/migrations/*`, `/test/*`, `/scripts/*`, `/.github/*`, `/*.md`, `/wrangler.toml`, `/package*.json`, `/vitest.config.js`, dotfiles). **Yếu hơn**: danh sách chặn (deny-list) dễ sót file mới; static asset có thể được phục vụ trước middleware tuỳ cấu hình `_routes`; cần test kỹ.
-
-(c) Chuyển file không public ra khỏi thư mục gốc deploy (ví dụ đưa site public vào `public/` và đặt `pages_build_output_dir = "public"`). Sạch như (a) nhưng thay đổi cấu trúc repo lớn hơn.
-
-Kiểm chứng sau khi sửa (và sau **mọi** deploy) — tất cả phải trả **404**:
+### Kiểm tra artifact trước merge (local hoặc CI, không chạm production)
 
 ```bash
-for p in /wrangler.toml /BACKEND.md /package.json /package-lock.json /vitest.config.js /.assetsignore /.gitignore /.env.example \
-         /migrations/0001_init.sql /migrations/0042_permissions.sql /lib/auth.js /lib/permissions.js /test/auth.test.js \
-         /scripts/seed-manager.js /docs/releases/admin-permissions-release-runbook.md /.github/workflows/deploy.yml \
-         /.dev.vars /.superpowers/ /graphify-out/; do
-  printf '%s %s\n' "$(curl -s -o /dev/null -I -w '%{http_code}' "https://hienlegarden.vn$p")" "$p"
+node scripts/build-static.mjs          # in số file/bytes theo thư mục; liệt kê file bị loại (vd images/.DS_Store)
+node scripts/check-dist.mjs            # mong đợi: PASS (…, 0 private paths, 11/11 required assets present)
+node scripts/check-dist.mjs --self-test  # mong đợi: self-test: OK (30 planted private paths + 3 missing-asset cases detected …)
+```
+
+Trên PR: job "Release artifact boundary (R-1)" phải xanh.
+
+### Đường deploy duy nhất
+
+Merge vào `main` → `deploy.yml`: build `dist/` → check → `wrangler pages deploy dist`. Không deploy từ máy local. (`npm run deploy` giờ cũng chỉ deploy `dist/` dựng từ file được track, nên file không track không lọt nữa — nhưng nó copy nội dung **working tree** của file được track, và nếu chạy từ nhánh khác `main` sẽ tạo preview dùng D1/R2 production.)
+
+### Kiểm tra sau deploy (bắt buộc, sau **mọi** deploy production)
+
+Hành vi Pages: `dist/` không có `404.html` cấp cao nhất → Pages coi là single-page app và trả **200 + nội dung `index.html`** cho mọi đường dẫn không tồn tại ("If your project does not include a top-level `404.html` file, Pages assumes that you are deploying a single-page application." — developers.cloudflare.com/pages/configuration/serving-pages/). Vì vậy **không** dùng mã trạng thái (kể cả `HEAD`) để kết luận: một URL riêng tư trả 200 vẫn có thể là trang chủ. Tiêu chí PASS: mã khác 200, **hoặc** body giống hệt body của `/` (trang fallback) — tức là không phải nội dung file. Đã kiểm chứng local bằng `wrangler pages dev dist`: mọi URL riêng tư trả `200 text/html` với body = `index.html` (sha256 trùng).
+
+Chạy trên **cả** domain production và alias `pages.dev` production:
+
+```bash
+for host in https://hienlegarden.vn https://hien-le-garden-v4.pages.dev; do
+  home="$(curl -s "$host/" | sha256sum | cut -d' ' -f1)"
+  for p in /wrangler.toml /BACKEND.md /package.json /package-lock.json /vitest.config.js /.assetsignore /.gitignore /.env.example \
+           /migrations/0001_init.sql /migrations/0042_permissions.sql /lib/auth.js /lib/permissions.js /test/auth.test.js \
+           /scripts/seed-manager.js /scripts/build-static.mjs /docs/releases/admin-permissions-release-runbook.md \
+           /docs/superpowers/plans/2026-08-21-manager-dashboard-plan.md /functions/api/auth/login.js \
+           /.github/workflows/deploy.yml /.dev.vars /.superpowers/ /graphify-out/ /images/.DS_Store; do
+    code="$(curl -s -o /tmp/r1probe -w '%{http_code}' "$host$p")"
+    body="$(sha256sum < /tmp/r1probe | cut -d' ' -f1)"
+    if [ "$code" != 200 ] || [ "$body" = "$home" ]; then r=PASS; else r=FAIL; fi
+    printf '%s %s %s%s\n' "$r" "$code" "$host" "$p"
+  done
 done
 ```
 
-Đồng thời kiểm tra trang public vẫn 200: `/`, `/tri-an-khach-hang/`, `/admin`, `/manifest.json`, `/sw.js`, `/api/public-config`.
+Mọi dòng phải `PASS`. Đồng thời trang public vẫn đúng: `/`, `/tri-an-khach-hang/`, `/admin`, `/manifest.json`, `/sw.js` trả 200 với nội dung riêng; `/api/public-config` trả JSON.
+
+Ngữ nghĩa deployment: mỗi deployment Pages là một bộ file riêng (manifest của đúng thư mục upload — `formData.append("manifest", …)` trong wrangler), và Cloudflare mô tả URL deployment là "atomic and may always be visited in the future". Nên:
+- Sau deploy sạch, domain production và alias `hien-le-garden-v4.pages.dev` chỉ phục vụ file của deployment mới.
+- Các deployment **cũ** vẫn truy cập được qua URL riêng `<hash>.hien-le-garden-v4.pages.dev` và **vẫn chứa** file riêng tư. Rollback về deployment trước R-1 = lộ lại. Cân nhắc (chủ dự án quyết định): xoá các deployment cũ sau khi deploy sạch đã ổn định (mất điểm rollback), hoặc bật Cloudflare Access cho preview/deployment URLs.
+
+Staging/preview: xem [staging-isolation.md](staging-isolation.md) (thiết kế `[env.preview]` với D1/R2 staging, chưa triển khai).
 
 ---
 
@@ -88,8 +104,8 @@ done
 | Bộ lọc nhật ký thao tác (`functions/api/audit-log/index.js`) | Whitelist lọc thêm `role_permissions_change`, `user_permissions_change`, `account_lock/unlock`, `2fa_*`, `notification_destination_change` | — | — | Smoke §12 audit | Không ảnh hưởng dữ liệu |
 | `.gitignore` | Bỏ qua `.dev.vars`, `.dev.vars.*`, `.env`, `.env.*` (trừ `.env.example`), `*.local` | — | — | `git check-ignore -v --no-index .dev.vars` | Không |
 | Admin UI / trang Phân quyền (`admin/*.html`, `admin/*.js`, `admin/users.html` tab Vai trò) | Nav và nút theo mã quyền; trang chỉnh quyền vai trò (chỉ admin) + override từng tài khoản; khoá/mở khoá | — | Deploy cùng API (cùng một lần deploy Pages) | Smoke §12 | Rollback cùng code |
-| Workflow deploy `.github/workflows/deploy.yml` | **Không đổi trong nhánh này** — nhưng deploy thư mục gốc làm lộ file repo (**R-1, blocker**) | R-1 đã sửa và kiểm chứng; repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions | §8; probe R-1 trả 404 | — |
-| Workflow test `.github/workflows/test.yml` (mới) | CI test cho PR / chạy tay, không secret, không deploy | — | — | Run xanh trên PR | Không ảnh hưởng production |
+| Workflow deploy `.github/workflows/deploy.yml` + `scripts/build-static.mjs`, `scripts/check-dist.mjs`, `wrangler.toml` (`pages_build_output_dir = "dist"`) | Sửa R-1: build `dist/` (allowlist, chỉ file được track) → boundary check → `pages deploy dist` | Job "Release artifact boundary (R-1)" xanh trên PR; repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` còn hiệu lực | Theo dõi run Actions: bước build + check xanh trước bước deploy | §8; probe R-1 (mục R-1) PASS trên `hienlegarden.vn` và `hien-le-garden-v4.pages.dev` | Rollback về deployment trước R-1 làm lộ lại file repo |
+| Workflow test `.github/workflows/test.yml` (mới) + `test/vitest.r2-noniso.config.js` | CI cho PR / chạy tay, không secret, không deploy: artifact boundary (build + check + self-test), Vitest isolated trừ 3 file R2, 3 file R2 non-isolated (chặn), R2 isolated (không chặn, hoãn) | — | — | Run xanh trên PR | Không ảnh hưởng production |
 
 ---
 
@@ -117,9 +133,7 @@ Bằng chứng (nguyên văn từ `.superpowers/sdd/2026-09-24-admin-permissions
 - 3 file dùng R2 isolated: **BLOCKED** — `assetInventoryLines` (7/12 rồi crash), `assetPhotos` (5/14 rồi crash), `financeAttachments` (8/27 rồi crash): `AssertionError: Expected .sqlite, got /tmp/miniflare-*/r2/miniflare-R2BucketObject/<hash>.sqlite-shm` từ `@cloudflare/vitest-pool-workers` `dist/pool/index.mjs:556/572` → "Isolated storage failed". Xảy ra ổn định trên Linux → giới hạn của thư viện 0.5.x với file WAL của R2, không phải lỗi app/assertion.
 - 3 file đó chạy **non-isolated** trên Linux: **12/12, 14/14, 27/27 PASS** (chỉ là bằng chứng bổ sung).
 
-Lựa chọn (người dùng quyết định):
-1. **Chấp nhận** bằng chứng non-isolated cho 3 file R2 và phát hành (khuyến nghị: rủi ro thấp, 3 file không bị đổi bởi các fix cuối, `beforeEach` reset bảng).
-2. Nâng `@cloudflare/vitest-pool-workers` ≥ 0.6 + vitest 3 trong một task tooling riêng, rồi chạy lại isolated (không chặn release này).
+Quyết định (chủ dự án): **R2 tests: Linux non-isolated PASS 53/53; isolated mode blocked by test-library limitation; upgrade deferred.** (Không nâng `@cloudflare/vitest-pool-workers`/vitest trong release này; nâng lên ≥ 0.6 + vitest 3 là task tooling riêng.)
 
 Chạy lại gate:
 
@@ -132,7 +146,7 @@ gh run watch <run-id>
 gh workflow run test.yml --ref <branch>      # chỉ sau khi test.yml đã có trên main
 ```
 
-Kết quả mong đợi: bước "Vitest isolated (excluding 3 R2 files)" xanh; bước "R2 isolated — known vitest-pool-workers 0.5.x limitation" có thể đỏ nhưng được đánh dấu `continue-on-error` (job vẫn xanh). Vì `continue-on-error`, job xanh **không** chứng minh 3 file R2 đạt: luôn mở log bước đó. Chỉ chấp nhận khi lỗi là `.sqlite-shm` / "Isolated storage failed"; nếu log có dòng dạng `Tests  N failed` với assertion của test → coi là FAIL thật.
+Kết quả mong đợi: job "Release artifact boundary (R-1)" xanh; trong job `test`: bước "Vitest isolated (excluding 3 R2 files)" xanh; bước "R2 files non-isolated, one process per file (release evidence, blocking)" xanh (12 + 14 + 27 = 53 tests) — đây là bằng chứng phát hành cho 3 file R2 và **chặn** merge nếu đỏ; bước "R2 isolated verification deferred pending upgrade from @cloudflare/vitest-pool-workers 0.5.x (non-blocking)" có thể đỏ (`continue-on-error`) và không được dùng làm bằng chứng.
 
 B. Local WSL (công thức đã dùng):
 
@@ -144,7 +158,10 @@ npm ci                       # nếu WSL không có mạng: copy node_modules t�
                              # cài bản linux: npm ci --ignore-scripts --os=linux --cpu=x64 --libc=glibc
 npx vitest run test/migrations.test.js
 npx vitest run --exclude test/assetInventoryLines.test.js --exclude test/assetPhotos.test.js --exclude test/financeAttachments.test.js
-npx vitest run test/assetInventoryLines.test.js test/assetPhotos.test.js test/financeAttachments.test.js   # biết trước có thể BLOCKED
+# 3 file R2: non-isolated, mỗi file một process (chạy chung một process thì dữ liệu giữa các file lẫn nhau)
+for f in test/assetInventoryLines.test.js test/assetPhotos.test.js test/financeAttachments.test.js; do
+  npx vitest run --config test/vitest.r2-noniso.config.js "$f"
+done
 ```
 
 Test chỉ dùng miniflare local (D1/R2 giả lập trong `/tmp`), không chạm D1/R2 thật.
@@ -361,7 +378,7 @@ Thứ tự bắt buộc: **freeze → backup → migrate → deploy ngay → rec
 
 | Mốc | Việc | Ghi chú |
 |---|---|---|
-| Trước ngày release | **R-1 đã sửa và kiểm chứng** (probe 404) trên production — blocker | Xem mục R-1 |
+| Trước ngày release | R-1: job "Release artifact boundary (R-1)" xanh trên PR; `deploy.yml` trên nhánh đã là bản build `dist/` → check → `pages deploy dist` | Xem mục R-1. Production hết lộ file ngay ở deploy đầu tiên của artifact sạch (chính lần merge này, hoặc một lần deploy riêng trước đó nếu chủ dự án chọn tách) |
 | T−1 ngày | Preflight §4, chuẩn bị giá trị §7, widget Turnstile, soạn sẵn rule WAF §11 (**chưa bật**); ghi lại thời lượng thực tế của một run `deploy.yml` gần nhất (tab Actions) để ước lượng mốc T0 + x; PR đã được duyệt và merge được (không chờ review/required check) | "~5–10 phút" bên dưới chỉ là ước lượng — `deploy.yml` cài wrangler mỗi lần chạy |
 | T−30 phút | Đọc nơi nhận hiện tại (READ-ONLY, §9f) và **xác nhận với khách sạn** đó đúng là nhóm của khách sạn; đặt biến/secret production §7 (có hiệu lực ở deploy kế tiếp, code cũ bỏ qua) | Bao gồm `TELEGRAM_WEBHOOK_SECRET`, allowlist = chat id đã xác nhận. Không allowlist một chat chưa xác nhận |
 | T−20 phút | Telegram §9 bước a–c: `setWebhook` với `secret_token` (code cũ bỏ qua header) | Kiểm tra `getWebhookInfo` không lỗi |
@@ -371,7 +388,7 @@ Thứ tự bắt buộc: **freeze → backup → migrate → deploy ngay → rec
 | T0 + ≤5 phút | Merge PR `admin-redesign` → `main` (GitHub UI, "Create a merge commit") → `deploy.yml` tự chạy | Không để khoảng cách dài giữa migrate và merge |
 | T0 + ~5–10 phút | Xác nhận deploy xong (bên dưới) | |
 | Ngay sau đó | Reconcile: chạy lại truy vấn đối soát §6.3 (mong đợi 0 dòng) + truy vấn "override bất thường" | Dòng nào xuất hiện = có người đổi quyền bằng UI cũ trong cửa sổ → sửa bằng trang Phân quyền mới |
-| Tiếp | Probe R-1 (404), `public-config` khác null, Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
+| Tiếp | Probe R-1 (mục R-1: mọi dòng PASS trên cả 2 host), `public-config` khác null, Telegram §9 bước d–h, Turnstile check production §10 (phần production), smoke §12 | |
 | Sau smoke test | Bật rule WAF §11 (hoặc bật sớm hơn chỉ khi có ngoại lệ cho IP của người vận hành) | Tránh tự chặn IP khách sạn trong lúc smoke test |
 | +60 phút | Theo dõi §13; kết thúc freeze bằng tin nhắn "Đã xong bảo trì"; khối "Release accepted" §15 | |
 
@@ -386,7 +403,7 @@ npx wrangler pages deployment list --project-name=hien-le-garden-v4 --environmen
 - Deployment production mới nhất phải có commit = merge commit vừa tạo (hoặc HEAD `main`).
 - Trên trình duyệt: mở `https://hienlegarden.vn/admin/login.html` (tải lại cứng), đăng nhập admin → menu mới có mục Phân quyền/Vai trò trong trang Tài khoản.
 - **Cổng bắt buộc:** `curl -s https://hienlegarden.vn/api/public-config` → `{"turnstileSiteKey":"<...>"}` (**không null**) chứng tỏ code mới + biến mới đã có hiệu lực. Null → đặt lại `TURNSTILE_SITE_KEY` bằng `pages secret put` (§7) và chạy lại job deploy.
-- **Cổng bắt buộc:** chạy vòng lặp probe ở mục R-1 — mọi đường dẫn riêng tư trả 404, trang public trả 200.
+- **Cổng bắt buộc:** chạy vòng lặp probe ở mục R-1 trên `hienlegarden.vn` **và** `hien-le-garden-v4.pages.dev` — mọi dòng `PASS` (mã khác 200 hoặc body = trang fallback `/`, không phải nội dung file); trang public trả 200. Trong log run `deploy.yml`, bước "Boundary check dist/" phải in `PASS` trước bước deploy.
 
 ---
 
@@ -473,18 +490,18 @@ Kết thúc: `unset TG_TOKEN TG_SECRET`.
 
 ### CẢNH BÁO: preview dùng DB/R2 production
 
-`wrangler.toml` khai báo `[[d1_databases]]` (`hien_le_garden_crm`, id `bf3ed73c-…`) và `[[r2_buckets]]` (`hien-le-garden-finance-receipts`) ở cấp cao nhất, không có `[env.preview]`. Với Pages, cấu hình này áp dụng cho **mọi môi trường**, nên một preview deployment (ví dụ `wrangler pages deploy . --branch=admin-redesign`) sẽ:
+`wrangler.toml` khai báo `[[d1_databases]]` (`hien_le_garden_crm`, id `bf3ed73c-…`) và `[[r2_buckets]]` (`hien-le-garden-finance-receipts`) ở cấp cao nhất, không có `[env.preview]`. Với Pages, cấu hình này áp dụng cho **mọi môi trường**, nên một preview deployment (ví dụ `wrangler pages deploy dist --branch=admin-redesign`) sẽ:
 - chạy **code mới trên DB production** — nếu 0042 chưa migrate: mọi route có đăng nhập 500 (không có bảng `role_permissions`, không có cột `locked_at`);
 - khi test form góp ý: tạo **voucher thật**, gửi **email thật** qua Brevo, ghi `message_log` thật; test booking tạo booking thật + Telegram thật.
 
-Do đó **không** deploy preview của nhánh này lên project hiện tại cho tới khi preview có binding riêng. Các lựa chọn (không tạo gì trong release này — người dùng quyết định):
+Do đó **không** deploy preview của nhánh này lên project hiện tại cho tới khi preview có binding riêng. Thiết kế chi tiết và khuyến nghị (phương án `[env.preview]` trong cùng project, đã kiểm chứng trong mã wrangler; guard so sánh DB id staging ≠ production): [staging-isolation.md](staging-isolation.md). Tóm tắt các lựa chọn (không tạo gì trong release này — người dùng quyết định):
 
 1. **Binding riêng cho Preview trong cùng project.** Tạo D1 `hien_le_garden_crm_preview` và R2 `hien-le-garden-finance-receipts-preview`; áp dụng migrations cho D1 preview; rồi gán vào Preview:
    - Dashboard: Workers & Pages → `hien-le-garden-v4` → Settings → Bindings → chọn **Preview** → D1 `DB` = DB preview, R2 `RECEIPTS` = bucket preview.
-   - Lưu ý: khi `wrangler.toml` có `pages_build_output_dir`, Cloudflare có thể coi file này là nguồn cấu hình và khoá chỉnh binding trên dashboard. Khi đó cách duy nhất là thêm khối `[env.preview]` với `d1_databases`/`r2_buckets` riêng vào `wrangler.toml` — đây là **thay đổi cấu hình cần duyệt**, chưa làm trong release này.
+   - Lưu ý (đã kiểm chứng): khi `wrangler.toml` có `pages_build_output_dir`, file này là nguồn sự thật và dashboard chỉ xem, không sửa binding được. Cách đúng là khối `[env.preview]` với `d1_databases`/`r2_buckets` riêng (hai khoá này không kế thừa từ cấp cao nhất) — **thay đổi cấu hình cần duyệt**, chưa làm trong release này.
    - Đặt biến Preview: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` (widget có hostname preview), **không** đặt `BREVO_API_KEY` production (hoặc dùng key sandbox), **không** đặt `TELEGRAM_BOT_TOKEN` production.
-2. **Project staging riêng** (ví dụ `hien-le-garden-v4-staging`): D1/R2 riêng; deploy từ một `git clone` **sạch** vào thư mục tạm trống (không phải thư mục làm việc, `git status --ignored` không có gì thêm), sửa `wrangler.toml` trong bản clone đó trỏ tới DB/bucket staging, rồi `npx wrangler pages deploy . --project-name=hien-le-garden-v4-staging` (tốt hơn: deploy thư mục allowlist như R-1 (a)). Không commit `wrangler.toml` đã sửa. Staging cũng bị R-1 nếu deploy thư mục gốc.
-3. **Chỉ test local**: `npx wrangler pages dev .` với D1 local (`wrangler d1 migrations apply hien_le_garden_crm --local`), `.dev.vars` chứa site key/secret thật của một widget có hostname `localhost`, **không** có `BREVO_API_KEY` (email sẽ log `failed`, voucher vẫn tạo local). Không chạm production. Xoá `.dev.vars` (hoặc thay secret thật bằng test key) sau khi test xong; không bao giờ chạy `wrangler pages deploy` từ thư mục có `.dev.vars`.
+2. **Project staging riêng** (ví dụ `hien-le-garden-v4-staging`): D1/R2 riêng; deploy từ một `git clone` **sạch** vào thư mục tạm trống (không phải thư mục làm việc, `git status --ignored` không có gì thêm), sửa `wrangler.toml` trong bản clone đó trỏ tới DB/bucket staging, rồi `npm run build && npm run check:dist && npx wrangler pages deploy dist --project-name=hien-le-garden-v4-staging`. Không commit `wrangler.toml` đã sửa. Cảnh báo: deploy project staging bằng `wrangler.toml` của repo (không sửa) sẽ gắn **binding production** vào staging (wrangler 3.114 `pages deploy` không nhận `--config`).
+3. **Chỉ test local**: `npm run dev` (build `dist/` rồi `wrangler pages dev dist`) với D1 local (`wrangler d1 migrations apply hien_le_garden_crm --local`), `.dev.vars` chứa site key/secret thật của một widget có hostname `localhost`, **không** có `BREVO_API_KEY` (email sẽ log `failed`, voucher vẫn tạo local). Không chạm production. Xoá `.dev.vars` (hoặc thay secret thật bằng test key) sau khi test xong; `.dev.vars` không bao giờ vào `dist/` (không được track), nhưng vẫn không deploy từ máy local.
 
 ### Checklist Turnstile (chạy trên preview đã tách binding, staging, hoặc local; phần "production" chạy sau deploy)
 
@@ -555,7 +572,7 @@ Dùng tài khoản test riêng khi có thể — **[TẠO DỮ LIỆU: dòng `st
 
 | # | Kiểm tra | Mong đợi | PASS/FAIL |
 |---|---|---|---|
-| R1 | Vòng lặp probe ở mục R-1 | Mọi đường dẫn riêng tư 404; trang public 200 | |
+| R1 | Vòng lặp probe ở mục R-1 (cả `hienlegarden.vn` và `hien-le-garden-v4.pages.dev`) | Mọi dòng `PASS` (mã khác 200, hoặc 200 với body = trang fallback `/`); trang public 200 | |
 
 ### Xác thực
 
@@ -683,7 +700,8 @@ Nguyên tắc:
 - Rollback code về `9675840` **sau khi** người dùng đã thao tác bằng code mới là **hồi quy bảo mật**: code cũ không lọc `locked_at` (tài khoản bị khoá đăng nhập lại được), bỏ qua override deny và chỉnh sửa bảng quyền vai trò, observer lấy lại quyền cũ, 4 cờ cũ (không được code mới cập nhật) sống lại với giá trị trước migration; webhook Telegram lại không xác thực; form góp ý lại không có Turnstile; FA-1..FA-5 mở lại.
 - Nếu buộc phải rollback code: trước đó đổi mật khẩu các tài khoản đang bị khoá (thay cho khoá), đồng bộ 4 cờ cũ theo override hiện tại qua UI cũ ngay sau rollback, và ghi biên bản.
 - Rollback code: Cloudflare dashboard → Workers & Pages → project → Deployments → deployment production trước đó → "Rollback to this deployment" (nhanh nhất), hoặc `git revert -m 1 <merge-commit>` rồi push lên `main` (qua PR). Nếu revert merge, lần merge lại sau này cần revert-của-revert (nếu không git coi các commit cũ đã có mặt). Kiểm tra biến môi trường sau rollback (deployment cũ không dùng các biến mới, không hại).
-- **Không bao giờ deploy tay từ máy local** (`npm run deploy` / `wrangler pages deploy .` trong thư mục làm việc): nó publish cả file local chưa track/bị ignore (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`…) và, nếu chạy từ nhánh khác `main`, tạo preview trên DB production. Cách deploy lại duy nhất: chạy lại job GitHub Actions (`gh run rerun <run-id>` hoặc nút "Re-run jobs" trong tab Actions), hoặc push/merge commit mới lên `main`.
+- **Không bao giờ deploy tay từ máy local.** Không bao giờ `wrangler pages deploy .` (publish cả thư mục repo — R-1). `npm run deploy` chỉ deploy `dist/` (file được track) nhưng dùng nội dung working tree và, nếu chạy từ nhánh khác `main`, tạo preview trên DB production. Cách deploy lại duy nhất: chạy lại job GitHub Actions (`gh run rerun <run-id>` hoặc nút "Re-run jobs" trong tab Actions), hoặc push/merge commit mới lên `main`.
+- **Rollback và R-1:** mọi deployment production **trước** lần deploy `dist/` đầu tiên vẫn chứa file repo riêng tư. "Rollback to this deployment" về một deployment như vậy làm lộ lại toàn bộ file R-1 (và URL `<hash>.hien-le-garden-v4.pages.dev` của chúng luôn còn truy cập được). Nếu phải rollback code về trước release này, ưu tiên `git revert` + deploy qua CI (vẫn build `dist/`) thay vì rollback trên dashboard; nếu buộc phải rollback trên dashboard, ghi nhận là lộ lại R-1 và roll-forward sớm.
 - Time Travel restore chỉ khi dữ liệu bị hỏng — mất mọi ghi sau bookmark. Restore về bookmark trước 0042 **sau khi đã deploy** cũng xoá bảng/cột 0042 và dòng 0042 trong `d1_migrations` → code mới trả 500: phải rollback code trước, hoặc áp dụng lại 0042 ngay sau restore.
 
 | Failure point | Safe action | DB rollback needed? | Code rollback safe? | Data reconciliation |
@@ -708,11 +726,11 @@ Tiêu chí STOP / GO trong quá trình:
 
 GO chỉ khi tất cả đều ✓:
 
-- [ ] **R-1 fixed and verified (private paths return 404) BEFORE merging this branch.**
+- [ ] **R-1:** job "Release artifact boundary (R-1)" xanh trên PR (build + check + self-test); `deploy.yml` là bản `pages deploy dist`. Production chỉ hết lộ sau deploy — kiểm ở khối "Release accepted".
 - [ ] Pages production branch = `main`; project là Direct Upload (không có Git integration — nếu có, việc push nhánh/mở PR tự build preview trên DB production).
 - [ ] PR đã được duyệt và merge được ngay (không bị chặn bởi review/required check) trước khi migrate.
 - [ ] `CLOUDFLARE_API_TOKEN` (repo secret) còn hiệu lực — run `deploy.yml` gần nhất thành công; đã ghi thời lượng run.
-- [ ] Linux gate: 79/79 migrations + 80 files/1488 tests PASS isolated; quyết định về 3 file R2 đã ghi nhận (§3); run `test.yml` trên PR xanh.
+- [ ] Linux gate: 79/79 migrations + 80 files/1488 tests PASS isolated; R2 tests: Linux non-isolated PASS 53/53; isolated mode blocked by test-library limitation; upgrade deferred (§3); run `test.yml` trên PR xanh (gồm bước R2 non-isolated chặn).
 - [ ] PR `admin-redesign` → `main` đã review, không có commit ngoài phạm vi.
 - [ ] Preflight §4: ≥1 admin đăng nhập được (đã thử), 2FA sẵn sàng.
 - [ ] 6 biến §7 đã đặt cho Production (kiểm tra bằng `pages secret list` + dashboard).
@@ -728,7 +746,7 @@ NO-GO nếu bất kỳ mục nào ở trên chưa đạt, hoặc: đang cao đi�
 
 Release accepted (sau deploy) chỉ khi:
 
-- [ ] Probe R-1: mọi đường dẫn riêng tư 404.
+- [ ] Probe R-1: mọi dòng `PASS` trên `hienlegarden.vn` và `hien-le-garden-v4.pages.dev` (không URL riêng tư nào trả nội dung file).
 - [ ] `/api/public-config` trả site key khác null.
 - [ ] Đối soát §6.3 không có dòng nào không giải thích được.
 - [ ] Mọi mục §12 PASS (hoặc FAIL đã có quyết định ghi nhận).

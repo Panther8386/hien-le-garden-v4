@@ -2,10 +2,17 @@
 
 The marketing site (`index.html`, `bang-gia/`, `gioi-thieu/`, `cam-nang/`,
 `tri-an-khach-hang/`) and the CRM backend (`functions/`, `lib/`) are one
-Cloudflare Pages project — same domain, same deploy. `wrangler.toml` sets
-`pages_build_output_dir = "."` (the whole v4 folder), with `.assetsignore`
-keeping backend/dev-only files (`lib/`, `test/`, `migrations/`, `wrangler.toml`,
-`package.json`, `node_modules/`, …) out of the public static upload.
+Cloudflare Pages project — same domain, same deploy. The static upload is
+`dist/` only: `scripts/build-static.mjs` (`npm run build`) copies an explicit
+allowlist of public, git-tracked files into `dist/`, and
+`scripts/check-dist.mjs` (`npm run check:dist`) fails if anything private
+(`lib/`, `test/`, `migrations/`, `docs/`, `wrangler.toml`, `package.json`,
+`*.md`, `.env*`, …) is in it. `wrangler.toml` sets
+`pages_build_output_dir = "dist"`. Pages Functions are not part of `dist/`:
+wrangler bundles them from `./functions` (which import `../lib/*.js`) of the
+directory it runs in, so always run wrangler from the repo root.
+`.assetsignore` is NOT read by `wrangler pages deploy` (only by Workers
+assets); it is kept only as a list and protects nothing on its own.
 
 See `docs/specs/2026-08-19-v4-crm-loyalty-design.md` (in the `hien-le-garden`
 repo) for the original design. Originally built as a separate
@@ -31,9 +38,9 @@ single Cloudflare Pages deployment.
    - **Deploy requirement:** whenever `TELEGRAM_WEBHOOK_SECRET` is first set or rotated, re-run this `setWebhook` call with the matching `secret_token`. A webhook registered without it (or with an old value) gets every update rejected with 401 — guest deep links (`/start <feedbackId>`) and `/start staff_booking_notify` stop working until it is re-registered. Check with `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"` (`last_error_message` shows 401s). Never commit or paste the real values. Right after deploy, also check that the stored destination (`wrangler d1 execute hien_le_garden_crm --remote --command "SELECT booking_notify_chat_id FROM notification_settings"`) is a known hotel chat, and correct it if not: this fix blocks new takeovers but does not reset a destination hijacked before it.
    - To find a chat id for the allowlist: add the bot to the group, send any message, and read `message.chat.id` from `getUpdates` (temporarily `deleteWebhook` first, then re-run `setWebhook` with `secret_token`), or ask an existing admin who knows the id already stored in `notification_settings`.
 6. Verify the sending domain in Brevo so `sender.email` in `lib/email.js` is authorized.
-7. Create the Pages project itself with `wrangler pages project create hien-le-garden-v4 --production-branch=main`, then do a first deploy with `wrangler pages deploy .` (see Deploy below for what runs this automatically on every push). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages project → Custom domains).
+7. Create the Pages project itself with `wrangler pages project create hien-le-garden-v4 --production-branch=main`, then do the first deploy through the CI path: merge to `main` so `.github/workflows/deploy.yml` builds `dist/`, checks it and runs `pages deploy dist` (see Deploy below). If a first deploy must be done by hand, use `npm run deploy` (build → check → `wrangler pages deploy dist`) from a clean checkout of `main`. Never run `wrangler pages deploy .`: it publishes the whole repo folder (R-1). No custom domain is required — Cloudflare gives every project a free `<project-name>.pages.dev` URL; add a custom domain later if wanted (Pages project → Custom domains).
 
-   **Pitfall:** Cloudflare's dashboard "Workers & Pages → Create" flow can create a **Workers** project instead of a **Pages** project even when connecting the same repo — Workers can't run this project (it needs Pages' `functions/`-directory routing and `.assetsignore`-based static asset handling). If the dashboard flow is used and the resulting project's build settings show `Deploy command: npx wrangler deploy` (no "pages"), that's a Workers project — delete it (`wrangler delete --name <name>`, run from a directory with no `wrangler.toml`) and create the Pages project via CLI as above instead.
+   **Pitfall:** Cloudflare's dashboard "Workers & Pages → Create" flow can create a **Workers** project instead of a **Pages** project even when connecting the same repo — Workers can't run this project (it needs Pages' `functions/`-directory routing and a static asset directory — here `dist/`). If the dashboard flow is used and the resulting project's build settings show `Deploy command: npx wrangler deploy` (no "pages"), that's a Workers project — delete it (`wrangler delete --name <name>`, run from a directory with no `wrangler.toml`) and create the Pages project via CLI as above instead.
 
 ## Public feedback form: bot protection
 
@@ -52,7 +59,9 @@ single Cloudflare Pages deployment.
 
 ```bash
 npm install
-npm run dev    # wrangler pages dev . --d1=DB — serves the whole site + API from one local server
+npm run dev    # npm run build, then wrangler pages dev dist — serves the public artifact + API (./functions) from one local server
+               # static edits need a re-run (or `npm run build` in another terminal); Functions reload on save
+               # local only: D1/R2 are simulated by miniflare in .wrangler/state, never the production database
 npm test        # Vitest, auto-retrying — see note below
 ```
 
@@ -90,13 +99,15 @@ Thêm một quyền mới:
 
 Release of the admin permissions branch (migration 0042, Telegram webhook secret, Turnstile, WAF, smoke tests, rollback): follow [docs/releases/admin-permissions-release-runbook.md](docs/releases/admin-permissions-release-runbook.md).
 
-Automatic: `.github/workflows/deploy.yml` runs `wrangler pages deploy .` on every push to `main`, via `cloudflare/wrangler-action`. Needs two repo secrets (Settings → Secrets and variables → Actions):
+Automatic (the only production deploy path): on every push to `main`, `.github/workflows/deploy.yml` runs `node scripts/build-static.mjs` → `node scripts/check-dist.mjs` → `wrangler pages deploy dist --project-name=hien-le-garden-v4` (via `cloudflare/wrangler-action`, from the repo root so `./functions` and `./lib` resolve). The PR workflow `.github/workflows/test.yml` runs the same build + check plus `check-dist.mjs --self-test` (proves the check fails on planted private files). Needs two repo secrets (Settings → Secrets and variables → Actions):
 - `CLOUDFLARE_API_TOKEN` — create at Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template.
 - `CLOUDFLARE_ACCOUNT_ID` — shown in `wrangler whoami`, or the dashboard URL (`dash.cloudflare.com/<account-id>/...`).
 
-**Do not deploy manually from a working checkout** (`npm run deploy` / `wrangler pages deploy .`). `pages deploy` uploads every file in the directory except a small hard-coded list. It does not read `.gitignore` or `.assetsignore`, so it also publishes local untracked and ignored files (`.dev.vars`, `.superpowers/`, `graphify-out/`, `.claude/`, `.wrangler-local-state/`, …) as public assets. Run from a non-`main` branch, it also creates a preview deployment bound to the production D1/R2. To redeploy, re-run the GitHub Actions deploy job instead: `gh run rerun <run-id>`, or "Re-run jobs" in the Actions tab.
+**Do not deploy manually from a working checkout.** Never `wrangler pages deploy .`: `pages deploy` uploads every file in the directory except a small hard-coded list (it does not read `.gitignore` or `.assetsignore`), so the repo root publishes `lib/`, `migrations/`, `docs/`, `wrangler.toml` and any local untracked file (`.dev.vars`, `.superpowers/`, …). `npm run deploy` is now `npm run build && npm run check:dist && wrangler pages deploy dist --project-name=hien-le-garden-v4`: `dist/` contains only allowlisted **git-tracked** paths, so untracked/ignored local files can no longer leak — but it copies the **working-tree content** of those tracked files (uncommitted edits are deployed), and wrangler picks the environment from the current git branch: on any branch other than the project's production branch it creates a **preview** deployment, which (until `[env.preview]` exists, see [docs/releases/staging-isolation.md](docs/releases/staging-isolation.md)) is bound to the **production** D1/R2. So production deploys go only through CI. To redeploy, re-run the GitHub Actions deploy job: `gh run rerun <run-id>`, or "Re-run jobs" in the Actions tab.
 
-Known issue R-1 (release blocker, pre-existing): even the CI deploy publishes tracked non-public files (`lib/`, `migrations/`, `test/`, `docs/`, `wrangler.toml`, `package.json`, this file). See the R-1 section of the release runbook.
+R-1 (repo files published by Pages): fixed in the pipeline (dist allowlist + boundary check). The production site stays exposed until the first deploy of the clean artifact; after it, run the post-deploy private-URL check in the R-1 section of the release runbook on both `hienlegarden.vn` and the `hien-le-garden-v4.pages.dev` alias. Earlier deployments keep their own unique `<hash>.hien-le-garden-v4.pages.dev` URLs and still contain the old files; rolling back to one re-exposes them.
+
+Staging/preview isolation design (separate D1/R2, secrets, Telegram, Brevo, Turnstile): [docs/releases/staging-isolation.md](docs/releases/staging-isolation.md).
 
 The same domain serves both the static site and `/api/*` — no CORS, no separate backend deployment.
 
