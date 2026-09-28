@@ -1,6 +1,48 @@
-# Tách staging/preview khỏi production (thiết kế — chưa triển khai)
+# Tách staging/preview khỏi production (phương án A — đã triển khai 2026-09-28)
 
-Trạng thái: **thiết kế, chưa tạo tài nguyên nào**. `wrangler.toml` hiện chỉ có binding cấp cao nhất (production). Tài liệu này mô tả cách tách, để chủ dự án duyệt trước khi tạo D1/R2/bot/widget staging.
+## 0. Trạng thái triển khai (2026-09-28, commit `368d65a`)
+
+| Thành phần | Giá trị |
+|---|---|
+| Pages | project `hien-le-garden-v4`, môi trường **Preview** (production branch = `main`, xác nhận qua `pages deployment list`) |
+| Hostname | `https://staging.hien-le-garden-v4.pages.dev` (alias của `--branch=staging`) + URL riêng mỗi deploy `https://<hash>.hien-le-garden-v4.pages.dev` |
+| D1 | binding `DB` → `hien_le_garden_crm_staging` (id `1e91a577-df12-4ff7-8730-c022be25a3c9`, APAC), 42/42 migration |
+| R2 | binding `RECEIPTS` → `hien-le-garden-finance-receipts-staging` (APAC) |
+| Guard | `npm run check:staging` → exit 0 |
+| Secret Preview | **không có** (đã kiểm `pages secret list --env preview`); không có biến plain-text (kiểm `pages download config`) |
+| Telegram | **DISABLED** (không có token → `sendTelegramMessage` bỏ qua, không gọi API — commit `b299280`; webhook không có secret → 401 mọi update) |
+| Brevo | **DISABLED** (không có key → `sendPromoEmail` bỏ qua, không gọi API; caller ghi `failed`) |
+| Turnstile | **PENDING** — chưa có widget staging; không có secret → `POST /api/feedback` 403 (fail closed, đã kiểm trên staging) |
+| Tài khoản | `staging_admin` (role admin) chỉ trên D1 staging; mật khẩu sinh ngẫu nhiên, lưu ở `.superpowers/staging/staging-admin.local.txt` (git-ignored) |
+
+Lệnh deploy preview (duy nhất, chạy từ gốc repo):
+
+```bash
+npm run build && npm run check:dist && npm run check:staging &&   npx wrangler pages deploy dist --project-name=hien-le-garden-v4 --branch=staging
+```
+
+`--branch=staging` là **bắt buộc**: wrangler chọn production/preview bằng cách so `--branch` (mặc định = nhánh git hiện tại) với production branch của project (cli.js:126960, 126197-126201), rồi nhúng binding của môi trường đó vào metadata của Functions bundle (`getBindings(config)`, cli.js:124192-124215). Chạy từ `main` mà quên `--branch` = deploy production.
+
+Secret staging khi cần bật tích hợp (luôn có `--env preview`; không có cờ này = ghi vào **production**):
+
+| Variable | Giá trị staging | Bắt buộc | Tác dụng phụ bên ngoài |
+|---|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | token của bot **staging** riêng (không phải bot production) | Không (thiếu → tắt an toàn) | gửi tin Telegram tới chat staging |
+| `TELEGRAM_WEBHOOK_SECRET` | secret mới, khác production | Không (thiếu → webhook 401) | không |
+| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | chat id nhóm **staging** | Không | quyết định nhóm nào nhận thông báo |
+| `BREVO_API_KEY` | để trống (mặc định); nếu cần test email: key riêng + chỉ gửi tới hộp thư test do mình kiểm soát | Không (thiếu → tắt an toàn) | gửi email thật |
+| `TURNSTILE_SITE_KEY` | site key widget **staging** (hostname `staging.hien-le-garden-v4.pages.dev`) | Có để test form góp ý | không |
+| `TURNSTILE_SECRET_KEY` | secret widget staging | Có để test form góp ý | gọi siteverify |
+
+Ví dụ: `npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name=hien-le-garden-v4 --env preview`.
+
+Kết quả smoke test staging 2026-09-28: probe R-1 `PASS=62 FAIL=0 INCONCLUSIVE=0` (alias + URL deploy); `/api/public-config` 200, `/api/auth/me` 401 → login 200 (cookie HttpOnly/Secure/SameSite) → `me` role admin 38 quyền → logout → 401; marker D1 (template `STAGING-MARKER-…`) có ở staging, **0** ở production (SELECT chỉ đọc); marker R2 (`finance-receipts/1/…-staging-r2-marker.png`) có ở bucket staging, production báo "key does not exist", đã xoá sau test.
+
+---
+
+(Phần dưới là thiết kế gốc, giữ để tham chiếu.)
+
+Trạng thái gốc: thiết kế trước khi tạo tài nguyên.
 
 Quy tắc bắt buộc (quyết định của chủ dự án): preview/staging phải tách khỏi D1/R2 production; **không** chạy bất kỳ test preview nào có tác dụng phụ trên binding production.
 

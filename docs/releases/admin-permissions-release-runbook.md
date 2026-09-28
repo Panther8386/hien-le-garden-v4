@@ -353,8 +353,8 @@ Nếu bất kỳ kiểm tra nào lệch → **NO-GO cho merge**, dừng và phâ
 
 | Name | Secret or plain | Scope (Production/Preview) | Required | Fail behavior when missing | Set command (placeholder) |
 |---|---|---|---|---|---|
-| `BREVO_API_KEY` | Secret | Production (**đã có sẵn** — chỉ đặt nếu `pages secret list` không có); Preview chỉ khi có môi trường preview tách DB (§10) | Có (email voucher, gửi email khách) | `sendPromoEmail` nhận lỗi từ Brevo → log `Brevo send failed <status>`; form góp ý **vẫn tạo voucher (201)**, `message_log.status = 'failed'`; gửi email từ trang Khách hàng thất bại | `npx wrangler pages secret put BREVO_API_KEY --project-name=hien-le-garden-v4` (nhập `<brevo-api-key>` khi được hỏi) |
-| `TELEGRAM_BOT_TOKEN` | Secret | Production (**đã có sẵn** — chỉ đặt nếu thiếu, tránh gõ nhầm token đang chạy) | Có | Mọi lệnh gửi Telegram lỗi → log `Telegram send failed` / `Telegram send threw`; booking vẫn được tạo nhưng **không có thông báo** cho lễ tân; khách không nhận mã qua deep link | `npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=hien-le-garden-v4` |
+| `BREVO_API_KEY` | Secret | Production (**chưa thấy** trong `pages secret list` ngày 2026-09-28 — phải đặt); Preview: để trống (staging-isolation.md §0) | Có (email voucher, gửi email khách) | `sendPromoEmail` **không gọi Brevo**, log `Brevo send skipped: BREVO_API_KEY not configured`; form góp ý **vẫn tạo voucher (201)**, `message_log.status = 'failed'`; gửi email từ trang Khách hàng thất bại | `npx wrangler pages secret put BREVO_API_KEY --project-name=hien-le-garden-v4` (nhập `<brevo-api-key>` khi được hỏi) |
+| `TELEGRAM_BOT_TOKEN` | Secret | Production (**đã có sẵn** — secret duy nhất thấy trong `pages secret list` ngày 2026-09-28; chỉ đặt nếu thiếu); Preview: không đặt (hoặc token bot staging riêng) | Có | Không gọi Telegram, log `Telegram send skipped: TELEGRAM_BOT_TOKEN not configured`; booking vẫn được tạo nhưng **không có thông báo** cho lễ tân; khách không nhận mã qua deep link | `npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=hien-le-garden-v4` |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret (1–256 ký tự `A-Z a-z 0-9 _ -`) | Production | Có | Webhook trả **401 cho mọi update (fail closed)** → deep link khách `/start <id>` và `/start staff_booking_notify` ngừng hoạt động; `getWebhookInfo.last_error_message` báo 401. Thông báo booking mới (gửi đi) **không** bị ảnh hưởng | xem §9 (đọc từ biến, pipe vào `wrangler pages secret put TELEGRAM_WEBHOOK_SECRET`) |
 | `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | Không bí mật (chat id) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production | Có (nếu muốn đổi nơi nhận) | Rỗng/không đặt → **đổi nơi nhận bị tắt**: `/start staff_booking_notify` bị bỏ qua im lặng; nơi nhận đang lưu trong `notification_settings` vẫn nhận thông báo bình thường | `printf '%s' '<hotel-chat-id>' \| npx wrangler pages secret put TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS --project-name=hien-le-garden-v4` (nhiều id: phân tách bằng dấu phẩy) |
 | `TURNSTILE_SITE_KEY` | Public (không bí mật) nhưng **đặt bằng `pages secret put`** (xem ghi chú) | Production; Preview nếu test form ở preview | Có | `/api/public-config` trả `{"turnstileSiteKey": null}` → widget không hiện → không có token → **mọi lần gửi góp ý 403** | `npx wrangler pages secret put TURNSTILE_SITE_KEY --project-name=hien-le-garden-v4` (nhập `<turnstile-site-key>`) |
@@ -364,6 +364,7 @@ Bindings (không phải biến): `DB` → D1 `hien_le_garden_crm`, `RECEIPTS` �
 
 Ghi chú:
 - **Vì sao đặt cả biến không bí mật bằng `pages secret put`:** `wrangler.toml` có `pages_build_output_dir`, nên Cloudflare Pages coi `wrangler.toml` là nguồn cấu hình cho biến thường (plain vars): biến thường trên dashboard có thể bị khoá hoặc bị thay bằng `[vars]` (hiện không có) ở mỗi lần deploy bằng wrangler → `TURNSTILE_SITE_KEY` rỗng (mọi góp ý 403) hoặc allowlist rỗng (im lặng). Secret không bị ảnh hưởng. Code đọc `env.X` như nhau cho secret và biến thường. (Phương án khác: thêm `[vars]` vào `wrangler.toml` — thay đổi config cần review, chưa làm.)
+- **Hiện trạng production đọc ngày 2026-09-28 (chỉ tên):** `pages secret list --env production` chỉ có `TELEGRAM_BOT_TOKEN`; `pages download config` không có biến plain-text nào. Nghĩa là `BREVO_API_KEY`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` **đều phải đặt trước deploy** (nếu không: góp ý 403, webhook 401, không gửi email).
 - **Cổng kiểm tra bắt buộc sau deploy:** `curl -s https://hienlegarden.vn/api/public-config` phải trả `turnstileSiteKey` **khác null**; `npx wrangler pages secret list --project-name=hien-le-garden-v4` phải liệt kê đủ 6 tên.
 - `wrangler pages secret put` mặc định ghi vào môi trường **production**. Wrangler 3.114 chấp nhận cờ ẩn `--env preview` (không hiện trong `--help`); nếu không chắc, dùng dashboard → tab Preview.
 - Kiểm tra tên (không lộ giá trị): `npx wrangler pages secret list --project-name=hien-le-garden-v4`.
@@ -486,6 +487,8 @@ Kết thúc: `unset TG_TOKEN TG_SECRET`.
 ---
 
 ## 10. Turnstile — kiểm tra trên preview, và cảnh báo binding
+
+> **2026-09-28:** môi trường staging đã có (`https://staging.hien-le-garden-v4.pages.dev`, D1/R2 staging, guard exit 0 — `docs/releases/staging-isolation.md` §0). Checklist Turnstile dưới đây chạy trên staging **sau khi** có widget staging riêng cho hostname đó (trạng thái hiện tại: PENDING). Không dùng widget production.
 
 ### CẢNH BÁO: preview dùng DB/R2 production
 
@@ -738,7 +741,8 @@ GO chỉ khi tất cả đều ✓:
 - [ ] Telegram §9 a–c xong: `setWebhook` với `secret_token` OK, `getWebhookInfo` không lỗi mới.
 - [ ] Widget Turnstile có hostname production; checklist §10 đã chạy trên môi trường **không** dùng DB production (hoặc quyết định chỉ kiểm tra trên production sau deploy).
 - [ ] Rule WAF §11 đã soạn sẵn, sẽ bật sau smoke test (hoặc có ngoại lệ IP người vận hành; hoặc quyết định hoãn có ghi nhận).
-- [ ] Không có preview deployment nào của nhánh này trên project production.
+- [ ] Mọi preview deployment dùng `--branch=staging` sau khi `npm run check:staging` exit 0 (binding staging — staging-isolation.md §0); không có preview nào deploy khi thiếu `[env.preview]`.
+- [ ] Production có đủ 6 biến §7 (ngày 2026-09-28 mới có `TELEGRAM_BOT_TOKEN`).
 - [ ] Freeze đã thông báo và được xác nhận.
 - [ ] Backup §5 hợp lệ + bookmark Time Travel đã ghi.
 - [ ] Người vận hành rảnh 60 phút sau deploy; lễ tân biết khung bảo trì.
