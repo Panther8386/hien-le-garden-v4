@@ -1,5 +1,6 @@
 // v4/functions/api/asset-inventory-batches/index.js
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -20,7 +21,7 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
@@ -41,8 +42,10 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager']);
+  const auth = await requireAuth(request, env, 'assets.manage');
   if (auth instanceof Response) return auth;
+  // Writes that reference asset records by body id require seeing them (row-independent).
+  if (!hasPermission(auth, 'assets.view')) return jsonError('Không đủ quyền', 403);
 
   let body;
   try {

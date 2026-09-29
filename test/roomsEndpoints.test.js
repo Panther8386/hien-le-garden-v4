@@ -6,6 +6,7 @@ import { onRequestPatch as setRoomPrice } from '../functions/api/rooms/[id]/pric
 import { onRequestPatch as reorderRooms } from '../functions/api/rooms/reorder.js';
 import { onRequestGet as getLayoutLog } from '../functions/api/rooms/layout-log.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken, layoutToken;
 
@@ -19,7 +20,8 @@ beforeEach(async () => {
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_a', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'admin_a', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'observer_a', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
-  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, can_manage_room_layout, created_at) VALUES (5, 'le_tan_b', 'x', 'reception', 1, '2026-08-01T00:00:00Z')`).run();
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (5, 'le_tan_b', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  await setOverride(env.DB, 5, 'rooms.layout');
   managerToken = await createSession(env.DB, 1);
   receptionToken = await createSession(env.DB, 2);
   adminToken = await createSession(env.DB, 3);
@@ -82,6 +84,12 @@ describe('GET /api/rooms', () => {
     const request = new Request('https://x/api/rooms', { headers: { Cookie: `session=${observerToken}` } });
     const response = await listRooms({ request, env });
     expect(response.status).toBe(200);
+  });
+
+  it('403s for a manager denied bookings.view', async () => {
+    await setOverride(env.DB, 1, 'bookings.view', 'deny');
+    const response = await listRooms({ request: authedRequest('https://x/api/rooms'), env });
+    expect(response.status).toBe(403);
   });
 
   it('returns the date-scoped 5-state model when ?date= is passed', async () => {
@@ -269,8 +277,7 @@ describe('PATCH /api/rooms/reorder', () => {
     expect(response.status).toBe(400);
   });
 
-  it('rejects an observer even if the layout flag is set on their account (403)', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_manage_room_layout = 1 WHERE id = 4`).run();
+  it('rejects an observer without an explicit grant (403)', async () => {
     const { results: rooms } = await env.DB.prepare(`SELECT id FROM rooms WHERE is_active = 1 ORDER BY display_order, id`).all();
     const response = await reorderRooms({ request: authedBody('https://x/api/rooms/reorder', observerToken, 'PATCH', { order: rooms.map((r) => r.id) }), env });
     expect(response.status).toBe(403);

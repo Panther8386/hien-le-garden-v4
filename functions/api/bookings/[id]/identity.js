@@ -1,15 +1,20 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
+import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy đặt phòng', 404);
 
-  const booking = await env.DB.prepare(`SELECT id, guest_name, id_number, nationality FROM bookings WHERE id = ?`).bind(params.id).first();
-  if (!booking) return jsonError('Không tìm thấy đặt phòng', 404);
+  const booking = await env.DB.prepare(`SELECT id, guest_name, id_number, nationality, is_hidden FROM bookings WHERE id = ?`).bind(params.id).first();
+  // A hidden booking answers exactly like a non-existent id for anyone without records.hide.
+  if (!booking || !canSeeHidden(auth, booking)) return jsonError('Không tìm thấy đặt phòng', 404);
 
   let body;
   try {

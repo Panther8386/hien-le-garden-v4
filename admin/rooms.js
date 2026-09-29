@@ -1,5 +1,6 @@
 // v4/admin/rooms.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let editingRoomId = null;
 
 const ROOM_TYPE_LABELS = {
@@ -21,9 +22,9 @@ function formatVnd(n) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
-  if (currentRole === 'admin') {
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  if (can('settings.rooms')) {
     document.getElementById('addHolidayBtn').classList.remove('hidden');
   }
   await loadRooms();
@@ -97,7 +98,7 @@ function renderRoomsTable(rooms) {
       tdWeekend.textContent = formatVnd(room.priceWeekend);
 
       const tdActions = document.createElement('td');
-      if (currentRole === 'admin') {
+      if (can('settings.rooms')) {
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
         editBtn.className = 'table-actions-btn';
@@ -168,7 +169,7 @@ function renderHolidaysTable(holidays) {
     tdEnd.textContent = holiday.endDate;
 
     const tdActions = document.createElement('td');
-    if (currentRole === 'admin') {
+    if (can('settings.rooms')) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'table-actions-btn';

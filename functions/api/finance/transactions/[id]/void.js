@@ -1,6 +1,7 @@
 // functions/api/finance/transactions/[id]/void.js
 import { requireAuth } from '../../../../../lib/requireAuth.js';
 import { summarize } from '../index.js';
+import { canSeeTransaction } from '../../../../../lib/financeAccess.js';
 import { loadCategoryMeta } from '../../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
@@ -8,11 +9,11 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (existing.voided_at) return jsonError('Giao dịch này đã được huỷ trước đó', 400);
 
   const now = new Date().toISOString();

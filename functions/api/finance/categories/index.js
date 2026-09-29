@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { slugify } from '../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
@@ -23,19 +24,19 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, 'finance.view_income');
   if (auth instanceof Response) return auth;
 
-  // Observer only ever sees "Thu" data — hide expense category names too, not
-  // just amounts, so the category filter dropdown has nothing to select that
-  // could never return a result anyway.
-  const where = auth.role === 'observer' ? `WHERE type = 'income'` : '';
+  // Anyone without finance.view_all only ever sees "Thu" data — hide expense
+  // category names too, not just amounts, so the category filter dropdown has
+  // nothing to select that could never return a result anyway.
+  const where = !hasPermission(auth, 'finance.view_all') ? `WHERE type = 'income'` : '';
   const { results } = await env.DB.prepare(`SELECT * FROM finance_categories ${where} ORDER BY type, display_order, id`).all();
   return new Response(JSON.stringify(results.map(coerceRow)), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.finance_categories');
   if (auth instanceof Response) return auth;
 
   let body;

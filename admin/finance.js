@@ -1,5 +1,6 @@
 // v4/admin/finance.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 let categoryMeta = {};
 
@@ -177,22 +178,22 @@ let currentChartType = 'time';
     window.location.href = '/admin';
     return;
   }
-  const { role, canAddFinanceTransaction } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
   await loadCategoryMeta();
 
   setDefaultTypePreference(defaultTypePreference());
   populateCategorySelect(document.getElementById('filterCategory'), { includeAllOption: true });
 
-  if (currentRole === 'manager' || currentRole === 'admin' || canAddFinanceTransaction) {
+  if (can('finance.create')) {
     document.getElementById('openAddTransactionBtn').classList.remove('hidden');
   }
-  if (currentRole === 'manager' || currentRole === 'admin') {
+  if (can('finance.manage')) {
     document.getElementById('openingBalanceEditor').classList.remove('hidden');
   }
 
-  if (currentRole === 'admin') {
+  if (can('records.hide')) {
     document.getElementById('showHiddenTransactionsWrap').classList.remove('hidden');
   }
   document.getElementById('showHiddenTransactions').addEventListener('change', () => {
@@ -203,14 +204,14 @@ let currentChartType = 'time';
   // Observer only ever sees "Thu" data (server-enforced) — the monthly
   // balance sheet mixes income and expense with no meaningful Thu-only
   // version, and there's nothing left for the type filter to choose between.
-  if (currentRole === 'observer') {
+  if (!can('finance.view_all')) {
     document.getElementById('financeBalanceSection').classList.add('hidden');
     document.getElementById('filterType').classList.add('hidden');
   }
 
   resetFinanceForm();
   await loadTransactions();
-  if (currentRole !== 'observer') {
+  if (can('finance.view_all')) {
     document.getElementById('financeMonthInput').value = currentMonthValue();
     await refreshFinanceSummary();
   }
@@ -222,7 +223,7 @@ let currentTransactions = [];
 function transactionRowHtml(t) {
   const typeLabel = t.type === 'income' ? 'Thu' : 'Chi';
   const statusClass = t.status === 'draft' ? 'status-draft' : t.status === 'confirmed' ? 'status-fin-confirmed' : 'status-paid';
-  const canEdit = (currentRole === 'manager' || currentRole === 'admin') && !t.voidedAt;
+  const canEdit = can('finance.manage') && !t.voidedAt;
   return { typeLabel, statusClass, canEdit };
 }
 
@@ -260,7 +261,7 @@ function buildActionButtons(t) {
     voidBtn.addEventListener('click', () => openVoidConfirm(t));
     container.append(editBtn, voidBtn);
   }
-  if (currentRole === 'admin' && t.voidedAt) {
+  if (can('records.hide') && t.voidedAt) {
     const hideBtn = document.createElement('button');
     hideBtn.type = 'button';
     hideBtn.className = 'btn-secondary table-actions-btn';
@@ -436,7 +437,7 @@ async function loadTransactions(filters) {
   });
   params.set('page', String(currentPage));
   params.set('pageSize', String(currentPageSize));
-  if (currentRole === 'admin' && document.getElementById('showHiddenTransactions').checked) {
+  if (can('records.hide') && document.getElementById('showHiddenTransactions').checked) {
     params.set('includeHidden', '1');
   }
   let response;
@@ -641,7 +642,7 @@ function renderStatCards(summary) {
 function renderOpeningBalanceEditor(period, currentValue) {
   const container = document.getElementById('openingBalanceEditor');
   container.innerHTML = '';
-  if (currentRole !== 'manager' && currentRole !== 'admin') return;
+  if (!can('finance.manage')) return;
 
   const label = document.createElement('label');
   label.textContent = 'Sửa số dư đầu kỳ cho tháng này ';
@@ -687,7 +688,7 @@ async function refreshFinanceSummary() {
   const errorEl = document.getElementById('financeError');
   errorEl.textContent = '';
 
-  const isPrivileged = currentRole === 'manager' || currentRole === 'admin';
+  const isPrivileged = can('finance.view_all');
 
   let summaryResponse, openingResponse;
   try {
@@ -713,7 +714,7 @@ async function refreshFinanceSummary() {
 }
 
 async function refreshStorageWarning() {
-  if (currentRole !== 'manager' && currentRole !== 'admin') return;
+  if (!can('finance.view_all')) return;
   const banner = document.getElementById('financeStorageWarning');
   let response;
   try {

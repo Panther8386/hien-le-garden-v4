@@ -1,5 +1,6 @@
 // v4/admin/asset-inventory-stock.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let categories = [];
 let locations = [];
 let currentStockRows = [];
@@ -37,12 +38,12 @@ function showPageError(message) {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
-  if (currentRole !== 'observer') {
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  if (can('assets.count')) {
     document.getElementById('openTransactionFormBtn').classList.remove('hidden');
   }
-  if (currentRole === 'admin') {
+  if (can('assets.config')) {
     document.getElementById('openLotFormBtn').classList.remove('hidden');
   }
 
@@ -167,7 +168,7 @@ async function openTransactionHistory(stockRow) {
     const tdActor = document.createElement('td');
     tdActor.textContent = entry.createdBy;
     const tdActions = document.createElement('td');
-    if (currentRole !== 'observer' && !entry.voidedAt && !PAIRED_MOVEMENT_TYPES.includes(entry.movementType)) {
+    if (can('assets.count') && !entry.voidedAt && !PAIRED_MOVEMENT_TYPES.includes(entry.movementType)) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'table-actions-btn';

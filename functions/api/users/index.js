@@ -1,29 +1,36 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hashPassword } from '../../../lib/auth.js';
+import { missingRolePermissions, outranks, HIERARCHY_ERROR } from '../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'users.manage');
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(
-    `SELECT id, username, role, can_manage_room_layout AS canManageRoomLayout, can_add_finance_transaction AS canAddFinanceTransaction, can_delete_asset AS canDeleteAsset, can_delete_deposit AS canDeleteDeposit, totp_enabled AS totpEnabled, created_at AS createdAt FROM staff_accounts ORDER BY username`
+    `SELECT id, username, role, totp_enabled AS totpEnabled, locked_at AS lockedAt, created_at AS createdAt,
+            (SELECT COUNT(*) FROM user_permission_overrides o WHERE o.staff_id = staff_accounts.id) AS overrideCount
+     FROM staff_accounts ORDER BY username`
   ).all();
 
-  return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const users = results.map((u) => ({ ...u, totpEnabled: !!u.totpEnabled }));
+  return new Response(JSON.stringify(users), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'users.manage');
   if (auth instanceof Response) return auth;
 
   let body;
   try {
     body = await request.json();
   } catch (err) {
+    return jsonError('Dữ liệu không hợp lệ', 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return jsonError('Dữ liệu không hợp lệ', 400);
   }
   const { username, password, role } = body;
@@ -33,6 +40,16 @@ export async function onRequestPost({ request, env }) {
   }
   if (!['manager', 'reception', 'admin', 'observer'].includes(role)) {
     return jsonError('Vai trò phải là manager, reception, admin hoặc observer', 400);
+  }
+  if (role === 'admin' && auth.role !== 'admin') {
+    return jsonError('Chỉ quản trị mới được gán vai trò quản trị', 403);
+  }
+  // Quy tắc 7: người không phải admin chỉ tạo được tài khoản có cấp thấp hơn mình.
+  if (!outranks(auth, role)) {
+    return jsonError(HIERARCHY_ERROR, 403);
+  }
+  if ((await missingRolePermissions(env.DB, auth, role)).length > 0) {
+    return jsonError('Không thể gán vai trò có quyền mà bạn không có', 403);
   }
   if (typeof password !== 'string' || password.length < 8) {
     return jsonError('Mật khẩu phải có ít nhất 8 ký tự', 400);

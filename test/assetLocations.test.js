@@ -37,11 +37,16 @@ describe('GET /api/asset-locations', () => {
     expect(response.status).toBe(401);
   });
 
-  it('lets all 4 roles read', async () => {
-    for (const token of [managerToken, receptionToken, adminToken, observerToken]) {
+  it('lets reception, manager, and admin read', async () => {
+    for (const token of [managerToken, receptionToken, adminToken]) {
       const response = await listLocations({ request: authedRequest('https://x/api/asset-locations', token, 'GET'), env });
       expect(response.status).toBe(200);
     }
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listLocations({ request: authedRequest('https://x/api/asset-locations', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
   });
 
   it('rejects an invalid type filter (400)', async () => {

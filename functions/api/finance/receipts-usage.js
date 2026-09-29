@@ -4,7 +4,7 @@ import { requireAuth } from '../../../lib/requireAuth.js';
 const THRESHOLD_BYTES = 9 * 1024 * 1024 * 1024; // 9GB — warn before the 10GB R2 free-tier storage limit
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.view_all');
   if (auth instanceof Response) return auth;
 
   let totalBytes = 0;

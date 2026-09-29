@@ -1,5 +1,6 @@
 // v4/admin/finance-categories.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let categories = [];
 
 (async () => {
@@ -14,10 +15,10 @@ let categories = [];
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'admin') {
+  if (can('settings.finance_categories')) {
     document.getElementById('incomeAddForm').classList.remove('hidden');
     document.getElementById('expenseAddForm').classList.remove('hidden');
   }
@@ -59,7 +60,7 @@ function renderTable(type, tbody) {
     tdStatus.textContent = c.isActive ? 'Đang dùng' : 'Đã ẩn';
 
     const tdActions = document.createElement('td');
-    if (currentRole === 'admin') {
+    if (can('settings.finance_categories')) {
       const upBtn = document.createElement('button');
       upBtn.type = 'button';
       upBtn.className = 'btn-secondary table-actions-btn';

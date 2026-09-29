@@ -1,5 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { computeRoomTotal } from '../../../../lib/roomPricing.js';
+import { canSeeHidden } from '../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -8,16 +10,19 @@ function jsonError(message, status) {
 const VALID_PAYMENT_METHODS = ['cash', 'transfer'];
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy đặt phòng', 404);
 
   const booking = await env.DB.prepare(
-    `SELECT bk.id, bk.status, bk.room_id, bk.room_type, bk.check_in, bk.check_out, bk.guest_name, bk.deposit_amount,
+    `SELECT bk.id, bk.status, bk.room_id, bk.room_type, bk.check_in, bk.check_out, bk.guest_name, bk.deposit_amount, bk.is_hidden,
             r.price_weekday AS priceWeekday, r.price_weekend AS priceWeekend
      FROM bookings bk LEFT JOIN rooms r ON r.id = bk.room_id
      WHERE bk.id = ?`
   ).bind(params.id).first();
-  if (!booking) {
+  // A hidden booking answers exactly like a non-existent id for anyone without records.hide.
+  if (!booking || !canSeeHidden(auth, booking)) {
     return jsonError('Không tìm thấy đặt phòng', 404);
   }
   if (booking.status !== 'checked_in') {
@@ -102,20 +107,28 @@ export async function onRequestPost({ request, env, params }) {
       createdTransactionIds.push(insert.meta.last_row_id);
     }
 
-    const statements = [
-      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in'`).bind(resolvedPaymentMethod, params.id),
-    ];
+    // One D1 batch = one transaction. The side effects (room cleaning flag, settling pending service
+    // items) run FIRST and only while the booking is still 'checked_in'; the guarded status UPDATE
+    // runs LAST. All statements see the same state, so a request that lost the race changes nothing.
+    const stillCheckedIn = `EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'checked_in')`;
+    const statements = [];
     if (booking.room_id) {
-      statements.push(env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ?`).bind(now, booking.room_id));
+      statements.push(
+        env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ? AND ${stillCheckedIn}`)
+          .bind(now, booking.room_id, params.id)
+      );
     }
     statements.push(
       env.DB.prepare(
-        `UPDATE booking_service_items SET payment_status = 'paid', payment_method = ? WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending'`
-      ).bind(resolvedPaymentMethod, params.id)
+        `UPDATE booking_service_items SET payment_status = 'paid', payment_method = ? WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending' AND ${stillCheckedIn}`
+      ).bind(resolvedPaymentMethod, params.id, params.id)
+    );
+    statements.push(
+      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in'`).bind(resolvedPaymentMethod, params.id)
     );
 
     const results = await env.DB.batch(statements);
-    if (results[0].meta.changes === 0) {
+    if (results[results.length - 1].meta.changes === 0) {
       // Thao tác khác vừa check-out đặt phòng này giữa lúc đọc và ghi (race condition).
       await cleanupCreatedTransactions();
       return jsonError('Đặt phòng này vừa được check-out bởi thao tác khác, vui lòng tải lại', 409);

@@ -3,8 +3,9 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as getBooking } from '../functions/api/bookings/[id]/index.js';
 import { onRequestPatch as setIdentity } from '../functions/api/bookings/[id]/identity.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, observerToken;
+let managerToken, receptionToken, observerToken, receptionStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -17,6 +18,7 @@ beforeEach(async () => {
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_id', 'x', 'observer', '2026-09-04T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
+  receptionStaffId = r.meta.last_row_id;
   observerToken = await createSession(env.DB, o.meta.last_row_id);
 });
 
@@ -115,5 +117,60 @@ describe('PATCH /api/bookings/:id/identity', () => {
     await setIdentity({ request: authedRequest(`https://x/api/bookings/${bookingId}/identity`, receptionToken, 'PATCH', { idNumber: '079123456789' }), env, params: { id: String(bookingId) } });
     const row = await env.DB.prepare(`SELECT guest_name, phone, status FROM bookings WHERE id = ?`).bind(bookingId).first();
     expect(row).toEqual({ guest_name: 'Identity Test Guest', phone: '0900000002', status: 'confirmed' });
+  });
+});
+
+describe('GET & PATCH /api/bookings/:id — hidden record requires records.hide (F-3)', () => {
+  let hiddenId;
+  beforeEach(async () => {
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden)
+       VALUES ('Khách Ẩn', '0900000009', 'circle', '2026-09-10', '2026-09-12', 'cancelled', 'website', '2026-09-04T00:00:00Z', 1)`
+    ).run();
+    hiddenId = created.meta.last_row_id;
+  });
+
+  it('GET answers a hidden booking exactly like a non-existent id for reception (no records.hide)', async () => {
+    const missing = await getBooking({ request: authedRequest('https://x/api/bookings/999999', receptionToken, 'GET'), env, params: { id: '999999' } });
+    const response = await getBooking({ request: authedRequest(`https://x/api/bookings/${hiddenId}`, receptionToken, 'GET'), env, params: { id: String(hiddenId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+  });
+
+  it('GET returns 200 for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await getBooking({ request: authedRequest(`https://x/api/bookings/${hiddenId}`, receptionToken, 'GET'), env, params: { id: String(hiddenId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('PATCH identity answers a hidden booking exactly like a non-existent id, row left unchanged', async () => {
+    const missing = await setIdentity({ request: authedRequest('https://x/api/bookings/999999/identity', receptionToken, 'PATCH', { idNumber: '079999999999' }), env, params: { id: '999999' } });
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${hiddenId}/identity`, receptionToken, 'PATCH', { idNumber: '079999999999' }), env, params: { id: String(hiddenId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+    const row = await env.DB.prepare(`SELECT id_number FROM bookings WHERE id = ?`).bind(hiddenId).first();
+    expect(row.id_number).toBeNull();
+  });
+
+  it('PATCH identity works (200) for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await setIdentity({ request: authedRequest(`https://x/api/bookings/${hiddenId}/identity`, receptionToken, 'PATCH', { idNumber: '079999999999' }), env, params: { id: String(hiddenId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden booking for the same user (regression)', async () => {
+    const visible = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Khách Thường', '0900000008', 'circle', '2026-09-10', '2026-09-12', 'confirmed', 'website', '2026-09-04T00:00:00Z')`
+    ).run();
+    const id = visible.meta.last_row_id;
+    const getResponse = await getBooking({ request: authedRequest(`https://x/api/bookings/${id}`, receptionToken, 'GET'), env, params: { id: String(id) } });
+    expect(getResponse.status).toBe(200);
+    const patchResponse = await setIdentity({ request: authedRequest(`https://x/api/bookings/${id}/identity`, receptionToken, 'PATCH', { idNumber: '079111111111' }), env, params: { id: String(id) } });
+    expect(patchResponse.status).toBe(200);
   });
 });

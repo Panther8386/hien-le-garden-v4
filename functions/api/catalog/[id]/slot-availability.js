@@ -12,7 +12,7 @@ function weekdayOf(dateStr) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);

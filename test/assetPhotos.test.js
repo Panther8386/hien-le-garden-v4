@@ -130,13 +130,21 @@ describe('GET /api/assets/:id/photo', () => {
     expect(response.status).toBe(404);
   });
 
-  it('streams the file back for all 4 roles, including observer', async () => {
+  it('streams the file back for reception, manager, and admin', async () => {
+    await uploadPhoto({ request: authedFormRequest(`https://x/api/assets/${assetId}/photo`, adminToken, imageFile('bill.jpg')), env, params: { id: String(assetId) } });
+    for (const token of [managerToken, receptionToken, adminToken]) {
+      const response = await getPhoto({ request: authedPlainRequest(`https://x/api/assets/${assetId}/photo`, token, 'GET'), env, params: { id: String(assetId) } });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Content-Type')).toBe('image/jpeg');
+      expect(response.headers.get('Content-Disposition')).toContain('bill.jpg');
+    }
+  });
+
+  it('rejects observer (403)', async () => {
     await uploadPhoto({ request: authedFormRequest(`https://x/api/assets/${assetId}/photo`, adminToken, imageFile('bill.jpg')), env, params: { id: String(assetId) } });
     const observerAccount = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_ph', 'x', 'observer', '2026-09-07T00:00:00Z')`).run();
     const observerToken = await createSession(env.DB, observerAccount.meta.last_row_id);
     const response = await getPhoto({ request: authedPlainRequest(`https://x/api/assets/${assetId}/photo`, observerToken, 'GET'), env, params: { id: String(assetId) } });
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/jpeg');
-    expect(response.headers.get('Content-Disposition')).toContain('bill.jpg');
+    expect(response.status).toBe(403);
   });
 });

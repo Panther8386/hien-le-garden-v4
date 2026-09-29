@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as getCustomer } from '../functions/api/customers/[id].js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken;
+let deniedReceptionToken;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -14,6 +16,10 @@ beforeEach(async () => {
 
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (1, 'quan_ly_a', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, 1);
+
+  await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_bi_chan', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+  deniedReceptionToken = await createSession(env.DB, 2);
+  await setOverride(env.DB, 2, 'guests.contact_view', 'deny');
 
   await env.DB.prepare(
     `INSERT INTO feedback_responses (id, submitted_at, guest_name, phone, email, rating, comment, consent_given, promo_code, discount_percent, promo_expires_at, promo_status, gift_offered, gift_claimed, stay_date, wishes_next_time, favorite_activities)
@@ -28,6 +34,10 @@ beforeEach(async () => {
 
 function authedRequest(url) {
   return new Request(url, { headers: { Cookie: `session=${managerToken}` } });
+}
+
+function authedRequestAs(url, token) {
+  return new Request(url, { headers: { Cookie: `session=${token}` } });
 }
 
 describe('GET /api/customers/:feedbackId', () => {
@@ -61,5 +71,13 @@ describe('GET /api/customers/:feedbackId', () => {
     const body = await response.json();
     expect(body.messageHistory).toHaveLength(1);
     expect(body.messageHistory[0]).toMatchObject({ channel: 'email', status: 'success', templateName: null });
+  });
+
+  it('rejects a reception account denied guests.contact_view via override (403)', async () => {
+    const response = await getCustomer({ request: authedRequestAs('https://x/api/customers/fb-1', deniedReceptionToken), env, params: { id: 'fb-1' } });
+    expect(response.status).toBe(403);
+    expect(response.headers.get('Content-Type')).toBe('application/json');
+    const body = await response.json();
+    expect(body).toEqual({ error: 'Không đủ quyền' });
   });
 });

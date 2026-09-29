@@ -1,5 +1,6 @@
 // admin/customers.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 (async () => {
   const res = await fetch('/api/auth/me');
@@ -7,8 +8,20 @@ let currentRole = null;
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  // The send widget needs templates.view's data to populate its dropdown —
+  // without it, keep the form hidden rather than show a broken selector.
+  if (can('customers.send') && can('templates.view')) {
+    loadTemplates();
+  } else {
+    const sendForm = document.getElementById('sendForm');
+    sendForm.classList.add('hidden');
+    sendForm.previousElementSibling.classList.add('hidden');
+  }
+  // Render only after permissions are known, so row click handlers
+  // (guests.contact_view) are attached on the first render.
+  loadCustomers();
 })();
 
 let currentPage = 1;
@@ -67,7 +80,7 @@ async function loadCustomers() {
     tdDate.textContent = new Date(c.submittedAt).toLocaleDateString('vi-VN');
 
     tr.append(tdName, tdPhone, tdRating, tdPromoCode, tdDiscount, tdStatus, tdDate);
-    if (currentRole !== 'observer') {
+    if (can('guests.contact_view')) {
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => showDetail(c.feedbackId));
     }
@@ -191,5 +204,3 @@ document.getElementById('sendForm').addEventListener('submit', async (event) => 
   await showDetail(selectedFeedbackId);
 });
 
-loadTemplates();
-loadCustomers();

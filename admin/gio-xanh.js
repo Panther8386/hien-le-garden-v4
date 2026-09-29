@@ -1,5 +1,6 @@
 // v4/admin/gio-xanh.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 (async () => {
   let res;
@@ -13,18 +14,18 @@ let currentRole = null;
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
   await loadSessions();
   await loadSessionHistory();
 
-  if (currentRole !== 'observer') {
+  if (can('gio_xanh.manage')) {
     document.getElementById('openSessionForm').classList.remove('hidden');
     await populateRoomSelect();
   }
 
-  if (currentRole === 'admin') {
+  if (can('records.hide')) {
     document.getElementById('showHiddenSessionsWrap').classList.remove('hidden');
   }
   document.getElementById('showHiddenSessions').addEventListener('change', loadSessionHistory);
@@ -148,7 +149,7 @@ document.getElementById('openSessionForm').addEventListener('submit', async (eve
 async function loadSessionHistory() {
   const errorEl = document.getElementById('pageError');
   errorEl.textContent = '';
-  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenSessions').checked;
+  const showHidden = can('records.hide') && document.getElementById('showHiddenSessions').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
   let closedRes, voidedRes;
   try {
@@ -201,7 +202,7 @@ function renderHistoryGrid(sessions) {
 
     card.append(roomLabel, guestLabel, statusLabel, total);
 
-    if (currentRole === 'admin') {
+    if (can('records.hide')) {
       const hideBtn = document.createElement('button');
       hideBtn.type = 'button';
       hideBtn.className = 'btn-secondary table-actions-btn';

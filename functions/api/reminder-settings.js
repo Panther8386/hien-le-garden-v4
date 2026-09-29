@@ -5,7 +5,7 @@ function jsonError(message, status) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, null);
   if (auth instanceof Response) return auth;
 
   const row = await env.DB.prepare(
@@ -17,7 +17,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPatch({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.reminders');
   if (auth instanceof Response) return auth;
 
   let body;

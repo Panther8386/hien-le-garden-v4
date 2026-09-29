@@ -1,15 +1,17 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'records.hide');
   if (auth instanceof Response) return auth;
 
   const order = await env.DB.prepare(`SELECT id, status, is_hidden, table_label AS tableLabel FROM dine_in_orders WHERE id = ?`).bind(params.id).first();
-  if (!order) return jsonError('Không tìm thấy order', 404);
+  // records.hide never implies read access: without dine_in.view the record answers like a missing id.
+  if (!order || !hasPermission(auth, 'dine_in.view')) return jsonError('Không tìm thấy order', 404);
   if (order.status !== 'closed' && order.status !== 'voided') {
     return jsonError('Chỉ có thể ẩn bàn đã chốt hoặc đã huỷ', 400);
   }

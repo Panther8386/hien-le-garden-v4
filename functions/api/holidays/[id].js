@@ -14,7 +14,7 @@ function validate(name, startDate, endDate) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.rooms');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM holidays WHERE id = ?`).bind(params.id).first();
@@ -42,7 +42,7 @@ export async function onRequestPatch({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.rooms');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT id FROM holidays WHERE id = ?`).bind(params.id).first();

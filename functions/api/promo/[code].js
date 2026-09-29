@@ -2,7 +2,7 @@ import { requireAuth } from '../../../lib/requireAuth.js';
 import { computePromoStatus } from '../../../lib/promoCode.js';
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'promo.redeem');
   if (auth instanceof Response) return auth;
 
   const row = await env.DB.prepare(

@@ -1,14 +1,22 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
+import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, null);
+  const auth = await requireAuth(request, env, 'bookings.deposit_delete');
   if (auth instanceof Response) return auth;
-  if (!auth.canDeleteDeposit || auth.role === 'observer') {
-    return jsonError('Tài khoản không có quyền xoá cọc', 403);
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy đặt phòng', 404);
+
+  // Load and check the parent booking's visibility first, before any deposit-specific
+  // validation, so a hidden booking's deposits answer exactly like a non-existent id.
+  const booking = await env.DB.prepare(`SELECT status, guest_name, is_hidden FROM bookings WHERE id = ?`).bind(params.id).first();
+  if (!booking || !canSeeHidden(auth, booking)) {
+    return jsonError('Không tìm thấy đặt phòng', 404);
   }
 
   const deposit = await env.DB.prepare(
@@ -21,10 +29,6 @@ export async function onRequestDelete({ request, env, params }) {
     return jsonError('Dòng cọc này đã bị xoá trước đó', 400);
   }
 
-  const booking = await env.DB.prepare(`SELECT status, guest_name FROM bookings WHERE id = ?`).bind(params.id).first();
-  if (!booking) {
-    return jsonError('Không tìm thấy đặt phòng', 404);
-  }
   if (booking.status === 'checked_out' || booking.status === 'cancelled') {
     return jsonError('Chỉ có thể xoá cọc khi đặt phòng còn đang chờ, đã xác nhận, hoặc đang lưu trú', 400);
   }

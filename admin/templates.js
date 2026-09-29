@@ -1,4 +1,6 @@
 // admin/templates.js
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 const channelSelect = document.getElementById('channelSelect');
 const subjectLabel = document.getElementById('subjectLabel');
 
@@ -72,6 +74,11 @@ async function loadTemplates() {
     bodyPara.className = 'template-body';
     bodyPara.textContent = t.body;
     card.appendChild(bodyPara);
+
+    if (!can('templates.manage')) {
+      container.appendChild(card);
+      return;
+    }
 
     const editBtn = document.createElement('button');
     editBtn.textContent = 'Sửa';
@@ -165,6 +172,12 @@ document.getElementById('templateList').addEventListener('click', async (event) 
   if (!res.ok) {
     window.location.href = '/admin';
     return;
+  }
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  if (!can('templates.manage')) {
+    templateForm.classList.add('hidden');
+    templateForm.previousElementSibling.classList.add('hidden');
   }
   loadTemplates();
 })();

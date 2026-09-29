@@ -1,5 +1,6 @@
 // v4/admin/gio-xanh-detail.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 let currentSession = null;
 let comboItems = [];
 let menuItems = [];
@@ -21,8 +22,8 @@ function sessionIdFromQuery() {
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
   const sessionId = sessionIdFromQuery();
   if (!sessionId) {
@@ -30,7 +31,7 @@ function sessionIdFromQuery() {
     return;
   }
 
-  if (currentRole !== 'observer') {
+  if (can('gio_xanh.manage')) {
     let catalogResponse, menuResponse;
     try {
       [catalogResponse, menuResponse] = await Promise.all([
@@ -133,7 +134,7 @@ function render() {
     label.textContent = `${icon} ${item.name} ×${item.quantity} — ${item.amount.toLocaleString('vi-VN')}đ`;
     line.appendChild(label);
 
-    if (item.status === 'posted' && currentSession.status === 'open' && currentRole !== 'observer') {
+    if (item.status === 'posted' && currentSession.status === 'open' && can('gio_xanh.manage')) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'btn-secondary';
@@ -153,7 +154,7 @@ function render() {
   const closeSection = document.getElementById('closeSection');
   const printBtn = document.getElementById('printBtn');
 
-  if (s.status === 'open' && currentRole !== 'observer') {
+  if (s.status === 'open' && can('gio_xanh.manage')) {
     addComboForm.classList.remove('hidden');
     addMenuItemForm.classList.remove('hidden');
     closeSection.classList.remove('hidden');

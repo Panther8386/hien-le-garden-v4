@@ -9,7 +9,7 @@ export async function onRequestGet({ request, env }) {
   const isPublic = url.searchParams.get('public') === '1';
 
   if (!isPublic) {
-    const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+    const auth = await requireAuth(request, env, null);
     if (auth instanceof Response) return auth;
   }
 
@@ -22,7 +22,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.cancellation_policy');
   if (auth instanceof Response) return auth;
 
   let body;

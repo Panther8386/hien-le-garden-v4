@@ -1,26 +1,34 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../../lib/permissions.js';
+import { canSeeHidden } from '../../../../../lib/hiddenAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'bookings.manage');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy dòng dịch vụ', 404);
 
   const item = await env.DB.prepare(
-    `SELECT bsi.id, bsi.booking_id, bsi.status, bsi.payment_status, bsi.finance_transaction_id, bsi.name, bsi.quantity, b.guest_name AS guestName
+    `SELECT bsi.id, bsi.booking_id, bsi.status, bsi.payment_status, bsi.finance_transaction_id, bsi.name, bsi.quantity, b.guest_name AS guestName, b.is_hidden
      FROM booking_service_items bsi JOIN bookings b ON b.id = bsi.booking_id
      WHERE bsi.id = ?`
   ).bind(params.itemId).first();
   if (!item || String(item.booking_id) !== String(params.id)) {
     return jsonError('Không tìm thấy dòng dịch vụ', 404);
   }
+  // A hidden parent booking answers exactly like a non-existent id for anyone without records.hide.
+  if (!canSeeHidden(auth, item)) {
+    return jsonError('Không tìm thấy dòng dịch vụ', 404);
+  }
   if (item.status === 'voided') {
     return jsonError('Dòng dịch vụ này đã được huỷ trước đó', 400);
   }
-  if (item.payment_status === 'paid' && auth.role !== 'admin') {
-    return jsonError('Chỉ Admin mới có quyền huỷ dịch vụ đã thanh toán', 403);
+  if (item.payment_status === 'paid' && !hasPermission(auth, 'bookings.edit_paid_service')) {
+    return jsonError('Bạn không có quyền sửa/xoá dịch vụ đã thanh toán', 403);
   }
 
   const now = new Date().toISOString();

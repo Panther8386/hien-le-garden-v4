@@ -39,7 +39,7 @@ export async function onRequestGet({ request, env }) {
   const wantsAll = url.searchParams.get('all') === '1';
 
   if (wantsAll) {
-    const auth = await requireAuth(request, env, ['reception', 'manager', 'admin', 'observer']);
+    const auth = await requireAuth(request, env, null);
     if (auth instanceof Response) return auth;
   }
 
@@ -58,7 +58,7 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.catalog');
   if (auth instanceof Response) return auth;
 
   let body;

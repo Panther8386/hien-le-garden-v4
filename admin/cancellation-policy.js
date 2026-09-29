@@ -1,5 +1,6 @@
 // v4/admin/cancellation-policy.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 (async () => {
   const res = await fetch('/api/auth/me');
@@ -7,9 +8,9 @@ let currentRole = null;
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
-  if (currentRole === 'admin') {
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
+  if (can('settings.cancellation_policy')) {
     document.getElementById('addTierBtn').classList.remove('hidden');
   }
   await loadTiers();
@@ -46,7 +47,7 @@ function renderTable(tiers) {
     tdLabel.textContent = tier.label || '';
 
     const tdActions = document.createElement('td');
-    if (currentRole === 'admin') {
+    if (can('settings.cancellation_policy')) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'table-actions-btn';

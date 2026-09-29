@@ -17,7 +17,7 @@ function coerceRow(r) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin', 'manager', 'reception', 'observer']);
+  const auth = await requireAuth(request, env, 'assets.view');
   if (auth instanceof Response) return auth;
 
   const { results } = await env.DB.prepare(

@@ -3,8 +3,9 @@ import { env } from 'cloudflare:test';
 import { onRequestPost as addServiceItem } from '../functions/api/bookings/[id]/services/index.js';
 import { onRequestPatch as voidServiceItem } from '../functions/api/bookings/[id]/services/[itemId].js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, observerToken, adminToken;
+let managerToken, receptionToken, observerToken, adminToken, receptionStaffId;
 let confirmedBookingId, pendingBookingId, checkedOutBookingId;
 let activeCatalogId, inactiveCatalogId;
 let scheduledCatalogId, scheduledWithTermsCatalogId, slotTemplateId;
@@ -22,6 +23,7 @@ beforeEach(async () => {
   managerToken = await createSession(env.DB, 1);
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (2, 'le_tan_svc', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   receptionToken = await createSession(env.DB, 2);
+  receptionStaffId = 2;
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (3, 'quan_sat_svc', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
   observerToken = await createSession(env.DB, 3);
   await env.DB.prepare(`INSERT INTO staff_accounts (id, username, password_hash, role, created_at) VALUES (4, 'admin_svc', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
@@ -575,6 +577,7 @@ describe('PATCH /api/bookings/:id/services/:itemId', () => {
       params: { id: String(confirmedBookingId), itemId: String(itemId) },
     });
     expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Bạn không có quyền sửa/xoá dịch vụ đã thanh toán');
     const row = await env.DB.prepare(`SELECT status FROM booking_service_items WHERE id = ?`).bind(itemId).first();
     expect(row.status).toBe('posted');
   });
@@ -614,5 +617,53 @@ describe('PATCH /api/bookings/:id/services/:itemId', () => {
       params: { id: String(confirmedBookingId), itemId: String(itemId) },
     });
     expect(response.status).toBe(200);
+  });
+});
+
+describe('services endpoints — hidden booking requires records.hide (F-3)', () => {
+  let hiddenBookingId, postedItemId;
+  beforeEach(async () => {
+    const hidden = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Hidden Guest', '0900000099', 'triangle', '2099-01-01', '2099-01-03', 'checked_out', 'website', '2026-08-01T00:00:00Z', 1)`
+    ).run();
+    hiddenBookingId = hidden.meta.last_row_id;
+    const item = await env.DB.prepare(
+      `INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 30000, 1, 30000, 'posted', 'quan_ly_svc', '2026-08-01T00:00:00Z')`
+    ).bind(hiddenBookingId).run();
+    postedItemId = item.meta.last_row_id;
+  });
+
+  it('POST /services answers a hidden booking exactly like a non-existent id for reception (no records.hide) — before the status check (would otherwise be 400, booking is checked_out)', async () => {
+    const missing = await addServiceItem({ request: authedRequest('https://x/api/bookings/999999/services', receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 35000, quantity: 1 }), env, params: { id: '999999' } });
+    const response = await addServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 35000, quantity: 1 }), env, params: { id: String(hiddenBookingId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+    const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM booking_service_items WHERE booking_id = ?`).bind(hiddenBookingId).first();
+    expect(count.n).toBe(1); // only the seeded item — nothing added
+  });
+
+  it('PATCH /services/:itemId (void, a child endpoint) answers a hidden booking exactly like a non-existent id for reception, item untouched', async () => {
+    const response = await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenBookingId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy dòng dịch vụ' });
+    const row = await env.DB.prepare(`SELECT status FROM booking_service_items WHERE id = ?`).bind(postedItemId).first();
+    expect(row.status).toBe('posted');
+  });
+
+  it('PATCH /services/:itemId (void) works (200) for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenBookingId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden booking for the same user (regression)', async () => {
+    const response = await addServiceItem({
+      request: authedRequest(`https://x/api/bookings/${confirmedBookingId}/services`, receptionToken, 'POST', { serviceCatalogId: activeCatalogId, unitPrice: 35000, quantity: 1 }),
+      env,
+      params: { id: String(confirmedBookingId) },
+    });
+    expect(response.status).toBe(201);
   });
 });

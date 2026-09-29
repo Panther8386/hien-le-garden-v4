@@ -23,7 +23,7 @@ async function sumIncomeExpense(env, fromDateInclusive, toDateExclusive) {
 }
 
 export async function onRequestGet({ request, env }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.view_all');
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);

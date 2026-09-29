@@ -1,9 +1,11 @@
 # v4/_redirects
 # Clean, role-based entry URLs for the CRM/admin area. HTTP-200 rewrites --
 # the browser's address bar keeps the clean URL; the body comes from the
-# existing physical file in admin/. Every page referenced here already has
-# its own client-side role check via GET /api/auth/me (unauthorized visits
-# get redirected to /admin, the shared login page, by that page's own JS).
+# existing physical file in admin/. Every prefix lists the full page set:
+# permissions are granted per user, so the URL prefix no longer decides who
+# may open a page. admin/nav-drawer.js checks the page permission from
+# GET /api/auth/me (and every API re-checks it); signed-out visits are sent
+# to /admin, the shared login page, by each page's own JS.
 #
 # Targets deliberately omit the .html extension: Cloudflare Pages
 # auto-redirects every *.html file to its extensionless form (a platform
@@ -55,6 +57,12 @@
 /reception/asset-inventory     /admin/asset-inventory 200
 /reception/asset-inventory-stock /admin/asset-inventory-stock 200
 /reception/rooms                /admin/rooms   200
+/reception/dashboard          /admin/dashboard       200
+/reception/finance            /admin/finance         200
+/reception/finance-categories /admin/finance-categories 200
+/reception/dine-in-menu       /admin/dine-in-menu    200
+/reception/users              /admin/users           200
+/reception/audit-log          /admin/audit-log       200
 
 /observer                     /admin/reception       200
 /observer/customers            /admin/customers       200
@@ -71,3 +79,10 @@
 /observer/asset-inventory      /admin/asset-inventory 200
 /observer/asset-inventory-stock /admin/asset-inventory-stock 200
 /observer/rooms                 /admin/rooms   200
+/observer/dashboard           /admin/dashboard       200
+/observer/finance-categories  /admin/finance-categories 200
+/observer/dine-in-menu        /admin/dine-in-menu    200
+/observer/templates           /admin/templates       200
+/observer/config              /admin/manager         200
+/observer/users               /admin/users           200
+/observer/audit-log           /admin/audit-log       200

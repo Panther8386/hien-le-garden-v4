@@ -8,8 +8,9 @@ import { onRequestPost as voidOrder } from '../functions/api/dine-in-orders/[id]
 import { onRequestPost as closeOrder } from '../functions/api/dine-in-orders/[id]/close.js';
 import { onRequestPatch as hideOrder } from '../functions/api/dine-in-orders/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
-let managerToken, receptionToken, adminToken, observerToken;
+let managerToken, receptionToken, adminToken, observerToken, observerStaffId, receptionStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -26,8 +27,10 @@ beforeEach(async () => {
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_order', 'x', 'observer', '2026-09-04T00:00:00Z')`).run();
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
+  receptionStaffId = r.meta.last_row_id;
   adminToken = await createSession(env.DB, a.meta.last_row_id);
-  observerToken = await createSession(env.DB, o.meta.last_row_id);
+  observerStaffId = o.meta.last_row_id;
+  observerToken = await createSession(env.DB, observerStaffId);
 });
 
 function authedRequest(url, token, method, body) {
@@ -79,7 +82,7 @@ describe('GET /api/dine-in-orders', () => {
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Cà phê', 25000, 1, 25000, 'voided', 'le_tan_order', '2026-09-04T08:06:00Z')`).bind(orderId).run();
 
-    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', receptionToken, 'GET'), env });
     const body = await response.json();
     expect(body).toEqual([{ id: orderId, tableLabel: 'Bàn 5', note: null, status: 'open', openedBy: 'le_tan_order', openedAt: '2026-09-04T08:00:00Z', isHidden: false, currentTotal: 45000 }]);
   });
@@ -87,6 +90,17 @@ describe('GET /api/dine-in-orders', () => {
   it('rejects an invalid status query param (400)', async () => {
     const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders?status=deleted', receptionToken, 'GET'), env });
     expect(response.status).toBe(400);
+  });
+
+  it('rejects observer (403)', async () => {
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    expect(response.status).toBe(403);
+  });
+
+  it('lets an observer through when granted dine_in.view via override (200)', async () => {
+    await setOverride(env.DB, observerStaffId, 'dine_in.view', 'grant');
+    const response = await listOrders({ request: authedRequest('https://x/api/dine-in-orders', observerToken, 'GET'), env });
+    expect(response.status).toBe(200);
   });
 });
 
@@ -106,12 +120,18 @@ describe('GET /api/dine-in-orders/:id', () => {
     const orderId = order.meta.last_row_id;
     await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-04T08:05:00Z')`).bind(orderId).run();
 
-    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}`, observerToken, 'GET'), env, params: { id: String(orderId) } });
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${orderId}`, receptionToken, 'GET'), env, params: { id: String(orderId) } });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.tableLabel).toBe('Bàn 7');
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ name: 'Mì Quảng', unitPrice: 45000, quantity: 1, amount: 45000, status: 'posted' });
+  });
+
+  it('rejects observer (403)', async () => {
+    const order = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn 7b', 'open', 'le_tan_order', '2026-09-04T08:00:00Z')`).run();
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${order.meta.last_row_id}`, observerToken, 'GET'), env, params: { id: String(order.meta.last_row_id) } });
+    expect(response.status).toBe(403);
   });
 });
 
@@ -396,5 +416,99 @@ describe('PATCH /api/dine-in-orders/:id/hide', () => {
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT is_hidden FROM dine_in_orders WHERE id = ?`).bind(closedOrderId).first();
     expect(row.is_hidden).toBe(0);
+  });
+});
+
+describe('PATCH /api/dine-in-orders/:id/hide — records.hide does not imply dine_in.view', () => {
+  // observer (no dine_in.view by default) granted records.hide.
+  let closedId, openId;
+  beforeEach(async () => {
+    closedId = (await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đã Chốt', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z')`).run()).meta.last_row_id;
+    openId = (await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Đang Mở', 'open', 'le_tan_order', '2026-09-05T08:00:00Z')`).run()).meta.last_row_id;
+    await setOverride(env.DB, observerStaffId, 'records.hide', 'grant');
+  });
+  const hide = (id) => hideOrder({ request: authedRequest(`https://x/api/dine-in-orders/${id}/hide`, observerToken, 'PATCH', { hidden: true }), env, params: { id: String(id) } });
+
+  it('answers an existing id exactly like a non-existent one (404, same body) and leaves is_hidden unchanged', async () => {
+    const missing = await hide(999999);
+    const existing = await hide(closedId);
+    const notHideable = await hide(openId); // visibility check runs before the status check
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy order' });
+    expect(existing.status).toBe(404);
+    expect(await existing.json()).toEqual(missingBody);
+    expect(notHideable.status).toBe(404);
+    expect(await notHideable.json()).toEqual(missingBody);
+    const row = await env.DB.prepare('SELECT is_hidden FROM dine_in_orders WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('works (200) for the same user once granted dine_in.view', async () => {
+    await setOverride(env.DB, observerStaffId, 'dine_in.view', 'grant');
+    const res = await hide(closedId);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT is_hidden FROM dine_in_orders WHERE id = ?').bind(closedId).first();
+    expect(row.is_hidden).toBe(1);
+  });
+});
+
+describe('GET/void/items endpoints — hidden order requires records.hide (F-3)', () => {
+  let hiddenOrderId, postedItemId;
+  beforeEach(async () => {
+    const hidden = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn 2', 'closed', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    hiddenOrderId = hidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-05T08:05:00Z')`).bind(hiddenOrderId).run();
+    postedItemId = item.meta.last_row_id;
+  });
+
+  it('GET answers a hidden order exactly like a non-existent id for reception (no records.hide)', async () => {
+    const missing = await getOrder({ request: authedRequest('https://x/api/dine-in-orders/999999', receptionToken, 'GET'), env, params: { id: '999999' } });
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}`, receptionToken, 'GET'), env, params: { id: String(hiddenOrderId) } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+  });
+
+  it('GET returns 200 for a user granted records.hide', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}`, receptionToken, 'GET'), env, params: { id: String(hiddenOrderId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('POST /void answers a hidden order exactly like a non-existent id for reception — before the "must be open" status check (order is closed)', async () => {
+    const response = await voidOrder({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}/void`, receptionToken, 'POST'), env, params: { id: String(hiddenOrderId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy order' });
+    const row = await env.DB.prepare(`SELECT status FROM dine_in_orders WHERE id = ?`).bind(hiddenOrderId).first();
+    expect(row.status).toBe('closed');
+  });
+
+  it('PATCH /items/:itemId (void, a child endpoint) answers a hidden order exactly like a non-existent id for reception, item untouched', async () => {
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${hiddenOrderId}/items/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenOrderId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy dòng món' });
+    const row = await env.DB.prepare(`SELECT status FROM dine_in_order_items WHERE id = ?`).bind(postedItemId).first();
+    expect(row.status).toBe('posted');
+  });
+
+  it('PATCH /items/:itemId (void) works (200) for a user granted records.hide, once the order is also open (isolates the visibility check from the "must be open" business rule)', async () => {
+    // A real hide.js-hidden order can never be 'open' (hiding requires closed/voided), so this
+    // seeds is_hidden directly on an open order purely to isolate the visibility gate under test.
+    const openHidden = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, is_hidden) VALUES ('Bàn Ẩn Mở', 'open', 'le_tan_order', '2026-09-05T08:00:00Z', 1)`).run();
+    const openHiddenId = openHidden.meta.last_row_id;
+    const item = await env.DB.prepare(`INSERT INTO dine_in_order_items (order_id, name, unit_price, quantity, amount, status, created_by, created_at) VALUES (?, 'Mì Quảng', 45000, 1, 45000, 'posted', 'le_tan_order', '2026-09-05T08:05:00Z')`).bind(openHiddenId).run();
+    const itemId = item.meta.last_row_id;
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await voidItem({ request: authedRequest(`https://x/api/dine-in-orders/${openHiddenId}/items/${itemId}`, receptionToken, 'PATCH'), env, params: { id: String(openHiddenId), itemId: String(itemId) } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden order for the same user (regression)', async () => {
+    const openOrder = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at) VALUES ('Bàn Thường', 'open', 'le_tan_order', '2026-09-05T08:00:00Z')`).run();
+    const id = openOrder.meta.last_row_id;
+    const response = await getOrder({ request: authedRequest(`https://x/api/dine-in-orders/${id}`, receptionToken, 'GET'), env, params: { id: String(id) } });
+    expect(response.status).toBe(200);
   });
 });

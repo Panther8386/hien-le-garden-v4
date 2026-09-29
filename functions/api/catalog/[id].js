@@ -10,7 +10,7 @@ const VALID_PRICE_TYPES = ['range', 'fixed', 'label'];
 const VALID_ROOM_TYPE_KEYS = Object.keys(ROOM_TYPES);
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.catalog');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM service_catalog WHERE id = ?`).bind(params.id).first();
@@ -92,7 +92,7 @@ export async function onRequestPatch({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.catalog');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT id FROM service_catalog WHERE id = ?`).bind(params.id).first();

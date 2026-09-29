@@ -1,6 +1,7 @@
 // admin/reception.js
 let confirmingBooking = null;
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 const ROOM_TYPE_LABELS = {
   triangle: 'Triangle House',
@@ -77,8 +78,6 @@ function showOpsError(message) {
   document.getElementById('opsError').textContent = message || '';
 }
 
-let canManageRoomLayout = false;
-let canDeleteDeposit = false;
 let catalogItems = [];
 let dineMenuItems = [];
 
@@ -99,21 +98,21 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
     window.location.href = '/admin';
     return;
   }
-  const { role, canManageRoomLayout: layoutFlag, canDeleteDeposit: deleteDepositFlag } = await res.json();
-  currentRole = role;
-  canManageRoomLayout = !!layoutFlag;
-  canDeleteDeposit = !!deleteDepositFlag;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
-  if (currentRole === 'observer') {
+  if (!can('bookings.manage')) {
     document.getElementById('newBookingSection').classList.add('hidden');
+  }
+  if (!can('promo.redeem')) {
     document.getElementById('promoLookupSection').classList.add('hidden');
   }
   document.getElementById('roomDateFilter').value = todayISO();
   document.getElementById('roomDateFilter').addEventListener('change', loadRooms);
   document.getElementById('roomStatusFilter').addEventListener('change', applyRoomStatusFilter);
-  if (currentRole === 'admin') {
+  if (can('records.hide')) {
     document.getElementById('showHiddenBookingsWrap').classList.remove('hidden');
   }
   document.getElementById('showHiddenBookings').addEventListener('change', loadBookingHistory);
@@ -191,7 +190,7 @@ async function loadReminders() {
     container.appendChild(heading);
     pendingNoDeposit.forEach((b) => {
       const p = document.createElement('p');
-      p.textContent = `${b.guestName} — ${b.phone} — chờ ${b.hoursWaiting} giờ`;
+      p.textContent = [b.guestName, b.phone, `chờ ${b.hoursWaiting} giờ`].filter(Boolean).join(' — ');
       container.appendChild(p);
     });
   }
@@ -204,7 +203,7 @@ async function loadReminders() {
     container.appendChild(heading);
     arrivingToday.forEach((b) => {
       const p = document.createElement('p');
-      p.textContent = `${b.guestName} — ${b.phone} — ${ROOM_TYPE_LABELS[b.roomType] || b.roomType}`;
+      p.textContent = [b.guestName, b.phone, ROOM_TYPE_LABELS[b.roomType] || b.roomType].filter(Boolean).join(' — ');
       container.appendChild(p);
     });
   }
@@ -268,7 +267,7 @@ function renderServicesSection(b, card) {
       text.style.opacity = '0.5';
     }
     line.appendChild(text);
-    if (item.status === 'posted' && currentRole !== 'observer' && (item.paymentStatus !== 'paid' || currentRole === 'admin')) {
+    if (item.status === 'posted' && can('bookings.manage') && (item.paymentStatus !== 'paid' || can('bookings.edit_paid_service'))) {
       const voidBtn = document.createElement('button');
       voidBtn.type = 'button';
       voidBtn.className = 'btn-secondary';
@@ -303,7 +302,7 @@ function renderServicesSection(b, card) {
     section.appendChild(totalLine);
   }
 
-  if ((b.status === 'confirmed' || b.status === 'checked_in') && currentRole !== 'observer') {
+  if ((b.status === 'confirmed' || b.status === 'checked_in') && can('bookings.manage')) {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn-secondary';
@@ -675,7 +674,9 @@ function renderBookingCard(b) {
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
 
-  if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && currentRole !== 'observer') {
+  // Deposit history is shown to anyone who can manage bookings or delete
+  // deposits; the add-deposit form below still needs bookings.manage.
+  if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && (can('bookings.manage') || can('bookings.deposit_delete'))) {
     const depositTotalLine = document.createElement('p');
     const depositTotalStrong = document.createElement('strong');
     depositTotalStrong.textContent = `Cọc: ${formatVnd(b.depositAmount || 0)}`;
@@ -692,7 +693,7 @@ function renderBookingCard(b) {
         const text = document.createElement('span');
         text.textContent = `${formatVnd(d.amount)} · ${methodLabels[d.paymentMethod] || d.paymentMethod} · ${formatDate(d.createdAt)}`;
         line.appendChild(text);
-        if (canDeleteDeposit && currentRole !== 'observer') {
+        if (can('bookings.deposit_delete')) {
           const deleteBtn = document.createElement('button');
           deleteBtn.type = 'button';
           deleteBtn.className = 'btn-secondary';
@@ -787,7 +788,7 @@ function renderBookingCard(b) {
     });
 
     addDepositForm.append(amountInput, cashLabel, transferLabel, addDepositBtn);
-    card.appendChild(addDepositForm);
+    if (can('bookings.manage')) card.appendChild(addDepositForm);
   }
 
   renderServicesSection(b, card);
@@ -820,7 +821,7 @@ function renderList(containerId, bookings, emptyText, buildActions) {
 async function loadPending() {
   const bookings = await fetchBookings('status=pending');
   renderList('pendingList', bookings, 'Không có yêu cầu nào đang chờ.', (actions, b) => {
-    if (currentRole === 'observer') return;
+    if (!can('bookings.manage')) return;
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = 'Xác nhận';
     confirmBtn.addEventListener('click', () => openConfirmDialog(b));
@@ -837,7 +838,7 @@ async function loadPending() {
 async function loadArrivals() {
   const bookings = await fetchBookings(`status=confirmed&date=${todayISO()}&view=arrivals`);
   renderList('arrivalsList', bookings, 'Không có khách đến hôm nay.', (actions, b) => {
-    if (currentRole === 'observer') return;
+    if (!can('bookings.manage')) return;
     const btn = document.createElement('button');
     btn.textContent = 'Check-in';
     btn.addEventListener('click', () => doBookingAction(b.id, 'check-in'));
@@ -862,7 +863,7 @@ async function loadUpcomingConfirmed() {
   const today = todayISO();
   const upcoming = bookings.filter((b) => b.checkIn !== today);
   renderList('upcomingConfirmedList', upcoming, 'Không có đặt phòng đã xác nhận sắp tới.', (actions, b) => {
-    if (currentRole === 'observer') return;
+    if (!can('bookings.manage')) return;
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Hủy đặt phòng';
     cancelBtn.className = 'btn-secondary';
@@ -874,7 +875,7 @@ async function loadUpcomingConfirmed() {
 async function loadDepartures() {
   const bookings = await fetchBookings(`status=checked_in&date=${todayISO()}&view=departures`);
   renderList('departuresList', bookings, 'Không có khách đi hôm nay.', (actions, b) => {
-    if (currentRole === 'observer') return;
+    if (!can('bookings.manage')) return;
     const btn = document.createElement('button');
     btn.textContent = 'Check-out';
     btn.addEventListener('click', () => openCheckoutDialog(b));
@@ -885,7 +886,7 @@ async function loadDepartures() {
 async function loadInhouse() {
   const bookings = await fetchBookings(`status=checked_in&date=${todayISO()}&view=inhouse`);
   renderList('inhouseList', bookings, 'Không có khách đang lưu trú nhiều đêm.', (actions, b) => {
-    if (currentRole === 'observer') return;
+    if (!can('bookings.manage')) return;
     const printBtn = document.createElement('button');
     printBtn.textContent = '🖨 In phiếu';
     printBtn.className = 'btn-secondary';
@@ -1302,7 +1303,7 @@ function renderRoomsGrid() {
     const card = document.createElement('div');
     card.className = `room-card room-${r.status}`;
     card.dataset.roomId = r.id;
-    if (canManageRoomLayout && isToday) {
+    if (can('rooms.layout') && isToday) {
       card.classList.add('room-draggable');
       card.style.touchAction = 'none';
     }
@@ -1323,7 +1324,7 @@ function renderRoomsGrid() {
     }
     card.appendChild(statusEl);
 
-    if (isToday && r.needsCleaning && currentRole !== 'observer') {
+    if (isToday && r.needsCleaning && can('bookings.manage')) {
       const btn = document.createElement('button');
       btn.textContent = 'Đã dọn xong';
       btn.addEventListener('click', async () => {
@@ -1350,7 +1351,7 @@ function renderRoomsGrid() {
   roomOrderDirty = false;
   document.getElementById('saveRoomOrderBtn').classList.add('hidden');
 
-  if (canManageRoomLayout && isToday) {
+  if (can('rooms.layout') && isToday) {
     enableRoomDragAndDrop(container);
   }
 }
@@ -1606,7 +1607,7 @@ document.getElementById('claimGiftBtn').addEventListener('click', async () => {
 });
 
 function bookingHistoryActions(actions, b) {
-  if (currentRole !== 'admin') return;
+  if (!can('records.hide')) return;
   const hideBtn = document.createElement('button');
   hideBtn.type = 'button';
   hideBtn.className = 'btn-secondary table-actions-btn';
@@ -1635,7 +1636,7 @@ function bookingHistoryActions(actions, b) {
 }
 
 async function loadBookingHistory() {
-  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenBookings').checked;
+  const showHidden = can('records.hide') && document.getElementById('showHiddenBookings').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
   const [checkedOut, cancelled] = await Promise.all([
     fetchBookings(`status=checked_out${suffix}`),

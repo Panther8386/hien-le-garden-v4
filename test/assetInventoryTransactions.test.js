@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as listTransactions, onRequestPost as postTransaction } from '../functions/api/asset-inventory-transactions/index.js';
 import { onRequestDelete as voidTransaction } from '../functions/api/asset-inventory-transactions/[id].js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
 let consumableCategoryId, linenCategoryId, durableGoodsCategoryId, foodCategoryId;
@@ -117,6 +118,17 @@ describe('POST /api/asset-inventory-transactions — single', () => {
   it('rejects an observer (403)', async () => {
     const response = await postTransaction({
       request: authedRequest('https://x/api/asset-inventory-transactions', observerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 5 }),
+      env,
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a manager whose assets.count is denied (403)', async () => {
+    const managerRow = await env.DB.prepare(`SELECT id FROM staff_accounts WHERE username = 'quan_ly_it'`).first();
+    await setOverride(env.DB, managerRow.id, 'assets.count', 'deny');
+
+    const response = await postTransaction({
+      request: authedRequest('https://x/api/asset-inventory-transactions', managerToken, 'POST', { action: 'single', categoryId: consumableCategoryId, locationId: warehouseAId, movementType: 'opening', quantity: 5 }),
       env,
     });
     expect(response.status).toBe(403);

@@ -1,35 +1,53 @@
-import { createSession, getPendingStaffId, deletePendingToken } from '../../../lib/auth.js';
+import { createSession, consumePendingToken, createPending2FAToken, MAX_2FA_ATTEMPTS } from '../../../lib/auth.js';
 import { verifyTOTP } from '../../../lib/totp.js';
+import { readJsonBody } from '../../../lib/readJsonBody.js';
+
+const MAX_BODY_BYTES = 4096;
+
+function json(payload, status) {
+  return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+}
 
 function jsonError(message, status) {
-  return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
+  return json({ error: message }, status);
 }
 
 export async function onRequestPost({ request, env }) {
-  let body;
-  try {
-    body = await request.json();
-  } catch (err) {
-    return jsonError('Dữ liệu không hợp lệ', 400);
-  }
-  const { pendingToken, code } = body;
+  const parsed = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
+  if (!parsed.ok) return parsed.response;
+  const { pendingToken, code } = parsed.body;
 
-  const staffId = typeof pendingToken === 'string' ? await getPendingStaffId(env.DB, pendingToken) : null;
-  if (!staffId) {
+  // Tiêu thụ token trước mọi việc khác (single-use): request song song cùng
+  // token chỉ một request đi tiếp, các request còn lại nhận 401 hết hạn.
+  const pending = await consumePendingToken(env.DB, pendingToken);
+  if (!pending) {
     return jsonError('Phiên xác thực đã hết hạn, vui lòng đăng nhập lại', 401);
   }
 
   const account = await env.DB.prepare(
-    `SELECT id, username, role, totp_secret AS totpSecret FROM staff_accounts WHERE id = ?`
+    `SELECT id, username, role, totp_secret AS totpSecret, locked_at AS lockedAt FROM staff_accounts WHERE id = ?`
   )
-    .bind(staffId)
+    .bind(pending.staffId)
     .first();
 
-  if (!account || !account.totpSecret || typeof code !== 'string' || !(await verifyTOTP(account.totpSecret, code))) {
-    return jsonError('Mã xác thực không đúng', 401);
+  if (!account) {
+    return jsonError('Phiên xác thực đã hết hạn, vui lòng đăng nhập lại', 401);
   }
 
-  await deletePendingToken(env.DB, pendingToken);
+  if (!account.totpSecret || typeof code !== 'string' || !(await verifyTOTP(account.totpSecret, code))) {
+    const attempts = pending.attempts + 1;
+    if (attempts >= MAX_2FA_ATTEMPTS) {
+      return jsonError('Nhập sai quá số lần cho phép. Vui lòng đăng nhập lại.', 401);
+    }
+    // Cấp token mới cho lần thử tiếp theo, GIỮ NGUYÊN hạn cũ (không kéo dài TTL).
+    const nextToken = await createPending2FAToken(env.DB, account.id, { attempts, expiresAt: pending.expiresAt });
+    return json({ error: 'Mã xác thực không đúng', pendingToken: nextToken, attemptsLeft: MAX_2FA_ATTEMPTS - attempts }, 401);
+  }
+
+  if (account.lockedAt) {
+    return jsonError('Tài khoản đang bị khoá. Liên hệ quản trị.', 403);
+  }
+
   const token = await createSession(env.DB, account.id);
 
   return new Response(JSON.stringify({ username: account.username, role: account.role }), {

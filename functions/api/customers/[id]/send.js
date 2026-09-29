@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 import { renderTemplate } from '../../../../lib/templates.js';
 import { sendPromoEmail } from '../../../../lib/email.js';
 import { sendTelegramMessage } from '../../../../lib/telegram.js';
@@ -8,8 +9,10 @@ function jsonError(message, status) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['reception', 'manager', 'admin']);
+  const auth = await requireAuth(request, env, 'customers.send');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without customers.view answer like a missing id.
+  if (!hasPermission(auth, 'customers.view')) return jsonError('Không tìm thấy khách hàng', 404);
 
   let body;
   try {

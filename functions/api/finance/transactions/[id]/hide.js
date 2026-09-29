@@ -1,17 +1,19 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
 import { summarize } from '../index.js';
 import { loadCategoryMeta } from '../../../../../lib/financeCategories.js';
+import { canSeeTransaction } from '../../../../../lib/financeAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'records.hide');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  // records.hide never implies read visibility: rows the actor cannot see answer like a missing id.
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (!existing.voided_at) return jsonError('Chỉ có thể ẩn giao dịch đã huỷ', 400);
 
   let body;

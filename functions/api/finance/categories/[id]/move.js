@@ -1,15 +1,18 @@
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { canSeeFinanceCategory } from '../../../../../lib/financeAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.finance_categories');
   if (auth instanceof Response) return auth;
 
   const category = await env.DB.prepare(`SELECT id, type, display_order FROM finance_categories WHERE id = ?`).bind(params.id).first();
-  if (!category) return jsonError('Không tìm thấy danh mục', 404);
+  // A category the actor cannot see (no finance.view_income, or an expense one without
+  // finance.view_all) answers like a missing id.
+  if (!category || !canSeeFinanceCategory(auth, category)) return jsonError('Không tìm thấy danh mục', 404);
 
   let body;
   try {

@@ -1,5 +1,6 @@
 // functions/api/finance/transactions/[id]/attachment.js
 import { requireAuth } from '../../../../../lib/requireAuth.js';
+import { canSeeTransaction } from '../../../../../lib/financeAccess.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -17,11 +18,11 @@ function receiptKeyFor(transactionId, filename) {
 }
 
 export async function onRequestPost({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (existing.voided_at) return jsonError('Giao dịch này đã bị huỷ, không thể sửa', 400);
 
   let form;
@@ -61,11 +62,11 @@ export async function onRequestPost({ request, env, params }) {
 }
 
 export async function onRequestDelete({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (existing.voided_at) return jsonError('Giao dịch này đã bị huỷ, không thể sửa', 400);
   if (!existing.receipt_key) return jsonError('Giao dịch này chưa có chứng từ đính kèm', 400);
 
@@ -86,17 +87,12 @@ export async function onRequestDelete({ request, env, params }) {
 }
 
 export async function onRequestGet({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin', 'observer']);
+  const auth = await requireAuth(request, env, 'finance.view_income');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
   if (!existing || !existing.receipt_key) return jsonError('Không tìm thấy chứng từ', 404);
-  // Observer only sees "Thu" — block viewing an expense's receipt (or a hidden
-  // one) by guessing its transaction id directly, matching the same filter
-  // GET /api/finance/transactions already applies for this role.
-  if (auth.role === 'observer' && (existing.type !== 'income' || existing.is_hidden)) {
-    return jsonError('Không tìm thấy chứng từ', 404);
-  }
+  if (!canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy chứng từ', 404);
 
   const object = await env.RECEIPTS.get(existing.receipt_key);
   if (!object) return jsonError('Không tìm thấy chứng từ', 404);

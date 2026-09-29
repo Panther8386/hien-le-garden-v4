@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as getCatalog, onRequestPost as postCatalog } from '../functions/api/catalog/index.js';
 import { onRequestPatch as patchCatalog, onRequestDelete as deleteCatalog } from '../functions/api/catalog/[id].js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerId, receptionId, adminId, observerId, managerToken, receptionToken, adminToken, observerToken;
 
@@ -136,6 +137,17 @@ describe('POST /api/catalog', () => {
       env,
     });
     expect(response.status).toBe(403);
+  });
+
+  it('lets a manager with a settings.catalog grant create a row', async () => {
+    await setOverride(env.DB, managerId, 'settings.catalog');
+    const response = await postCatalog({
+      request: authedRequest('https://x/api/catalog', managerToken, 'POST', { category: 'fnb_hoat_dong', name: 'Trà đá cam', priceType: 'fixed', priceMin: 12000 }),
+      env,
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(`SELECT updated_by FROM service_catalog WHERE name = 'Trà đá cam'`).first();
+    expect(row.updated_by).toBe('quan_ly_catalog');
   });
 });
 

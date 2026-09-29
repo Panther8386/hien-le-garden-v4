@@ -3,10 +3,17 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev": "wrangler pages dev .",
+    "dev": "npm run build && wrangler pages dev dist",
+    "build": "node scripts/build-static.mjs",
+    "check:dist": "node scripts/check-dist.mjs",
+    "check:dist:selftest": "node scripts/check-dist.mjs --self-test",
+    "release:artifact": "npm run build && npm run check:dist",
+    "check:staging": "node scripts/check-staging-bindings.mjs",
+    "probe:selftest": "node scripts/probe-private-urls.mjs --self-test",
     "test": "node scripts/test-with-retry.js",
     "test:once": "vitest run",
-    "deploy": "wrangler pages deploy ."
+    "test:each": "node scripts/test-each.js",
+    "deploy": "npm run build && npm run check:dist && wrangler pages deploy dist --project-name=hien-le-garden-v4"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",

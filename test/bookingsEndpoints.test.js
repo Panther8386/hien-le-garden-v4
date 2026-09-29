@@ -4,7 +4,9 @@ import { onRequestPost as createBooking, onRequestGet as listBookings } from '..
 import { onRequestPost as addDeposit } from '../functions/api/bookings/[id]/deposits/index.js';
 import { onRequestDelete as deleteDeposit } from '../functions/api/bookings/[id]/deposits/[depositId].js';
 import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hide.js';
+import { onRequestGet as getBooking } from '../functions/api/bookings/[id]/index.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken;
 let observerToken;
@@ -145,6 +147,166 @@ describe('POST /api/bookings', () => {
 
     const response = await createBooking({ request: postReq('https://x/api/bookings', { ...validBody, roomType: 'dormitory', checkIn: '2099-02-01', checkOut: '2099-02-03' }), env });
     expect(response.status).toBe(201);
+  });
+});
+
+describe('POST /api/bookings — FA-3 body and field size limits', () => {
+  const validBody = { guestName: 'Nguyễn Văn A', phone: '0900000001', roomType: 'circle', checkIn: '2099-01-01', checkOut: '2099-01-03' };
+  const MAX_BYTES = 16384;
+  let fetchMock;
+
+  beforeEach(async () => {
+    await env.DB.prepare(`INSERT INTO notification_settings (booking_notify_chat_id, updated_at) VALUES ('555', '2026-08-01T00:00:00Z')`).run();
+    fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  const notifyEnv = () => ({ ...env, TELEGRAM_BOT_TOKEN: 'test-token' });
+  const bookingCount = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM bookings').first()).n;
+  const byteLength = (s) => new TextEncoder().encode(s).length;
+
+  function rawReq(text, { contentLength } = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (contentLength !== undefined) headers['Content-Length'] = String(contentLength);
+    return new Request('https://x/api/bookings', { method: 'POST', headers, body: text });
+  }
+
+  function streamReq(text, chunkSize = 1024) {
+    const bytes = new TextEncoder().encode(text);
+    let offset = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        if (offset >= bytes.length) { controller.close(); return; }
+        controller.enqueue(bytes.slice(offset, offset + chunkSize));
+        offset += chunkSize;
+      },
+    });
+    return new Request('https://x/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: stream, duplex: 'half' });
+  }
+
+  function paddedBody(totalBytes) {
+    const base = JSON.stringify({ ...validBody, pad: '' });
+    return JSON.stringify({ ...validBody, pad: 'x'.repeat(totalBytes - byteLength(base)) });
+  }
+
+  async function expectRejected(request, status) {
+    const before = await bookingCount();
+    const response = await createBooking({ request, env: notifyEnv() });
+    expect(response.status).toBe(status);
+    expect(await bookingCount()).toBe(before);
+    expect(fetchMock).not.toHaveBeenCalled();
+    return response;
+  }
+
+  async function expectAccepted(request) {
+    const before = await bookingCount();
+    const response = await createBooking({ request, env: notifyEnv() });
+    expect(response.status).toBe(201);
+    expect(await bookingCount()).toBe(before + 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    return response;
+  }
+
+  it('accepts a normal email (1 row, 1 Telegram call) and stores it', async () => {
+    const response = await expectAccepted(postReq('https://x/api/bookings', { ...validBody, email: 'khach@example.com' }));
+    const { id } = await response.json();
+    const row = await env.DB.prepare('SELECT email FROM bookings WHERE id = ?').bind(id).first();
+    expect(row.email).toBe('khach@example.com');
+  });
+
+  it('keeps email optional: empty string, null and missing are all accepted', async () => {
+    for (const email of ['', null, undefined]) {
+      fetchMock.mockClear();
+      await expectAccepted(postReq('https://x/api/bookings', { ...validBody, email }));
+    }
+  });
+
+  it('accepts an email of exactly 254 chars and rejects 255 chars', async () => {
+    const email254 = 'a'.repeat(254 - '@example.com'.length) + '@example.com';
+    expect(email254.length).toBe(254);
+    await expectAccepted(postReq('https://x/api/bookings', { ...validBody, email: email254 }));
+
+    fetchMock.mockClear();
+    const email255 = 'a' + email254;
+    const response = await expectRejected(postReq('https://x/api/bookings', { ...validBody, email: email255 }), 400);
+    expect(await response.json()).toEqual({ error: 'Email không hợp lệ' });
+  });
+
+  it('rejects malformed emails with 400 Email không hợp lệ', async () => {
+    for (const email of ['a@b', 'a@@b.c', '@b.c', 'a@.c', 'a@b.', 'a b@c.d', 'a@b c.d', 'a\t@b.c', 42, {}, ['a@b.c']]) {
+      const response = await expectRejected(postReq('https://x/api/bookings', { ...validBody, email }), 400);
+      expect(await response.json(), JSON.stringify(email)).toEqual({ error: 'Email không hợp lệ' });
+    }
+  });
+
+  it('rejects a pathological email quickly (no backtracking blow-up)', async () => {
+    const t = Date.now();
+    await expectRejected(postReq('https://x/api/bookings', { ...validBody, email: 'a@' + 'a'.repeat(100000) }), 413);
+    expect(Date.now() - t).toBeLessThan(2000);
+  });
+
+  it('rejects the audit ReDoS shape that fits under the body cap with 400', async () => {
+    const t = Date.now();
+    await expectRejected(postReq('https://x/api/bookings', { ...validBody, email: 'a@' + 'a.'.repeat(7000) + ' ' }), 400);
+    expect(Date.now() - t).toBeLessThan(2000);
+  });
+
+  it('rejects an oversized body (huge notes) with a correct Content-Length header → 413', async () => {
+    const text = JSON.stringify({ ...validBody, notes: 'x'.repeat(20000) });
+    const response = await expectRejected(rawReq(text, { contentLength: byteLength(text) }), 413);
+    expect(await response.json()).toEqual({ error: 'Dữ liệu gửi lên quá lớn' });
+  });
+
+  it('rejects an oversized body (huge extra field) with a correct Content-Length header → 413', async () => {
+    const text = JSON.stringify({ ...validBody, junk: 'x'.repeat(MAX_BYTES) });
+    await expectRejected(rawReq(text, { contentLength: byteLength(text) }), 413);
+  });
+
+  it('rejects an oversized streamed body WITHOUT a Content-Length header → 413', async () => {
+    const request = streamReq(JSON.stringify({ ...validBody, junk: 'x'.repeat(200000) }));
+    expect(request.headers.get('content-length')).toBeNull();
+    const response = await expectRejected(request, 413);
+    expect(await response.json()).toEqual({ error: 'Dữ liệu gửi lên quá lớn' });
+  });
+
+  it('accepts a valid body of exactly the cap size (16384 bytes)', async () => {
+    const text = paddedBody(MAX_BYTES);
+    expect(byteLength(text)).toBe(MAX_BYTES);
+    await expectAccepted(rawReq(text, { contentLength: MAX_BYTES }));
+  });
+
+  it('accepts a valid streamed body of exactly the cap size without Content-Length', async () => {
+    await expectAccepted(streamReq(paddedBody(MAX_BYTES), 1000));
+  });
+
+  it('rejects a streamed body one byte over the cap', async () => {
+    const text = paddedBody(MAX_BYTES + 1);
+    expect(byteLength(text)).toBe(MAX_BYTES + 1);
+    await expectRejected(streamReq(text, 1000), 413);
+  });
+
+  it('rejects guestName 201 chars, phone 201 chars, notes 2001 chars', async () => {
+    await expectRejected(postReq('https://x/api/bookings', { ...validBody, guestName: 'a'.repeat(201) }), 400);
+    await expectRejected(postReq('https://x/api/bookings', { ...validBody, phone: '0'.repeat(201) }), 400);
+    await expectRejected(postReq('https://x/api/bookings', { ...validBody, notes: 'n'.repeat(2001) }), 400);
+  });
+
+  it('rejects guestsCount 51 but accepts 50', async () => {
+    const response = await expectRejected(postReq('https://x/api/bookings', { ...validBody, guestsCount: 51 }), 400);
+    expect(await response.json()).toEqual({ error: 'Số khách không hợp lệ' });
+    await expectAccepted(postReq('https://x/api/bookings', { ...validBody, guestsCount: 50 }));
+  });
+
+  it('rejects a JSON array / null / scalar body with 400 Dữ liệu không hợp lệ', async () => {
+    for (const text of ['[]', JSON.stringify([validBody]), 'null', '"str"', '42']) {
+      const response = await expectRejected(rawReq(text), 400);
+      expect(await response.json(), text).toEqual({ error: 'Dữ liệu không hợp lệ' });
+    }
+  });
+
+  it('rejects malformed JSON with 400 and no side effects', async () => {
+    const response = await expectRejected(rawReq('{"guestName": '), 400);
+    expect(await response.json()).toEqual({ error: 'Dữ liệu không hợp lệ' });
   });
 });
 
@@ -356,7 +518,7 @@ describe('GET /api/bookings — deposits', () => {
     });
     const { depositId } = await depositResponse.json();
 
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(3).run();
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
     await deleteDeposit({
       request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
       env,
@@ -537,7 +699,7 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
   }
 
   async function grantDeleteDeposit(staffId) {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(staffId).run();
+    await setOverride(env.DB, staffId, 'bookings.deposit_delete');
   }
 
   async function addDepositAndReturn(bookingId, amount, paymentMethod = 'cash') {
@@ -623,8 +785,7 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
     expect(bookingRow.deposit_amount).toBe(200000);
   });
 
-  it('rejects an observer even if the flag were somehow set (403)', async () => {
-    await env.DB.prepare(`UPDATE staff_accounts SET can_delete_deposit = 1 WHERE id = ?`).bind(2).run(); // observerToken belongs to staff id 2
+  it('rejects an observer without an explicit grant (403)', async () => {
     const id = await seedBooking();
     const created = await addDepositAndReturn(id, 200000);
 
@@ -737,6 +898,87 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
   });
 });
 
+describe('DELETE /api/bookings/:id/deposits/:depositId — hidden parent booking requires records.hide (F-3)', () => {
+  // receptionToken belongs to staff id 3, seeded in the top-level beforeEach.
+  async function seedHiddenBookingWithDeposit() {
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Hidden Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const depositResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 200000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const { depositId } = await depositResponse.json();
+    // A real hide.js-hidden booking can only be checked_out/cancelled — both of which this
+    // endpoint's own status rule already rejects with 400 — so is_hidden is seeded directly
+    // here (bypassing hide.js) to isolate the visibility gate under test from that unrelated
+    // business rule.
+    await env.DB.prepare(`UPDATE bookings SET is_hidden = 1 WHERE id = ?`).bind(id).run();
+    return { id, depositId };
+  }
+
+  it('answers a hidden parent booking exactly like a non-existent booking id for a user without records.hide, deposit row unchanged', async () => {
+    const { id, depositId } = await seedHiddenBookingWithDeposit();
+    const missing = await deleteDeposit({
+      request: new Request('https://x/api/bookings/999999/deposits/999999', { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: '999999', depositId: '999999' },
+    });
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(missingBody);
+
+    const depositRow = await env.DB.prepare(`SELECT voided_at FROM booking_deposits WHERE id = ?`).bind(depositId).first();
+    expect(depositRow.voided_at).toBeNull();
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(200000);
+  });
+
+  it('works (200) for the same user granted records.hide', async () => {
+    const { id, depositId } = await seedHiddenBookingWithDeposit();
+    await setOverride(env.DB, 3, 'records.hide');
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    expect(response.status).toBe(200);
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(0);
+  });
+
+  it('does not affect a non-hidden booking for the same user (regression)', async () => {
+    await setOverride(env.DB, 3, 'bookings.deposit_delete');
+    const created = await env.DB.prepare(
+      `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+       VALUES ('Visible Deposit Guest', '090', 'circle', '2026-09-01', '2026-09-02', 'confirmed', 'website', '2026-08-27T00:00:00Z')`
+    ).run();
+    const id = created.meta.last_row_id;
+    const depositResponse = await addDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits`, { method: 'POST', headers: { Cookie: `session=${receptionToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 100000, paymentMethod: 'cash' }) }),
+      env,
+      params: { id: String(id) },
+    });
+    const { depositId } = await depositResponse.json();
+    const response = await deleteDeposit({
+      request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+      env,
+      params: { id: String(id), depositId: String(depositId) },
+    });
+    expect(response.status).toBe(200);
+  });
+});
+
 describe('GET /api/bookings — is_hidden filtering', () => {
   it('excludes hidden bookings by default', async () => {
     const booking = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`).run();
@@ -806,5 +1048,88 @@ describe('PATCH /api/bookings/:id/hide', () => {
     expect(response.status).toBe(200);
     const row = await env.DB.prepare(`SELECT is_hidden FROM bookings WHERE id = ?`).bind(cancelledBookingId).first();
     expect(row.is_hidden).toBe(0);
+  });
+});
+
+const HIDDEN_BOOKING_SQL = `INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at, is_hidden) VALUES ('Khách Ẩn', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z', 1)`;
+
+describe('booking permissions via overrides', () => {
+  it('lets a reception user granted records.hide list hidden bookings', async () => {
+    const booking = await env.DB.prepare(HIDDEN_BOOKING_SQL).run();
+    await setOverride(env.DB, 3, 'records.hide');
+    const res = await listBookings({ request: authedRequest('https://x/api/bookings?status=cancelled&includeHidden=1', receptionToken), env });
+    const body = await res.json();
+    expect(body.find((b) => b.id === booking.meta.last_row_id)).toBeTruthy();
+  });
+
+  it('lets a reception user granted records.hide hide a booking', async () => {
+    const booking = await env.DB.prepare(HIDDEN_BOOKING_SQL).run();
+    await setOverride(env.DB, 3, 'records.hide');
+    const res = await hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${booking.meta.last_row_id}/hide`, receptionToken, { hidden: false }), env, params: { id: String(booking.meta.last_row_id) } });
+    expect(res.status).toBe(200);
+  });
+
+  it('redacts contact details for a manager denied guests.contact_view', async () => {
+    await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách', '0900000002', 'k@example.com', 'circle', '2099-01-01', '2099-01-02', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run();
+    await setOverride(env.DB, 1, 'guests.contact_view', 'deny');
+    const body = await (await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env })).json();
+    expect(body.length).toBeGreaterThan(0);
+    body.forEach((b) => { expect(b.phone).toBeNull(); expect(b.email).toBeNull(); });
+  });
+
+  it('redacts contact details on GET /api/bookings/:id for a manager denied guests.contact_view', async () => {
+    const b = await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách', '0900000003', 'd@example.com', 'circle', '2099-01-01', '2099-01-02', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run();
+    const id = String(b.meta.last_row_id);
+    const url = `https://x/api/bookings/${id}`;
+    const before = await (await getBooking({ request: authedRequest(url, managerToken), env, params: { id } })).json();
+    expect(before.phone).toBe('0900000003');
+    expect(before.email).toBe('d@example.com');
+    await setOverride(env.DB, 1, 'guests.contact_view', 'deny');
+    const res = await getBooking({ request: authedRequest(url, managerToken), env, params: { id } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.guestName).toBe('Khách');
+    expect(body.phone).toBeNull();
+    expect(body.email).toBeNull();
+  });
+
+  it('403s listing for a manager denied bookings.view', async () => {
+    await setOverride(env.DB, 1, 'bookings.view', 'deny');
+    const res = await listBookings({ request: authedRequest('https://x/api/bookings', managerToken), env });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/bookings/:id/hide — records.hide does not imply bookings.view', () => {
+  // observer (staff id 2) granted records.hide; bookings.view denied where the test needs it.
+  let cancelledId, pendingId;
+  beforeEach(async () => {
+    cancelledId = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đã Huỷ', '0900000001', 'circle', '2026-09-10', '2026-09-11', 'cancelled', 'phone', '2026-09-05T00:00:00Z')`).run()).meta.last_row_id;
+    pendingId = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('Khách Đang Chờ', '0900000002', 'circle', '2026-09-12', '2026-09-13', 'pending', 'phone', '2026-09-05T00:00:00Z')`).run()).meta.last_row_id;
+    await setOverride(env.DB, 2, 'records.hide', 'grant');
+  });
+  const hide = (id) => hideBooking({ request: authedPatchRequest(`https://x/api/bookings/${id}/hide`, observerToken, { hidden: true }), env, params: { id: String(id) } });
+
+  it('answers an existing id exactly like a non-existent one (404, same body) and leaves is_hidden unchanged', async () => {
+    await setOverride(env.DB, 2, 'bookings.view', 'deny');
+    const missing = await hide(999999);
+    const existing = await hide(cancelledId);
+    const notHideable = await hide(pendingId); // visibility check runs before the status check
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy đặt phòng' });
+    expect(existing.status).toBe(404);
+    expect(await existing.json()).toEqual(missingBody);
+    expect(notHideable.status).toBe(404);
+    expect(await notHideable.json()).toEqual(missingBody);
+    const row = await env.DB.prepare('SELECT is_hidden FROM bookings WHERE id = ?').bind(cancelledId).first();
+    expect(row.is_hidden).toBe(0);
+  });
+
+  it('works (200) for the same user with bookings.view', async () => {
+    const res = await hide(cancelledId);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT is_hidden FROM bookings WHERE id = ?').bind(cancelledId).first();
+    expect(row.is_hidden).toBe(1);
   });
 });

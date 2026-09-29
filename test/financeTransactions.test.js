@@ -5,8 +5,10 @@ import { onRequestPatch as patchTransaction } from '../functions/api/finance/tra
 import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
 import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
+import { setOverride } from './helpers/permissions.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
+let managerStaffId;
 
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
@@ -18,6 +20,7 @@ beforeEach(async () => {
   const r = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_fin', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
   const a = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('admin_fin', 'x', 'admin', '2026-08-01T00:00:00Z')`).run();
   const o = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_sat_fin', 'x', 'observer', '2026-08-01T00:00:00Z')`).run();
+  managerStaffId = m.meta.last_row_id;
   managerToken = await createSession(env.DB, m.meta.last_row_id);
   receptionToken = await createSession(env.DB, r.meta.last_row_id);
   adminToken = await createSession(env.DB, a.meta.last_row_id);
@@ -52,8 +55,9 @@ describe('POST /api/finance/transactions', () => {
     expect(response.status).toBe(403);
   });
 
-  it('lets a reception account with canAddFinanceTransaction=1 create a transaction', async () => {
-    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z', 1)`).run();
+  it('lets a reception account with the finance.create override create a transaction', async () => {
+    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_duoc_cap', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+    await setOverride(env.DB, granted.meta.last_row_id, 'finance.create');
     const grantedToken = await createSession(env.DB, granted.meta.last_row_id);
     const response = await createTransaction({
       request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
@@ -62,11 +66,9 @@ describe('POST /api/finance/transactions', () => {
     expect(response.status).toBe(201);
   });
 
-  it('still rejects an observer account even if canAddFinanceTransaction were somehow set to 1 (defense in depth)', async () => {
-    const grantedObserver = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at, can_add_finance_transaction) VALUES ('quan_sat_duoc_cap', 'x', 'observer', '2026-08-01T00:00:00Z', 1)`).run();
-    const grantedToken = await createSession(env.DB, grantedObserver.meta.last_row_id);
+  it('rejects an observer without an explicit grant (403)', async () => {
     const response = await createTransaction({
-      request: authedRequest('https://x/api/finance/transactions', grantedToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
+      request: authedRequest('https://x/api/finance/transactions', observerToken, 'POST', { type: 'expense', category: 'vat_tu', amount: 100000, transactionDate: '2026-08-29' }),
       env,
     });
     expect(response.status).toBe(403);
@@ -265,6 +267,26 @@ describe('GET /api/finance/transactions', () => {
     const body = await response.json();
     expect(body.transactions).toHaveLength(3);
     expect(body.transactions.some((t) => t.type === 'expense')).toBe(true);
+  });
+
+  it('override: grants finance.view_income to a reception account, who then sees only income rows', async () => {
+    const granted = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('le_tan_xem_thu', 'x', 'reception', '2026-08-01T00:00:00Z')`).run();
+    await setOverride(env.DB, granted.meta.last_row_id, 'finance.view_income');
+    const grantedToken = await createSession(env.DB, granted.meta.last_row_id);
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', grantedToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
+  });
+
+  it('override: denies finance.view_all from manager, forcing income-only results despite the role default', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', managerToken, 'GET'), env });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transactions).toHaveLength(1);
+    expect(body.transactions[0].type).toBe('income');
   });
 
   it('includes voided transactions in the list (UI shows them struck-through)', async () => {
@@ -670,5 +692,241 @@ describe('PATCH /api/finance/transactions/:id/void', () => {
     await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, managerToken, 'PATCH', {}), env, params: { id: String(txId) } });
     const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, managerToken, 'PATCH', {}), env, params: { id: String(txId) } });
     expect(response.status).toBe(400);
+  });
+});
+
+describe('finance.manage without finance.view_all only reaches visible income rows', () => {
+  async function seed(type, hidden = 0) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden).run();
+    return String(r.meta.last_row_id);
+  }
+  beforeEach(async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+  });
+
+  it('PATCH 404s on an expense and on a hidden income, leaving them unchanged; works on a visible income', async () => {
+    const expenseId = await seed('expense');
+    const hiddenId = await seed('income', 1);
+    const incomeId = await seed('income');
+    for (const id of [expenseId, hiddenId]) {
+      const res = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+      expect((await env.DB.prepare('SELECT amount FROM finance_transactions WHERE id = ?').bind(id).first()).amount).toBe(100000);
+    }
+    const ok = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${incomeId}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id: incomeId } });
+    expect(ok.status).toBe(200);
+  });
+
+  it('void 404s on an expense and on a hidden income; works on a visible income', async () => {
+    const expenseId = await seed('expense');
+    const hiddenId = await seed('income', 1);
+    const incomeId = await seed('income');
+    for (const id of [expenseId, hiddenId]) {
+      const res = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}/void`, managerToken, 'PATCH'), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect((await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE id = ?').bind(id).first()).voided_at).toBeNull();
+    }
+    const ok = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${incomeId}/void`, managerToken, 'PATCH'), env, params: { id: incomeId } });
+    expect(ok.status).toBe(200);
+  });
+});
+
+describe('PATCH type change authorization', () => {
+  async function seed(type) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z')`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu').run();
+    return String(r.meta.last_row_id);
+  }
+  async function patchAs(token, id, body) {
+    return patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, token, 'PATCH', body), env, params: { id } });
+  }
+  async function rowOf(id) {
+    return env.DB.prepare('SELECT type, category, amount FROM finance_transactions WHERE id = ?').bind(id).first();
+  }
+  // FULL = manager as seeded (finance.manage + finance.view_all).
+  // NO_ALL = same manager with finance.view_all denied (keeps finance.manage + finance.view_income).
+  async function denyViewAll() {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+  }
+
+  it('1. income → income (amount change): FULL 200', async () => {
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { amount: 222000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 222000 });
+  });
+
+  it('1. income → income (amount change): NO_ALL 200', async () => {
+    await denyViewAll();
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { amount: 222000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 222000 });
+  });
+
+  it('2. expense → expense: FULL 200', async () => {
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { amount: 333000 });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 333000 });
+  });
+
+  it('2. expense → expense: NO_ALL 404 (source not visible), row unchanged', async () => {
+    await denyViewAll();
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { amount: 333000 });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('3. income → expense: FULL 200 with a valid expense category', async () => {
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { type: 'expense', category: 'vat_tu' });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('3. income → expense: NO_ALL 403 (destination not visible), row unchanged, no audit', async () => {
+    await denyViewAll();
+    const id = await seed('income');
+    const res = await patchAs(managerToken, id, { type: 'expense', category: 'vat_tu', amount: 444000 });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('Không đủ quyền đổi giao dịch sang loại này');
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+    const audit = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE entity_id = ?`).bind(id).first();
+    expect(audit.n).toBe(0);
+  });
+
+  it('4. expense → income: FULL 200', async () => {
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { type: 'income', category: 'ban_hang' });
+    expect(res.status).toBe(200);
+    expect(await rowOf(id)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+  });
+
+  it('4. expense → income: NO_ALL 404 (source not visible), row unchanged', async () => {
+    await denyViewAll();
+    const id = await seed('expense');
+    const res = await patchAs(managerToken, id, { type: 'income', category: 'ban_hang' });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Không tìm thấy giao dịch');
+    expect(await rowOf(id)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+
+  it('5. reception (no finance.manage) → 403 on any PATCH, rows unchanged', async () => {
+    const incomeId = await seed('income');
+    const expenseId = await seed('expense');
+    for (const [id, body] of [[incomeId, { amount: 555000 }], [incomeId, { type: 'expense', category: 'vat_tu' }], [expenseId, { type: 'income', category: 'ban_hang' }]]) {
+      const res = await patchAs(receptionToken, id, body);
+      expect(res.status).toBe(403);
+    }
+    expect(await rowOf(incomeId)).toEqual({ type: 'income', category: 'ban_hang', amount: 100000 });
+    expect(await rowOf(expenseId)).toEqual({ type: 'expense', category: 'vat_tu', amount: 100000 });
+  });
+});
+
+describe('PATCH /api/finance/transactions/:id/hide — records.hide does not imply finance visibility', () => {
+  // manager granted records.hide; finance.view_all denied where the test needs it.
+  async function seed(type, hidden = 0, voided = true) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden, voided_by, voided_at) VALUES (?, ?, 100000, '2026-09-01', 'confirmed', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?, ?, ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden, voided ? 'admin_fin' : null, voided ? '2026-09-02T00:00:00Z' : null).run();
+    return String(r.meta.last_row_id);
+  }
+  const hide = (id, hidden = true) => hideTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}/hide`, managerToken, 'PATCH', { hidden }), env, params: { id } });
+  const hiddenOf = async (id) => (await env.DB.prepare('SELECT is_hidden FROM finance_transactions WHERE id = ?').bind(id).first()).is_hidden;
+
+  beforeEach(async () => {
+    await setOverride(env.DB, managerStaffId, 'records.hide', 'grant');
+  });
+
+  it('answers an invisible existing id exactly like a non-existent one (404, same body), is_hidden unchanged', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const voidedExpense = await seed('expense');
+    const activeExpense = await seed('expense', 0, false); // visibility check runs before the voided check
+    const hiddenIncome = await seed('income', 1);
+    const missing = await hide('999999');
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody).toEqual({ error: 'Không tìm thấy giao dịch' });
+    for (const [id, hidden] of [[voidedExpense, true], [activeExpense, true], [hiddenIncome, false]]) {
+      const res = await hide(id, hidden);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual(missingBody);
+    }
+    expect(await hiddenOf(voidedExpense)).toBe(0);
+    expect(await hiddenOf(activeExpense)).toBe(0);
+    expect(await hiddenOf(hiddenIncome)).toBe(1);
+  });
+
+  it('without view_all: can hide a voided income row, then gets 404 trying to unhide it', async () => {
+    await setOverride(env.DB, managerStaffId, 'finance.view_all', 'deny');
+    const id = await seed('income');
+    const res = await hide(id, true);
+    expect(res.status).toBe(200);
+    expect(await hiddenOf(id)).toBe(1);
+    const unhide = await hide(id, false);
+    expect(unhide.status).toBe(404);
+    expect(await unhide.json()).toEqual({ error: 'Không tìm thấy giao dịch' });
+    expect(await hiddenOf(id)).toBe(1);
+  });
+
+  it('works (200) for the same user with finance.view_all (expense row, hide and unhide)', async () => {
+    const id = await seed('expense');
+    expect((await hide(id, true)).status).toBe(200);
+    expect(await hiddenOf(id)).toBe(1);
+    expect((await hide(id, false)).status).toBe(200);
+    expect(await hiddenOf(id)).toBe(0);
+  });
+});
+
+describe('finance.view_all does not imply hidden-row visibility (records.hide required) (F-3)', () => {
+  async function seed(type, hidden = 1) {
+    const r = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, transaction_date, status, created_by, created_at, is_hidden) VALUES (?, ?, 100000, '2026-09-01', 'draft', 'quan_ly_fin', '2026-09-01T00:00:00Z', ?)`
+    ).bind(type, type === 'income' ? 'ban_hang' : 'vat_tu', hidden).run();
+    return String(r.meta.last_row_id);
+  }
+
+  it('PATCH answers a hidden income and a hidden expense exactly like a non-existent id for a manager with finance.view_all but no records.hide, rows unchanged', async () => {
+    const hiddenIncome = await seed('income');
+    const hiddenExpense = await seed('expense');
+    const missing = await patchTransaction({ request: authedRequest('https://x/api/finance/transactions/999999', managerToken, 'PATCH', { amount: 999000 }), env, params: { id: '999999' } });
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    for (const id of [hiddenIncome, hiddenExpense]) {
+      const res = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id } });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual(missingBody);
+      expect((await env.DB.prepare('SELECT amount FROM finance_transactions WHERE id = ?').bind(id).first()).amount).toBe(100000);
+    }
+  });
+
+  it('void answers a hidden income exactly like a non-existent id for a manager with finance.view_all but no records.hide, row unchanged', async () => {
+    const hiddenIncome = await seed('income');
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenIncome}/void`, managerToken, 'PATCH'), env, params: { id: hiddenIncome } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Không tìm thấy giao dịch' });
+    expect((await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE id = ?').bind(hiddenIncome).first()).voided_at).toBeNull();
+  });
+
+  it('admin (all permissions) can PATCH and void a hidden row', async () => {
+    const hiddenIncome = await seed('income');
+    const patchRes = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenIncome}`, adminToken, 'PATCH', { amount: 999000 }), env, params: { id: hiddenIncome } });
+    expect(patchRes.status).toBe(200);
+    const hiddenExpense = await seed('expense');
+    const voidRes = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${hiddenExpense}/void`, adminToken, 'PATCH'), env, params: { id: hiddenExpense } });
+    expect(voidRes.status).toBe(200);
+  });
+
+  it('does not affect a non-hidden row for the same manager (regression)', async () => {
+    const visible = await seed('income', 0);
+    const response = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${visible}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id: visible } });
+    expect(response.status).toBe(200);
   });
 });

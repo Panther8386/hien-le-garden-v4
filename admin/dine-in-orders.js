@@ -1,5 +1,6 @@
 // v4/admin/dine-in-orders.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 (async () => {
   let res;
@@ -13,17 +14,17 @@ let currentRole = null;
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole !== 'observer') {
+  if (can('dine_in.manage')) {
     document.getElementById('openTableForm').classList.remove('hidden');
   }
 
   await loadOrders();
   await loadOrderHistory();
 
-  if (currentRole === 'admin') {
+  if (can('records.hide')) {
     document.getElementById('showHiddenOrdersWrap').classList.remove('hidden');
   }
   document.getElementById('showHiddenOrders').addEventListener('change', loadOrderHistory);
@@ -109,7 +110,7 @@ document.getElementById('openTableForm').addEventListener('submit', async (event
 async function loadOrderHistory() {
   const errorEl = document.getElementById('pageError');
   errorEl.textContent = '';
-  const showHidden = currentRole === 'admin' && document.getElementById('showHiddenOrders').checked;
+  const showHidden = can('records.hide') && document.getElementById('showHiddenOrders').checked;
   const suffix = showHidden ? '&includeHidden=1' : '';
   let closedRes, voidedRes;
   try {
@@ -159,7 +160,7 @@ function renderHistoryGrid(orders) {
 
     card.append(tableLabel, statusLabel, total);
 
-    if (currentRole === 'admin') {
+    if (can('records.hide')) {
       const hideBtn = document.createElement('button');
       hideBtn.type = 'button';
       hideBtn.className = 'btn-secondary table-actions-btn';

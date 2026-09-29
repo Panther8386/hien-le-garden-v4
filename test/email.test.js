@@ -24,6 +24,9 @@ describe('sendPromoEmail', () => {
     expect(body.to).toEqual([{ email: 'khach@example.com', name: 'Nguyễn Văn A' }]);
     expect(body.subject).toBe('Mã ưu đãi');
     expect(body.htmlContent).toBe('<p>xin chào</p>');
+    expect(body.sender).toEqual({ name: 'Hiền Lê Garden', email: 'hello@hienlegarden.vn' });
+    // Regression: the unverified pre-release sender must never reach Brevo.
+    expect(options.body.includes('khuyenmai@hienlegarden.vn')).toBe(false);
   });
 
   it('returns false and does not throw when the Brevo API call fails', async () => {
@@ -37,4 +40,15 @@ describe('sendPromoEmail', () => {
     const result = await sendPromoEmail({ BREVO_API_KEY: 'test-key' }, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
     expect(result).toBe(false);
   });
+
+  it.each([[{}], [{ BREVO_API_KEY: '' }], [{ BREVO_API_KEY: undefined }]])(
+    'returns false without calling Brevo when BREVO_API_KEY is not configured (%j)',
+    async (env) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await sendPromoEmail(env, { to: 'x@example.com', toName: 'X', subject: 's', html: 'h' });
+      expect(result).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 });

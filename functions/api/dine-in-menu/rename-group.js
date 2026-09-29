@@ -7,7 +7,7 @@ function jsonError(message, status) {
 const VALID_CATEGORIES = ['mon_an', 'do_uong'];
 
 export async function onRequestPost({ request, env }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.dine_in_menu');
   if (auth instanceof Response) return auth;
 
   let body;

@@ -1,0 +1,84 @@
+name: Tests
+
+# CI test run with no production side effects: no secrets, no deploy.
+# Deliberately NOT triggered on push to main (deploy.yml owns that trigger).
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  artifact:
+    name: Release artifact boundary (R-1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build public-only dist/ artifact
+        run: node scripts/build-static.mjs
+
+      - name: Boundary check dist/
+        run: node scripts/check-dist.mjs
+
+      - name: Boundary check self-test (planted private files must fail the check)
+        run: node scripts/check-dist.mjs --self-test
+
+      - name: Post-deploy probe self-test (local fixture servers only, no real hosts)
+        run: node scripts/probe-private-urls.mjs --self-test
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Staging binding guard self-test (temp wrangler.toml copies)
+        run: node scripts/check-staging-bindings.mjs --self-test
+
+      # Blocking: [env.preview] must bind DB/RECEIPTS to staging resources that
+      # differ from production (exit 0). Exit 1 = mismatch/shadow config,
+      # exit 2 = [env.preview] missing (preview would use PRODUCTION bindings).
+      # Runs after npm ci: the guard reads config through wrangler's own loader.
+      - name: Staging binding guard on wrangler.toml (blocking)
+        run: node scripts/check-staging-bindings.mjs
+
+      - name: Vitest isolated (excluding 3 R2 files)
+        run: npx vitest run --exclude test/assetInventoryLines.test.js --exclude test/assetPhotos.test.js --exclude test/financeAttachments.test.js
+
+      # Release evidence for the 3 R2-backed files: non-isolated storage
+      # (isolatedStorage:false, singleWorker:true). Blocking. One vitest process
+      # per file: without isolation, storage is shared, so running the files in
+      # one process lets one file's rows break another file's cleanup.
+      - name: R2 files non-isolated, one process per file (release evidence, blocking)
+        run: |
+          set -e
+          for f in test/assetInventoryLines.test.js test/assetPhotos.test.js test/financeAttachments.test.js; do
+            npx vitest run --config test/vitest.r2-noniso.config.js "$f"
+          done
+
+      - name: R2 isolated verification deferred pending upgrade from @cloudflare/vitest-pool-workers 0.5.x (non-blocking)
+        continue-on-error: true
+        run: npx vitest run test/assetInventoryLines.test.js test/assetPhotos.test.js test/financeAttachments.test.js

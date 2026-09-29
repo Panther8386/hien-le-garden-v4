@@ -1,15 +1,17 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'records.hide');
   if (auth instanceof Response) return auth;
 
   const booking = await env.DB.prepare(`SELECT id, status, is_hidden, guest_name FROM bookings WHERE id = ?`).bind(params.id).first();
-  if (!booking) return jsonError('Không tìm thấy đặt phòng', 404);
+  // records.hide never implies read access: without bookings.view the record answers like a missing id.
+  if (!booking || !hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy đặt phòng', 404);
   if (booking.status !== 'checked_out' && booking.status !== 'cancelled') {
     return jsonError('Chỉ có thể ẩn đặt phòng đã trả phòng hoặc đã huỷ', 400);
   }

@@ -1,4 +1,5 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
+import { hasPermission } from '../../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -9,8 +10,10 @@ function isValidPrice(value) {
 }
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['admin']);
+  const auth = await requireAuth(request, env, 'settings.rooms');
   if (auth instanceof Response) return auth;
+  // Mutating requires seeing the resource: without bookings.view answer like a missing id.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không tìm thấy phòng', 404);
 
   const existing = await env.DB.prepare(`SELECT price_weekday, price_weekend FROM rooms WHERE id = ?`).bind(params.id).first();
   if (!existing) return jsonError('Không tìm thấy phòng', 404);

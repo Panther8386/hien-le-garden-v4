@@ -3,6 +3,8 @@ import { env } from 'cloudflare:test';
 import { onRequestGet as me } from '../functions/api/auth/me.js';
 import { onRequestPost as login } from '../functions/api/auth/login.js';
 import { hashPassword } from '../lib/auth.js';
+import { ROLE_DEFAULTS } from '../lib/permissions.js';
+import { setOverride } from './helpers/permissions.js';
 
 let sharedPasswordHash;
 beforeAll(async () => {
@@ -17,13 +19,15 @@ beforeEach(async () => {
      VALUES (1, 'quan_ly_a', ?, 'manager', '2026-08-01T00:00:00Z')`
   ).bind(sharedPasswordHash).run();
   await env.DB.prepare(
-    `INSERT INTO staff_accounts (id, username, password_hash, role, can_manage_room_layout, created_at)
-     VALUES (2, 'le_tan_b', ?, 'reception', 1, '2026-08-01T00:00:00Z')`
+    `INSERT INTO staff_accounts (id, username, password_hash, role, created_at)
+     VALUES (2, 'le_tan_b', ?, 'reception', '2026-08-01T00:00:00Z')`
   ).bind(sharedPasswordHash).run();
+  await setOverride(env.DB, 2, 'rooms.layout');
   await env.DB.prepare(
-    `INSERT INTO staff_accounts (id, username, password_hash, role, can_add_finance_transaction, created_at)
-     VALUES (3, 'le_tan_c', ?, 'reception', 1, '2026-08-01T00:00:00Z')`
+    `INSERT INTO staff_accounts (id, username, password_hash, role, created_at)
+     VALUES (3, 'le_tan_c', ?, 'reception', '2026-08-01T00:00:00Z')`
   ).bind(sharedPasswordHash).run();
+  await setOverride(env.DB, 3, 'finance.create');
 });
 
 describe('GET /api/auth/me', () => {
@@ -47,10 +51,10 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', canManageRoomLayout: false, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false });
+    expect(await response.json()).toEqual({ username: 'quan_ly_a', role: 'manager', totpEnabled: false, permissions: [...ROLE_DEFAULTS.manager].sort() });
   });
 
-  it('returns canManageRoomLayout true for an account with the flag set', async () => {
+  it('includes rooms.layout in permissions for an account with the override set', async () => {
     const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username: 'le_tan_b', password: 's3cret-pass' }),
@@ -64,10 +68,12 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_b', role: 'reception', canManageRoomLayout: true, canAddFinanceTransaction: false, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false });
+    const body = await response.json();
+    expect(body).toEqual({ username: 'le_tan_b', role: 'reception', totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'rooms.layout'])].sort() });
+    expect(body.permissions).toContain('rooms.layout');
   });
 
-  it('returns canAddFinanceTransaction true for an account with the flag set', async () => {
+  it('includes finance.create in permissions for an account with the override set', async () => {
     const loginRequest = new Request('https://crm.hienlegarden.vn/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username: 'le_tan_c', password: 's3cret-pass' }),
@@ -81,6 +87,8 @@ describe('GET /api/auth/me', () => {
     const response = await me({ request, env });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ username: 'le_tan_c', role: 'reception', canManageRoomLayout: false, canAddFinanceTransaction: true, canDeleteAsset: false, canDeleteDeposit: false, totpEnabled: false });
+    const body = await response.json();
+    expect(body).toEqual({ username: 'le_tan_c', role: 'reception', totpEnabled: false, permissions: [...new Set([...ROLE_DEFAULTS.reception, 'finance.create'])].sort() });
+    expect(body.permissions).toContain('finance.create');
   });
 });

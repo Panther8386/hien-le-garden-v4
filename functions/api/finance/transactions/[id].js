@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { summarize } from './index.js';
+import { canSeeTransaction } from '../../../../lib/financeAccess.js';
 import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
 
 function jsonError(message, status) {
@@ -11,11 +12,11 @@ const VALID_STATUSES = ['draft', 'confirmed', 'paid'];
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function onRequestPatch({ request, env, params }) {
-  const auth = await requireAuth(request, env, ['manager', 'admin']);
+  const auth = await requireAuth(request, env, 'finance.manage');
   if (auth instanceof Response) return auth;
 
   const existing = await env.DB.prepare(`SELECT * FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (!existing) return jsonError('Không tìm thấy giao dịch', 404);
+  if (!existing || !canSeeTransaction(auth, existing)) return jsonError('Không tìm thấy giao dịch', 404);
   if (existing.voided_at) return jsonError('Giao dịch này đã bị huỷ, không thể sửa', 400);
 
   let body;
@@ -26,6 +27,12 @@ export async function onRequestPatch({ request, env, params }) {
   }
 
   const type = body.type !== undefined ? body.type : existing.type;
+  // The actor must be able to see the row both before and after the edit: changing
+  // the type must not move a row out of the actor's own visibility (e.g. income →
+  // expense without finance.view_all). The source is already visible, so 403 leaks nothing.
+  if (!canSeeTransaction(auth, { ...existing, type })) {
+    return jsonError('Không đủ quyền đổi giao dịch sang loại này', 403);
+  }
   const category = body.category !== undefined ? body.category : existing.category;
   const amount = body.amount !== undefined ? body.amount : existing.amount;
   const note = body.note !== undefined ? body.note : existing.note;

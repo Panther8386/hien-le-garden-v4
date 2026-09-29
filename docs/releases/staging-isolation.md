@@ -1,0 +1,218 @@
+# Tách staging/preview khỏi production (phương án A — đã triển khai 2026-09-28)
+
+## 0. Trạng thái triển khai (2026-09-28, commit `368d65a`)
+
+| Thành phần | Giá trị |
+|---|---|
+| Pages | project `hien-le-garden-v4`, môi trường **Preview** (production branch = `main`, xác nhận qua `pages deployment list`) |
+| Hostname | `https://staging.hien-le-garden-v4.pages.dev` (alias của `--branch=staging`) + URL riêng mỗi deploy `https://<hash>.hien-le-garden-v4.pages.dev` |
+| D1 | binding `DB` → `hien_le_garden_crm_staging` (id `1e91a577-df12-4ff7-8730-c022be25a3c9`, APAC), 42/42 migration |
+| R2 | binding `RECEIPTS` → `hien-le-garden-finance-receipts-staging` (APAC) |
+| Guard | `npm run check:staging` → exit 0 (`REASON: PASS`) |
+| Secret Preview | Chỉ 3 secret Turnstile: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_ALLOWED_HOSTNAMES` (đặt 2026-09-28 cho browser test, xem dòng Turnstile). **Không** có `BREVO_API_KEY`, `TELEGRAM_*`; không có biến plain-text (kiểm `pages download config`). *Lịch sử: trước khi đặt Turnstile, `pages secret list --env preview` trả về rỗng.* |
+| Telegram | **DISABLED** (không có token → `sendTelegramMessage` bỏ qua, không gọi API — commit `b299280`; webhook không có secret → 401 mọi update) |
+| Brevo | **DISABLED** (không có key → `sendPromoEmail` bỏ qua, không gọi API; caller ghi `failed`) |
+| Turnstile | **PASS** — widget `hien-le-garden-staging` (hostname duy nhất `staging.hien-le-garden-v4.pages.dev`, Managed); secret Preview: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_ALLOWED_HOSTNAMES=staging.hien-le-garden-v4.pages.dev`; browser test 2026-09-28 (deployment `a02c5975`) |
+| Tài khoản | `staging_admin` (role admin) chỉ trên D1 staging; mật khẩu sinh ngẫu nhiên, lưu ở `.superpowers/staging/staging-admin.local.txt` (git-ignored) |
+
+Lệnh deploy preview (duy nhất, chạy từ gốc repo):
+
+```bash
+npm run build && npm run check:dist && npm run check:staging &&   npx wrangler pages deploy dist --project-name=hien-le-garden-v4 --branch=staging
+```
+
+`--branch=staging` là **bắt buộc**: wrangler chọn production/preview bằng cách so `--branch` (mặc định = nhánh git hiện tại) với production branch của project (cli.js:126960, 126197-126201), rồi nhúng binding của môi trường đó vào metadata của Functions bundle (`getBindings(config)`, cli.js:124192-124215). Chạy từ `main` mà quên `--branch` = deploy production.
+
+Secret staging khi cần bật tích hợp (luôn có `--env preview`; không có cờ này = ghi vào **production**):
+
+| Variable | Giá trị staging | Bắt buộc | Tác dụng phụ bên ngoài |
+|---|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | token của bot **staging** riêng (không phải bot production) | Không (thiếu → tắt an toàn) | gửi tin Telegram tới chat staging |
+| `TELEGRAM_WEBHOOK_SECRET` | secret mới, khác production | Không (thiếu → webhook 401) | không |
+| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | chat id nhóm **staging** | Không | quyết định nhóm nào nhận thông báo |
+| `BREVO_API_KEY` | để trống (mặc định); nếu cần test email: key riêng + chỉ gửi tới hộp thư test do mình kiểm soát | Không (thiếu → tắt an toàn) | gửi email thật |
+| `TURNSTILE_SITE_KEY` | site key widget **staging** (hostname `staging.hien-le-garden-v4.pages.dev`) | Có để test form góp ý | không |
+| `TURNSTILE_SECRET_KEY` | secret widget staging | Có để test form góp ý | gọi siteverify |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | `staging.hien-le-garden-v4.pages.dev` | Có (thiếu → góp ý 403) | không |
+
+Ví dụ: `npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name=hien-le-garden-v4 --env preview`.
+
+Browser test Turnstile 2026-09-28 (Chrome thật, profile tạm, `navigator.webdriver=false`, trên `https://staging.hien-le-garden-v4.pages.dev/tri-an-khach-hang/`):
+
+| Ca | Kết quả | Log server |
+|---|---|---|
+| Widget render, site key staging | PASS (iframe `challenges.cloudflare.com`, key `0x4AA…` = widget staging) | — |
+| Gửi hợp lệ qua form | 201, 1 voucher, 1 `message_log` `email:failed` | `Brevo send skipped: BREVO_API_KEY not configured` (không gọi Brevo) |
+| Dùng lại token | 403 | `Turnstile rejected timeout-or-duplicate` |
+| Thiếu token | 403 | (chặn trước siteverify) |
+| Token giả | 403 | `Turnstile rejected invalid-input-response` |
+| Trùng góp ý (cùng SĐT/email, token mới hợp lệ) | 409 thông báo trùng, không tạo voucher mới | — |
+| Hostname | Chấp nhận với allowlist chỉ gồm `staging.hien-le-garden-v4.pages.dev` → hostname siteverify = hostname staging | không có `hostname not allowed` |
+| Console | Không lỗi từ trang; chỉ log nội bộ iframe Turnstile (debug, WebGPU, font, PAT 401) | — |
+
+Production không đổi (SELECT chỉ đọc trước/sau: 8 feedback, 0 message_log, không dòng `STAGING%`). Dữ liệu test đã xoá khỏi D1 staging (feedback, message_log, template marker, giao dịch marker + 3 audit_log); giữ schema, 42 migration, `staging_admin`.
+
+Kết quả smoke test staging 2026-09-28: probe R-1 `PASS=62 FAIL=0 INCONCLUSIVE=0` (alias + URL deploy); `/api/public-config` 200, `/api/auth/me` 401 → login 200 (cookie HttpOnly/Secure/SameSite) → `me` role admin 38 quyền → logout → 401; marker D1 (template `STAGING-MARKER-…`) có ở staging, **0** ở production (SELECT chỉ đọc); marker R2 (`finance-receipts/1/…-staging-r2-marker.png`) có ở bucket staging, production báo "key does not exist", đã xoá sau test.
+
+---
+
+(Phần dưới là thiết kế gốc, giữ để tham chiếu.)
+
+Trạng thái gốc: thiết kế trước khi tạo tài nguyên.
+
+Quy tắc bắt buộc (quyết định của chủ dự án): preview/staging phải tách khỏi D1/R2 production; **không** chạy bất kỳ test preview nào có tác dụng phụ trên binding production.
+
+Nguồn đã kiểm chứng: wrangler 3.114.17 trong `node_modules` (`wrangler-dist/cli.js`) và tài liệu Cloudflare (trích dẫn bên dưới, đọc ngày 2026-09-28).
+
+---
+
+## 1. Hiện trạng và rủi ro (lịch sử — trạng thái trước commit `368d65a`, 2026-09-28; nay đã có `[env.preview]`, xem §0)
+
+- `wrangler.toml` khai báo `[[d1_databases]]` (`DB` → `hien_le_garden_crm`, id `bf3ed73c-…`) và `[[r2_buckets]]` (`RECEIPTS` → `hien-le-garden-finance-receipts`) ở cấp cao nhất, **không có** `[env.preview]`.
+- Khi thiếu `[env.preview]`, Pages dùng cấu hình cấp cao nhất cho cả preview. Tài liệu Cloudflare: "If an environment section is absent, the top-level configuration applies to that environment." (developers.cloudflare.com/pages/functions/wrangler-configuration/).
+- Trong code: `pages deploy` chọn môi trường theo nhánh — `isProduction = project.production_branch === branch; const env6 = isProduction ? "production" : "preview"` (cli.js ~126198), rồi đọc cấu hình với `env: env6` (`readPagesConfig({ ...args, env: env6 })`). Nếu `rawConfig.env.preview` không tồn tại và đây là cấu hình Pages, `activeEnv` giữ nguyên cấp cao nhất (cli.js ~86630–86672). Binding gửi lên nằm trong metadata của Functions bundle: `bindings: getBindings(config, { pages: true })` (cli.js ~124216).
+- Hệ quả: **mọi** preview deployment hiện nay (`wrangler pages deploy dist --branch=<khác main>`, hoặc `npm run deploy` chạy từ nhánh khác `main`) chạy trên **D1/R2 production**.
+
+## 2. Wrangler xử lý `[env.preview]` thế nào (đã kiểm chứng)
+
+- Tên môi trường hợp lệ cho Pages chỉ có `preview` và `production`: `validatePagesEnvironmentNames` báo lỗi với tên khác ("The supported named-environments for Pages are \"preview\" and \"production\"", cli.js ~89666). Tài liệu: "Unlike Workers Environments, `production` and `preview` are the only two options available."
+- `name` phải ở cấp cao nhất (`validateProjectName`: "in Pages, environments target the same project", cli.js ~89655) → **một** wrangler.toml chỉ trỏ tới **một** project.
+- Khoá **không kế thừa** (`notInheritable`, cli.js ~86264): `vars`, `d1_databases`, `r2_buckets`, `kv_namespaces`, `durable_objects`, `services`, `queues.producers`, `hyperdrive`, `vectorize`, `analytics_engine_datasets`, `ai`. Khi `[env.preview]` tồn tại mà thiếu một khoá này, wrangler trả `rawEnv[field] ?? defaultValue` (mảng rỗng) và chỉ cảnh báo `"<field>" exists at the top level, but not on "env.preview"` — tức là binding đó **biến mất** ở preview, **không** rơi về binding production. Tài liệu: "if any one non-inheritable key is overridden for any environment … all non-inheritable keys must also be specified in the environment configuration."
+- Khoá **kế thừa**: `name`, `pages_build_output_dir`, `compatibility_date`, `compatibility_flags`, `send_metrics`, `limits`, `placement`, `upload_source_maps`.
+- Kết luận: `[env.preview]` ghi đè **sạch** `d1_databases`/`r2_buckets` cho preview deployment; không binding nào bị kế thừa từ cấp cao nhất. Production (không có `[env.production]`) tiếp tục dùng cấp cao nhất — không đổi.
+- `wrangler pages dev` và Vitest đọc cấu hình **không** có env (cấp cao nhất) — chỉ dùng miniflare local, không ảnh hưởng.
+- Khi có `pages_build_output_dir`, wrangler.toml là nguồn sự thật: "You will be able to see, but not edit, the same fields when you log into the Cloudflare dashboard." → không gán binding preview trên dashboard được; phải qua `[env.preview]`.
+
+## 3. Phương án
+
+### (A) `[env.preview]` trong cùng project `hien-le-garden-v4` — **khuyến nghị**
+
+```toml
+# (minh hoạ — chưa thêm vào wrangler.toml; điền id thật sau khi tạo tài nguyên staging)
+[env.preview]
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "hien_le_garden_crm_staging"
+database_id = "<STAGING_D1_ID>"          # PHẢI khác bf3ed73c-96de-494c-a3f9-e905f2bf8c48
+migrations_dir = "migrations"
+
+[[env.preview.r2_buckets]]
+binding = "RECEIPTS"
+bucket_name = "hien-le-garden-finance-receipts-staging"
+```
+
+Ưu điểm:
+- Sửa luôn lỗ hổng hiện tại: preview **mặc định** dùng staging, kể cả preview tạo nhầm (chạy `npm run deploy` từ nhánh khác `main`).
+- Một file cấu hình, một artifact `dist/` giống hệt production; không cần sửa `wrangler.toml` trong bản clone.
+- Secret theo môi trường có sẵn: `wrangler pages secret put <NAME> --project-name=hien-le-garden-v4 --env preview` (cờ toàn cục `--env`; `pagesProject()` chỉ nhận `production`/`preview`, mặc định production — cli.js ~129428).
+
+Nhược điểm / cách chặn:
+- Deploy với `--branch=main` (nhánh production) vẫn là production → staging luôn deploy với `--branch=staging` (hoặc tên nhánh khác `main`) và kiểm tra dòng "environment" trong output.
+- Preview URL công khai trên `*.hien-le-garden-v4.pages.dev` → bật Cloudflare Access cho preview deployments (Pages → Settings → "Enable access policy") nếu staging chứa dữ liệu thật.
+- Thêm binding mới ở cấp cao nhất sau này phải thêm cả vào `[env.preview]` (nếu không, preview mất binding đó — an toàn, không lộ production). Guard §5 kiểm tra việc này.
+
+### (B) Project staging riêng (`hien-le-garden-v4-staging`)
+
+- `name` bắt buộc ở cấp cao nhất, `pages deploy --project-name=…-staging` dùng **wrangler.toml của repo** → nếu deploy bằng file này, project staging nhận **binding production** (không có env nào tên "staging"; wrangler 3.114 `pages deploy` từ chối `--config` — "Pages does not support custom paths for the Wrangler configuration file" — và từ chối `--env` — "Use the --branch flag to target your production or preview branch" (cli.js ~126801–126812); nó luôn đọc wrangler.toml tìm từ cwd).
+- Muốn dùng (B) an toàn phải: deploy từ một thư mục khác chứa wrangler.toml staging riêng (hoặc sinh file đó trong CI), hoặc vẫn dùng `[env.preview]`/`[env.production]` trong file đó. Nhiều bước thủ công hơn, dễ quên hơn (A); lợi ích duy nhất là domain/secret tách hẳn khỏi project production.
+- Chỉ chọn (B) nếu cần staging có "production branch" riêng (ví dụ test hành vi chỉ có ở môi trường production).
+
+**Khuyến nghị: (A)** — ít bước tay nhất, và biến trạng thái mặc định của preview từ "production DB" thành "staging DB".
+
+## 4. Chi tiết từng thành phần (cho phương án A)
+
+Các bước dưới đây do chủ dự án chạy khi đã duyệt; tài liệu này không tạo gì.
+
+### D1 staging
+- Tạo: `npx wrangler d1 create hien_le_garden_crm_staging` → lấy `database_id`, điền vào `[env.preview]`, rồi chạy guard §5 (`node scripts/check-staging-bindings.mjs` phải exit 0) **trước** mọi lệnh remote dưới đây.
+- Mọi lệnh D1 staging dùng **tên DB staging + `--env preview`**:
+  ```bash
+  npx wrangler d1 migrations list  hien_le_garden_crm_staging --env preview --remote
+  npx wrangler d1 migrations apply hien_le_garden_crm_staging --env preview --remote
+  npx wrangler d1 execute          hien_le_garden_crm_staging --env preview --remote --command "<SQL>"
+  ```
+  Lý do (cli.js 3.114.17): `d1 migrations apply/list` tìm DB bằng `getDatabaseInfoFromConfig(config, name)` chỉ trong `d1_databases` của **env đang chọn** (~101440, ~119512). Không có `--env preview` thì env là cấp cao nhất (chỉ có DB production) → lệnh dừng với "Couldn't find a D1 DB with the name or binding 'hien_le_garden_crm_staging'". `d1 execute` còn tra theo tên qua API nếu không có trong config (`getDatabaseByNameOrBinding`, ~101463).
+- **CẢNH BÁO — `--env preview` KHÔNG an toàn khi chưa có `[env.preview]`:** với cấu hình Pages thiếu bảng `env.preview`, wrangler giữ nguyên cấu hình cấp cao nhất (cli.js ~86633–86646) — tức là `--env preview` **lặng lẽ dùng binding PRODUCTION** (không báo lỗi; đã kiểm: `unstable_readConfig({ env: "preview" })` trên `wrangler.toml` lúc đó — trước `368d65a` — trả về đúng D1/R2 production). Ví dụ khi đó `d1 execute DB --env preview --remote` chạy trên D1 production. Nay đã có `[env.preview]`, nhưng quy tắc vẫn giữ. **Không bao giờ chạy lệnh remote nào có `--env preview` trừ khi `node scripts/check-staging-bindings.mjs` vừa exit 0.**
+- **CẢNH BÁO: không bao giờ dùng binding `DB` (hoặc tên `hien_le_garden_crm`) mà không có `--env preview`** — `d1 migrations apply DB --remote` / `d1 execute DB --remote` chạy trên **D1 production** (production còn migration 0042 đang chờ). Nếu gặp lỗi "Couldn't find a D1 DB", sửa bằng cách thêm `--env preview`, **không** bằng cách đổi sang `DB`.
+- Dữ liệu: seed tài khoản test bằng `node scripts/seed-manager.js <username> <password> [role]`, rồi chạy SQL in ra bằng `npx wrangler d1 execute hien_le_garden_crm_staging --env preview --remote --command "<SQL>"`. Lưu ý: comment đầu file `scripts/seed-manager.js` ghi `wrangler d1 execute hien_le_garden_crm --remote` — đó là lệnh **production**, không dùng cho staging. Không copy dữ liệu khách production.
+
+### R2 staging
+- `npx wrangler r2 bucket create hien-le-garden-finance-receipts-staging`; điền `bucket_name` vào `[env.preview]`.
+
+### Biến môi trường / secret theo môi trường
+Đặt cho preview bằng `npx wrangler pages secret put <NAME> --project-name=hien-le-garden-v4 --env preview` (giá trị gõ ở prompt, không đưa vào tham số dòng lệnh/history).
+
+**CẢNH BÁO:** `pages secret put` **không có `--env` = production** (`pagesProject()`: `env6 ??= "production"`, cli.js ~129428; `--env` là cờ toàn cục của wrangler nên **không hiện** trong `pages secret put --help`, nhưng có tác dụng). Quên `--env preview` khi đặt secret test Turnstile `1x0000000000000000000000000000000AA` (luôn pass) sẽ ghi đè secret **production**: vì key test trả `hostname: "example.com"`, allowlist production `hienlegarden.vn` từ chối → **mọi góp ý production 403** (fail closed, không mở cửa — nhưng form ngừng hoạt động). Tương tự, ghi `TURNSTILE_ALLOWED_HOSTNAMES` staging vào production → mọi góp ý production 403. *(Lịch sử: trước commit `fdcab26` — allowlist hostname — lỗi này tắt hẳn Turnstile trên production.)* Quên khi đặt token bot staging sẽ thay bot production.
+
+`pages secret list --env preview` chỉ hiện **tên**, không chứng minh giá trị không phải của production (Preview có thể đã có sẵn token bot / Brevo key production từ trước). Vì vậy trước deploy staging đầu tiên, **mọi** secret preview phải được đặt lại (hoặc xoá) một cách tường minh:
+
+- [ ] `pages secret list --project-name=hien-le-garden-v4 --env preview` → ghi lại danh sách tên hiện có.
+- [ ] Với mỗi tên trong bảng dưới: `pages secret put <NAME> --project-name=hien-le-garden-v4 --env preview` với giá trị staging, hoặc `pages secret delete <NAME> --project-name=hien-le-garden-v4 --env preview` nếu staging không dùng (bắt buộc xoá `BREVO_API_KEY` nếu có).
+- [ ] Tên nào có trong danh sách cũ mà không có trong bảng → xoá bằng `--env preview`.
+- [ ] Mọi lệnh trên đều có `--env preview` (đọc lại lịch sử lệnh trước khi Enter).
+- [ ] Kiểm tra production không bị đổi: `curl -s https://hienlegarden.vn/api/public-config` **không** trả site key test `1x…` / `2x…` / `3x…` (lệnh chỉ đọc, chạy sau khi đặt secret; secret chỉ có hiệu lực ở deploy kế tiếp, nên kiểm tra lại sau deploy production kế tiếp).
+
+| Biến | Preview/staging | Ghi chú |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | Token của **bot staging riêng** (tạo bằng @BotFather) | Không bao giờ dùng token bot production |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret riêng cho staging | `setWebhook` của bot staging với `url=https://staging.hien-le-garden-v4.pages.dev/api/telegram/webhook` (alias nhánh) + `secret_token` này |
+| `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | Chỉ chat staging (nhóm test) | Không allowlist nhóm khách sạn. Nơi nhận thông báo booking đọc từ bảng `notification_settings` của **DB staging** (`functions/api/bookings/index.js`) nên không chạm nhóm production |
+| `BREVO_API_KEY` | **Không đặt** (khuyến nghị) | Xem Brevo bên dưới |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Widget staging riêng (hostname duy nhất `staging.hien-le-garden-v4.pages.dev`) | Xem Turnstile bên dưới; key test Cloudflare **không** dùng ở preview (trả `example.com` → 403 với allowlist staging) |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | `staging.hien-le-garden-v4.pages.dev` (chỉ giá trị này) | Thiếu/sai → mọi góp ý 403 |
+
+### Telegram
+- Bot staging + chat staging riêng; webhook staging trỏ URL alias preview; **không bao giờ** thêm bot staging vào nhóm production, không `setWebhook` bot production sang URL preview.
+
+### Brevo (đã kiểm tra `lib/email.js`)
+- Từ commit `b299280`: khi `BREVO_API_KEY` không đặt/rỗng, `sendPromoEmail` log `Brevo send skipped: BREVO_API_KEY not configured`, trả `false` và **không gọi Brevo** (không có request nào ra ngoài). Có key: gọi `https://api.brevo.com/v3/smtp/email`; lỗi HTTP log `Brevo send failed <status>`, exception trả `false`. Test endpoint `test/feedbackEndpoint.test.js` ("BREVO_API_KEY unset …") khẳng định: 201 + voucher, `message_log` `email`/`failed`, 0 request tới Brevo.
+- *(Lịch sử, trước `b299280`: hàm luôn gọi Brevo với header `'api-key': "undefined"` → Brevo từ chối xác thực.)*
+- Ở `functions/api/feedback.js`, voucher đã được INSERT **trước** khi gửi email ("the voucher already exists; a Brevo failure is logged, not fatal"), rồi ghi `message_log` với `status='failed'`. `functions/api/customers/[id]/send.js` cũng gọi Brevo và ghi `'failed'`. (`functions/api/telegram/webhook.js` **không** gọi Brevo — `'failed'` ở đó là của kênh Telegram.)
+- Vậy bỏ trống `BREVO_API_KEY` ở staging: gửi thất bại an toàn, voucher vẫn tạo, `message_log` = `failed`, không có request nào ra Brevo và không có email nào được gửi. Không giả định Brevo có sandbox. Nếu cần test email thật: dùng một API key riêng và chỉ gửi tới hộp thư test do mình kiểm soát.
+
+### Turnstile
+- Cloudflare test keys (developers.cloudflare.com/turnstile/troubleshooting/testing/), dùng được trên mọi domain kể cả `localhost`:
+  - Site key `1x00000000000000000000AA` (luôn pass, widget hiện), `2x00000000000000000000AB` (luôn fail).
+  - Secret `1x0000000000000000000000000000000AA` (luôn pass), `2x0000000000000000000000000000000AA` (luôn fail), `3x0000000000000000000000000000000AA` ("token already spent").
+  - "Production secret keys will reject the dummy token." → dùng cặp test cho test tự động (always-pass / always-fail); **không** dùng trong production hay preview.
+  - Với key test, siteverify trả `hostname: "example.com"` (quan sát 2026-09-28). Vì vậy **chỉ local**: `.dev.vars` đặt key test **và** `TURNSTILE_ALLOWED_HOSTNAMES=example.com`, nếu không mọi góp ý local 403. Không bao giờ đặt `example.com` cho Production/Preview.
+- `lib/turnstile.js` (từ `fdcab26`, siết lại ở L-1/L-2) kiểm `hostname` của siteverify: phải là ASCII `[A-Za-z0-9.-]`, rồi so khớp **chính xác** (không phân biệt hoa thường, bỏ một dấu chấm cuối) với `TURNSTILE_ALLOWED_HOSTNAMES`. Allowlist thiếu/rỗng/có bất kỳ mục sai (mục rỗng, dấu phẩy cuối, một nhãn, `pages.dev`, `workers.dev`, `localhost`, `trycloudflare.com`, IP, scheme/port/path/wildcard) → 403 cho mọi request, không gọi siteverify.
+- Staging (widget thật): widget `hien-le-garden-staging` chỉ có **một** hostname `staging.hien-le-garden-v4.pages.dev`; allowlist staging chỉ gồm đúng hostname đó. URL riêng mỗi deploy `<hash>.hien-le-garden-v4.pages.dev` **không** được hỗ trợ (widget không render, allowlist từ chối) — test qua alias `staging.`. *(Lịch sử: thiết kế gốc đề xuất widget với hostname `hien-le-garden-v4.pages.dev` phủ mọi subdomain; đã thay bằng hostname duy nhất ở trên.)*
+- **Không bao giờ** thêm hostname preview/`*.pages.dev`/`localhost` vào **widget production**, kể cả tạm thời. Widget production chỉ có `hienlegarden.vn`; allowlist production chỉ `hienlegarden.vn` (PENDING — chưa đặt). Không thêm `www.hienlegarden.vn` hay `hien-le-garden-v4.pages.dev` (cả hai 301 về apex — kiểm chỉ đọc 2026-09-28). Allowlist exact-match chặn token lấy từ host khác, nhưng widget production vẫn phải giữ hẹp (phòng thủ nhiều lớp). *(Lịch sử: trước `fdcab26`, `lib/turnstile.js` không kiểm `hostname`, nên thêm `localhost` vào widget production khi đó = ai cũng lấy được token hợp lệ cho production.)*
+
+## 5. Guard chống cấu hình nhầm — cổng BẮT BUỘC trước mọi test staging
+
+`scripts/check-staging-bindings.mjs` (`npm run check:staging`). Chỉ đọc `wrangler.toml`, không gọi mạng. Đọc cấu hình bằng chính loader của wrangler (`experimental_readRawConfig` để biết có bảng `[env.preview]` thật hay không; `unstable_readConfig` không env và với `env: "preview"` để lấy binding production và binding mà preview deployment sẽ nhận) — không grep/regex trên TOML, nên dòng comment `# [env.preview]`, chuỗi nháy đơn `'...'` hay inline table đều được hiểu đúng như wrangler hiểu.
+- Guard đọc **đúng file cấu hình mà wrangler sẽ đọc**: wrangler tìm `wrangler.json` → `wrangler.jsonc` → `wrangler.toml` ở thư mục hiện tại và mọi thư mục cha, và lệnh pages còn đi theo redirect `.wrangler/deploy/config.json` (cli.js `findWranglerConfig` ~84277, `findRedirectedWranglerConfig` ~84285). Nếu có bất kỳ file nào trong số đó (thư mục của `wrangler.toml` hoặc thư mục cha), wrangler sẽ dùng file khác → guard **FAIL (exit 1)**.
+- Id/tên DB/tên bucket được so sánh sau `trim().toLowerCase()` (id production viết HOA hay có khoảng trắng vẫn bị bắt).
+
+Dòng cuối output luôn là `REASON: <mã>` (mã máy đọc được):
+
+| Exit | `REASON` | Ý nghĩa | Hành động |
+|---|---|---|---|
+| 0 | `PASS` | Preview tách biệt: mọi binding D1/R2 của production (`DB`, `RECEIPTS`) có trong preview, không `database_id`/`database_name`/`bucket_name` nào của preview trùng production | Được test staging |
+| 1 | `MISMATCH` | Preview trùng production hoặc thiếu binding `DB`/`RECEIPTS` | **Dừng.** Sửa cấu hình |
+| 1 | `SHADOW` | Có `wrangler.json`/`wrangler.jsonc`/`.wrangler/deploy/config.json` che `wrangler.toml` | **Dừng.** |
+| 1 | `MALFORMED` | TOML không parse được (ví dụ `[env.preview]` khai báo hai lần) | **Dừng.** |
+| 1 | `INVALID` | TOML parse được nhưng wrangler từ chối (ví dụ tên bucket có chữ HOA) | **Dừng.** |
+| 2 | `NOT_CONFIGURED` | Không có `[env.preview]` → "preview uses PRODUCTION bindings" | **Dừng.** Không deploy/test preview |
+
+```bash
+node scripts/check-staging-bindings.mjs              # từ 368d65a: exit 0, REASON: PASS (staging D1/R2)
+node scripts/check-staging-bindings.mjs --self-test  # 19 ca trên fixture production nhúng sẵn (không đọc wrangler.toml thật)
+```
+
+Self-test (sửa H-1, 2026-09-28): mỗi ca = cấu hình production cố định nhúng trong script + khối riêng của ca, ghi vào thư mục tạm; mỗi ca khẳng định **mã REASON** (và lỗi cụ thể với `MISMATCH`), nên lỗi parse không bao giờ "đạt" thay cho ca MISMATCH/NOT_CONFIGURED/SHADOW. Ca: không có `[env.preview]`, `# [env.preview]` bị comment, preview hợp lệ, id production nháy đơn / HOA / có khoảng trắng / chuỗi nhiều dòng / inline table, trùng `database_name`, bucket trùng (nháy đơn, nhiều dòng), bucket chữ HOA (`INVALID`), thiếu `RECEIPTS`/`DB`, `[env.preview]` rỗng, `wrangler.json`/`wrangler.jsonc`/redirect `.wrangler/deploy`, một ca `MALFORMED` tường minh; cộng kiểm tra mọi fixture không-MALFORMED đều parse được. *(Lịch sử: bản cũ nối thêm vào `wrangler.toml` thật; sau `368d65a` nó exit 1 vì trùng `[env.preview]`.)*
+
+CI (`test.yml`): self-test và bước chạy thật trên `wrangler.toml` đều **chặn** (từ commit `7972119`).
+
+Và sau mỗi lần deploy staging: output của `wrangler pages deploy` phải ghi môi trường **Preview** và alias `staging.hien-le-garden-v4.pages.dev`; trên dashboard, deployment đó hiện binding `DB` = `hien_le_garden_crm_staging`. Nếu thấy "Production" → dừng, không test.
+
+## 6. Quy trình staging đề xuất (sau khi duyệt và tạo tài nguyên)
+
+1. Thêm `[env.preview]` (PR riêng, review) — trong cùng PR, bỏ `continue-on-error` ở bước guard trong `test.yml`; guard §5 phải exit 0.
+2. Tạo D1/R2 staging, áp migrations staging (`--env preview`, §4), đặt lại **mọi** secret preview theo checklist §4.
+3. Deploy staging (artifact giống production): `npm run build && npm run check:dist && npx wrangler pages deploy dist --project-name=hien-le-garden-v4 --branch=staging`.
+4. Trước khi test: `node scripts/check-staging-bindings.mjs` → exit 0. Test: checklist Turnstile, booking + Telegram staging, góp ý (email `failed`), `node scripts/probe-private-urls.mjs https://staging.hien-le-garden-v4.pages.dev`.
+5. Không bao giờ chạy test có ghi dữ liệu trên `hienlegarden.vn` / `hien-le-garden-v4.pages.dev` ngoài smoke test production đã liệt kê trong runbook.

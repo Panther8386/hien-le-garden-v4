@@ -1,61 +1,127 @@
 // admin/nav-drawer.js
+// Menu items are gated by permission keys (GET /api/auth/me -> permissions).
+// This is UX only: every API re-checks the same key server-side.
+// `perm` is one key, an array meaning "any of these keys", or
+// `{ all: [...], any: [...] }` meaning every `all` key AND at least one
+// `any` key (either list may be omitted). Use `all` for permissions every
+// on-load API call on the page needs beyond the page's own any-of gate.
 const NAV_GROUPS = [
   {
     label: 'Tài sản & Kho',
     items: [
-      { page: 'asset-config.html', label: 'Danh mục & vị trí', icon: '🗂️', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'asset-source-data.html', label: 'Hồ sơ nguồn', icon: '📄', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'assets.html', label: 'Danh mục tài sản', icon: '🏷️', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'asset-inventory.html', label: 'Kiểm kê tài sản', icon: '📦', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'asset-inventory-stock.html', label: 'Kho', icon: '📦', roles: ['reception', 'manager', 'admin', 'observer'] },
+      { page: 'asset-config.html', label: 'Danh mục & vị trí', icon: '🗂️', perm: { all: ['assets.view', 'bookings.view'] } },
+      { page: 'asset-source-data.html', label: 'Hồ sơ nguồn', icon: '📄', perm: 'assets.view' },
+      { page: 'assets.html', label: 'Danh mục tài sản', icon: '🏷️', perm: 'assets.view' },
+      { page: 'asset-inventory.html', label: 'Kiểm kê tài sản', icon: '📦', perm: 'assets.view' },
+      { page: 'asset-inventory-stock.html', label: 'Kho', icon: '📦', perm: 'assets.view' },
     ],
   },
   {
     label: 'Vận hành',
     items: [
-      { page: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', roles: ['manager', 'admin'] },
-      { page: 'finance.html', label: 'Sổ thu chi', icon: '💵', roles: ['manager', 'admin', 'observer'] },
-      { page: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'dine-in-orders.html', label: 'Order ăn uống', icon: '🍽️', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'gio-xanh.html', label: 'Giờ Xanh Hiền Lê', icon: '🌿', roles: ['reception', 'manager', 'admin', 'observer'] },
+      { page: 'dashboard.html', label: 'Tổng quan số liệu', icon: '📊', perm: 'dashboard.view' },
+      { page: 'finance.html', label: 'Sổ thu chi', icon: '💵', perm: 'finance.view_income' },
+      { page: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', perm: 'bookings.view' },
+      { page: 'dine-in-orders.html', label: 'Order ăn uống', icon: '🍽️', perm: 'dine_in.view' },
+      { page: 'gio-xanh.html', label: 'Giờ Xanh Hiền Lê', icon: '🌿', perm: 'gio_xanh.view' },
     ],
   },
   {
     label: 'Khách hàng & CRM',
     items: [
-      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'templates.html', label: 'Kho template', icon: '✉️', roles: ['reception', 'manager', 'admin'] },
+      { page: 'customers.html', label: 'Danh sách khách hàng', icon: '👥', perm: 'customers.view' },
+      { page: 'templates.html', label: 'Kho template', icon: '✉️', perm: 'templates.view' },
     ],
   },
   {
     label: 'Cấu hình & Quản trị',
     items: [
-      { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', roles: ['reception', 'manager', 'admin'] },
-      { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'finance-categories.html', label: 'Danh mục Sổ thu chi', icon: '🏷️', roles: ['admin'] },
-      { page: 'dine-in-menu.html', label: 'Menu quán', icon: '📋', roles: ['admin'] },
-      { page: 'audit-log.html', label: 'Nhật ký thao tác', icon: '📜', roles: ['manager', 'admin'] },
-      { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', roles: ['reception', 'manager', 'admin', 'observer'] },
-      { page: 'users.html', label: 'Quản lý user', icon: '🔑', roles: ['manager', 'admin'] },
+      { page: 'manager.html', label: 'Cấu hình khuyến mãi', icon: '🎁', perm: 'promo_config.view' },
+      { page: 'catalog.html', label: 'Bảng giá dịch vụ', icon: '💰', perm: ['settings.view', 'settings.catalog'] },
+      { page: 'finance-categories.html', label: 'Danh mục Sổ thu chi', icon: '🏷️', perm: { all: ['settings.finance_categories', 'finance.view_income'] } },
+      { page: 'dine-in-menu.html', label: 'Menu quán', icon: '📋', perm: 'settings.dine_in_menu' },
+      { page: 'audit-log.html', label: 'Nhật ký thao tác', icon: '📜', perm: 'audit.view' },
+      { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', perm: ['settings.view', 'settings.cancellation_policy'] },
+      { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: { any: ['settings.view', 'settings.rooms'], all: ['bookings.view'] } },
+      { page: 'users.html', label: 'Phân quyền', icon: '🔑', perm: 'users.manage' },
     ],
   },
 ];
 
 const ROLE_URL_PREFIX = { admin: '/manager', manager: '/manager', reception: '/reception', observer: '/observer' };
 
+// Page file -> clean URL slug under /manager, /reception, /observer (see _redirects).
+const PAGE_SLUG = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'security.html': 'security', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
+const SLUG_PAGE = Object.fromEntries(Object.entries(PAGE_SLUG).map(([file, slug]) => [slug, file]));
+const CLEAN_URL_PREFIXES = ['manager', 'reception', 'observer'];
+
+// Pages every signed-in user may open, and detail pages not in the menu.
+const PAGE_ALWAYS_ALLOWED = ['change-password.html', 'security.html'];
+const PAGE_EXTRA_PERMS = {
+  'dine-in-order-detail.html': 'dine_in.view',
+  'gio-xanh-detail.html': 'gio_xanh.view',
+};
+
+// True when `permissions` satisfies `perm`: a key, an any-of array of keys,
+// or `{ all, any }` (every `all` key present AND at least one `any` key
+// present; either list may be omitted from the object form).
+function allows(permissions, perm) {
+  if (perm && typeof perm === 'object' && !Array.isArray(perm)) {
+    const allOk = !perm.all || perm.all.every((p) => permissions.includes(p));
+    const anyOk = !perm.any || perm.any.some((p) => permissions.includes(p));
+    return allOk && anyOk;
+  }
+  return Array.isArray(perm) ? perm.some((p) => permissions.includes(p)) : permissions.includes(perm);
+}
+
 function currentPageFile() {
   return window.location.pathname.split('/').pop();
 }
 
-function buildDrawer(role, username) {
-  const page = currentPageFile();
-  const prefix = ROLE_URL_PREFIX[role] || '/reception';
-  const pageSlug = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'security.html': 'security', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
-  function urlFor(pageFile) {
-    if (pageFile === 'reception.html') return prefix;
-    return `${prefix}/${pageSlug[pageFile]}`;
+// Resolves the physical admin/*.html file behind the current URL, for both
+// the raw form (/admin/users, /admin/users.html) and the clean role-prefixed
+// form (/manager, /manager/config, /observer/assets).
+function resolvePageFile() {
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  if (segments.length > 0 && CLEAN_URL_PREFIXES.includes(segments[0])) {
+    if (segments.length === 1) return 'reception.html';
+    return SLUG_PAGE[segments[1]] || `${segments[1].replace(/\.html$/, '')}.html`;
   }
+  const last = currentPageFile() || 'reception';
+  return last.endsWith('.html') ? last : `${last}.html`;
+}
+
+function urlFor(role, pageFile) {
+  const prefix = ROLE_URL_PREFIX[role] || '/reception';
+  if (pageFile === 'reception.html') return prefix;
+  return `${prefix}/${PAGE_SLUG[pageFile]}`;
+}
+
+function requiredPermForPage(pageFile) {
+  if (PAGE_ALWAYS_ALLOWED.includes(pageFile)) return null;
+  if (PAGE_EXTRA_PERMS[pageFile]) return PAGE_EXTRA_PERMS[pageFile];
+  for (const group of NAV_GROUPS) {
+    const item = group.items.find((i) => i.page === pageFile);
+    if (item) return item.perm;
+  }
+  return null;
+}
+
+// Sends the user to the first page they may see when they lack the current
+// page's permission. "Vận hành hôm nay" comes first when allowed, then menu order.
+function guardPage(role, permissions) {
+  const needed = requiredPermForPage(resolvePageFile());
+  if (!needed || allows(permissions, needed)) return true;
+  const items = NAV_GROUPS.flatMap((g) => g.items);
+  const home = items.find((i) => i.page === 'reception.html');
+  const first = [home, ...items].find((i) => i && allows(permissions, i.perm));
+  document.documentElement.style.visibility = 'hidden';
+  window.location.replace(first ? urlFor(role, first.page) : urlFor(role, 'change-password.html'));
+  return false;
+}
+
+function buildDrawer(role, username, permissions) {
+  const page = resolvePageFile();
 
   const topbar = document.createElement('div');
   topbar.className = 'nav-topbar';
@@ -90,7 +156,7 @@ function buildDrawer(role, username) {
   const drawerBody = document.createElement('div');
   drawerBody.className = 'nav-drawer-body';
   NAV_GROUPS.forEach((group) => {
-    const visibleItems = group.items.filter((item) => item.roles.includes(role));
+    const visibleItems = group.items.filter((item) => allows(permissions, item.perm));
     if (visibleItems.length === 0) return;
 
     const groupEl = document.createElement('div');
@@ -102,7 +168,7 @@ function buildDrawer(role, username) {
 
     visibleItems.forEach((item) => {
       const a = document.createElement('a');
-      a.href = urlFor(item.page);
+      a.href = urlFor(role, item.page);
       a.className = 'nav-drawer-item' + (item.page.replace(/\.html$/, '') === page.replace(/\.html$/, '') ? ' active' : '');
       a.textContent = `${item.icon} ${item.label}`;
       groupEl.appendChild(a);
@@ -124,11 +190,11 @@ function buildDrawer(role, username) {
   homeLink.rel = 'noopener';
   homeLink.textContent = '🏠 Trang chủ';
   const changePasswordLink = document.createElement('a');
-  changePasswordLink.href = urlFor('change-password.html');
+  changePasswordLink.href = urlFor(role, 'change-password.html');
   changePasswordLink.textContent = 'Đổi mật khẩu';
   if (page === 'change-password.html') changePasswordLink.className = 'active';
   const securityLink = document.createElement('a');
-  securityLink.href = urlFor('security.html');
+  securityLink.href = urlFor(role, 'security.html');
   securityLink.textContent = 'Bảo mật tài khoản (2FA)';
   if (page === 'security.html') securityLink.className = 'active';
   const logoutLink = document.createElement('a');
@@ -188,6 +254,7 @@ if ('serviceWorker' in navigator) {
     return;
   }
   if (!res.ok) return;
-  const { role, username } = await res.json();
-  buildDrawer(role, username);
+  const { role, username, permissions = [] } = await res.json();
+  if (!guardPage(role, permissions)) return;
+  buildDrawer(role, username, permissions);
 })();

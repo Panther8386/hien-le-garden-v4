@@ -1,15 +1,15 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
+import { hasPermission } from '../../../lib/permissions.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestPatch({ request, env }) {
-  const auth = await requireAuth(request, env, null);
+  const auth = await requireAuth(request, env, 'rooms.layout');
   if (auth instanceof Response) return auth;
-  if (!auth.canManageRoomLayout || auth.role === 'observer') {
-    return jsonError('Tài khoản không có quyền sắp xếp phòng', 403);
-  }
+  // The room map is only visible with bookings.view; reordering it requires the same.
+  if (!hasPermission(auth, 'bookings.view')) return jsonError('Không đủ quyền', 403);
 
   let body;
   try {

@@ -1,5 +1,6 @@
 // crm/public/admin/manager.js
-let currentRole = null;
+let currentPermissions = [];
+function can(key) { return currentPermissions.includes(key); }
 
 function policyStatus(p) {
   const today = new Date().toISOString().slice(0, 10);
@@ -50,7 +51,7 @@ async function loadPolicies() {
     tr.appendChild(tdGift);
     tr.appendChild(tdStatus);
 
-    if (currentRole === 'manager') {
+    if (can('promo_config.manage')) {
       const tdDelete = document.createElement('td');
       const deleteBtn = document.createElement('button');
       deleteBtn.textContent = 'Xoá';
@@ -209,10 +210,10 @@ document.getElementById('reminderSettingsForm').addEventListener('submit', async
     window.location.href = '/admin';
     return;
   }
-  const { role } = await res.json();
-  currentRole = role;
+  const me = await res.json();
+  currentPermissions = me.permissions || [];
 
-  if (currentRole === 'manager') {
+  if (can('promo_config.manage')) {
     document.getElementById('policyForm').classList.remove('hidden');
     document.getElementById('policyDeleteHeader').classList.remove('hidden');
     document.getElementById('giftInventorySection').classList.remove('hidden');
@@ -220,7 +221,7 @@ document.getElementById('reminderSettingsForm').addEventListener('submit', async
     loadNotifySettings();
   }
 
-  if (currentRole === 'admin') {
+  if (can('settings.reminders')) {
     document.getElementById('reminderSettingsSection').classList.remove('hidden');
     loadReminderSettings();
   }
