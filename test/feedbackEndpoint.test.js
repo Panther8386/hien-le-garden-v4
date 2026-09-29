@@ -221,7 +221,12 @@ describe('POST /api/feedback — Turnstile bot protection', () => {
     expect(form.get('secret') === TEST_SECRET).toBe(true);
     expect(form.get('response') === TEST_TOKEN).toBe(true);
     expect(form.get('remoteip')).toBe('203.0.113.7');
-    expect(callsTo(fetchMock, BREVO_URL)).toHaveLength(1);
+    const brevoCalls = callsTo(fetchMock, BREVO_URL);
+    expect(brevoCalls).toHaveLength(1);
+    // Call chain feedback → sendPromoEmail → Brevo payload uses the verified sender.
+    const brevoBody = JSON.parse(brevoCalls[0][1].body);
+    expect(brevoBody.sender).toEqual({ name: 'Hiền Lê Garden', email: 'hello@hienlegarden.vn' });
+    expect(brevoCalls[0][1].body.includes('khuyenmai@hienlegarden.vn')).toBe(false);
   });
 
   it('missing token → 403, no row, no Brevo, siteverify not called', async () => {

@@ -24,6 +24,9 @@ describe('sendPromoEmail', () => {
     expect(body.to).toEqual([{ email: 'khach@example.com', name: 'Nguyễn Văn A' }]);
     expect(body.subject).toBe('Mã ưu đãi');
     expect(body.htmlContent).toBe('<p>xin chào</p>');
+    expect(body.sender).toEqual({ name: 'Hiền Lê Garden', email: 'hello@hienlegarden.vn' });
+    // Regression: the unverified pre-release sender must never reach Brevo.
+    expect(options.body.includes('khuyenmai@hienlegarden.vn')).toBe(false);
   });
 
   it('returns false and does not throw when the Brevo API call fails', async () => {

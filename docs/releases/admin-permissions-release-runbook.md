@@ -384,7 +384,7 @@ Trạng thái đọc ngày 2026-09-28 (chỉ tên, `pages secret list --env prod
 
 | Variable | Hiện trạng production | Giá trị / nguồn cần đặt | Kiểm tra sau khi đặt |
 |---|---|---|---|
-| `BREVO_API_KEY` | **THIẾU** | API key Brevo production (tài khoản gửi `khuyenmai@hienlegarden.vn`), từ trình quản lý mật khẩu | `pages secret list` có tên; sau deploy: 1 góp ý test có email → `message_log.status = 'success'` |
+| `BREVO_API_KEY` | **THIẾU** | API key Brevo production, từ trình quản lý mật khẩu. Sender cố định trong code (hằng `EMAIL_SENDER`, `lib/email.js`): **Hiền Lê Garden <hello@hienlegarden.vn>**; domain `hienlegarden.vn` đã xác thực trên Brevo (DKIM pass, DMARC đã cấu hình). *(Lịch sử: trước 2026-09-29 cả code lẫn tài liệu dùng sender `khuyenmai@…` — không phải sender đã xác thực trên Brevo.)* | `pages secret list` có tên; sau deploy: 1 góp ý test có email → `message_log.status = 'success'` |
 | `TELEGRAM_BOT_TOKEN` | **CÓ** (secret) | Giữ nguyên — không đặt lại trừ khi thay bot | `getMe` bằng token (ngoài repo) trả đúng bot; booking test → tin nhắn tới nhóm lễ tân |
 | `TELEGRAM_WEBHOOK_SECRET` | **THIẾU** | Chuỗi ngẫu nhiên mới 32–64 ký tự `A-Za-z0-9_-`, dùng đúng giá trị đó cho `setWebhook secret_token` (§9) | `getWebhookInfo`: không có `last_error_message` 401 mới sau §9 |
 | `TELEGRAM_BOOKING_NOTIFY_ALLOWED_CHAT_IDS` | **THIẾU** | Chat id nhóm lễ tân production (phân tách dấu phẩy) | `/start staff_booking_notify` từ nhóm đó được chấp nhận; từ chat khác bị bỏ qua |
@@ -673,7 +673,7 @@ Lưu ý: booking test có thể được tính vào báo cáo (doanh thu 0 nếu
 | # | Kiểm tra | Mong đợi | PASS/FAIL |
 |---|---|---|---|
 | F1 | Mục 1–2, 6–7 của checklist §10 trên production | Như §10 | |
-| F2 | Gửi góp ý bằng SĐT/email nội bộ khách sạn, chọn Telegram | 201, mã voucher; email đến; deep link Telegram gửi mã (§9h) | |
+| F2 | Gửi góp ý bằng SĐT/email nội bộ khách sạn, chọn Telegram | 201, mã voucher; email đến, người gửi hiển thị **Hiền Lê Garden <hello@hienlegarden.vn>** (header From), `message_log.status = 'success'`; deep link Telegram gửi mã (§9h) | |
 | F3 | Gửi lại cùng SĐT | 409, không mã mới | |
 
 Dọn: không xoá bằng SQL. Ghi id feedback test vào biên bản; voucher tự hết hạn theo chính sách. Nếu cần vô hiệu ngay → quyết định riêng (không có trong runbook).
