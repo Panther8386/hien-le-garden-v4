@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "artifact_type": "TaskSpec",
+  "spec_id": "SPEC-AI-001",
+  "title": "Example: add contract validator CLI",
+  "objective": "Illustrative TaskSpec machine block. Adds a command-line validator for V1 contract artifacts without changing application runtime code.",
+  "scope": {
+    "allowed_paths": [
+      "scripts/ai/",
+      "test/ai/",
+      "docs/ai/contracts/README.md"
+    ],
+    "forbidden_paths": [
+      ".github/",
+      "migrations/",
+      "package.json",
+      "package-lock.json"
+    ]
+  },
+  "requirements": [
+    { "id": "R-01", "text": "Reject artifacts whose artifact_type or schema_version is not supported." },
+    { "id": "R-02", "text": "Never print artifact contents in error output." }
+  ],
+  "acceptance_criteria": [
+    { "id": "AC-01", "text": "Each committed example validates; each documented invalid case is rejected." }
+  ],
+  "constraints": [
+    { "id": "C-01", "category": "security", "text": "No network access and no dynamic import from artifact data." },
+    { "id": "C-02", "category": "privacy", "text": "Fixtures contain no customer data." }
+  ],
+  "deterministic_checks": [
+    "build",
+    "check_dist",
+    "contract_tests"
+  ],
+  "semantic_evals": [],
+  "declared_changes": {
+    "package": false,
+    "migration": false,
+    "production_config": false
+  },
+  "human_gates": [],
+  "max_iterations": 3
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "artifact_type": "EvalReport",
+  "spec_id": "SPEC-AI-001",
+  "run_id": "RUN-gh-1000000001-1",
+  "created_at": "2026-10-01T13:00:00Z",
+  "producer": { "kind": "ci", "name": "hlg-eval-engine" },
+  "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deterministic": [
+    {
+      "check_id": "build",
+      "result": "PASS",
+      "evidence": [
+        {
+          "kind": "ci_check",
+          "provider": "github_actions",
+          "check_name": "Release artifact boundary (R-1)",
+          "workflow_run_id": "1000000001",
+          "run_attempt": 1,
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "check_id": "contract_tests",
+      "result": "PASS",
+      "evidence": [
+        {
+          "kind": "test",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "file": "test/ai/contract-validator.node-test.mjs",
+          "name": "rejects unsupported schema_version"
+        }
+      ]
+    }
+  ],
+  "semantic_ai": []
+}

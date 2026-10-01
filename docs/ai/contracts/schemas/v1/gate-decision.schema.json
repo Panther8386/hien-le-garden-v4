@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hlg:ai-contract:v1:gate-decision",
+  "title": "GateDecision (V1)",
+  "description": "Structure of a decision emitted by the deterministic aggregator. A schema-valid document (including one saying PASS) is NOT an authoritative decision; consumers recompute it from its inputs. PASS never merges or deploys (ADR-AI-005).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "spec_id",
+    "run_id",
+    "created_at",
+    "producer",
+    "source_commit",
+    "base_commit",
+    "policy_version",
+    "decision",
+    "reasons",
+    "inputs",
+    "required_checks",
+    "findings",
+    "approvals"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "artifact_type": { "const": "GateDecision" },
+    "spec_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/SpecId" },
+    "run_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RunId" },
+    "created_at": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Timestamp" },
+    "producer": {
+      "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Producer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "kind": { "const": "aggregator" }, "name": true }
+    },
+    "source_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "base_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "policy_version": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "decision": { "enum": ["ERROR", "FAIL", "BLOCKED", "WAITING_HUMAN", "PASS"] },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "detail"],
+        "properties": {
+          "code": {
+            "enum": [
+              "INVALID_INPUT",
+              "UNSUPPORTED_VERSION",
+              "MISSING_REPORT",
+              "MISSING_CHECK",
+              "STALE_SHA",
+              "MIXED_SHA",
+              "CONFLICTING_INPUT",
+              "INCOMPLETE_REPORT",
+              "UNVERIFIABLE_APPROVAL",
+              "CHECK_FAILED",
+              "SCOPE_VIOLATION",
+              "SPEC_TAMPERED",
+              "BLOCKING_FINDING",
+              "EVAL_BELOW_THRESHOLD",
+              "HUMAN_REJECTED",
+              "APPROVAL_PENDING",
+              "PREVIOUS_BLOCKING_UNACKNOWLEDGED",
+              "ALL_REQUIREMENTS_MET"
+            ]
+          },
+          "detail": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact_type", "run_id", "sha256"],
+        "properties": {
+          "artifact_type": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/ArtifactType" },
+          "run_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RunId" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "required_checks": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "result"],
+        "properties": {
+          "check_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/CheckId" },
+          "result": { "enum": ["PASS", "FAIL", "ERROR", "SKIPPED", "MISSING"] }
+        }
+      }
+    },
+    "findings": {
+      "description": "Gate impact of review findings, derived by the aggregator's deterministic policy.",
+      "type": "array",
+      "maxItems": 600,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["report_type", "finding_id", "gate_impact"],
+        "properties": {
+          "report_type": { "enum": ["CodeReviewReport", "SecurityReviewReport", "SEOReviewReport"] },
+          "finding_id": { "type": "string", "maxLength": 5, "pattern": "^F-[0-9]{3}$" },
+          "gate_impact": { "enum": ["informational", "non_blocking", "blocking"] }
+        }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approval", "status"],
+        "properties": {
+          "approval": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/ApprovalRef" },
+          "status": { "enum": ["verified", "rejected", "pending", "missing"] }
+        }
+      }
+    }
+  }
+}

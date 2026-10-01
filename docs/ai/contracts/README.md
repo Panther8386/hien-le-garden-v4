@@ -5,9 +5,16 @@ Architecture of the machine-readable contract layer. Decisions:
 [ADR-AI-005](../adr/ADR-AI-005-deterministic-sha-bound-gates.md) (gates, evidence, SHA),
 [ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval).
 
-**Status: design only.** No JSON Schema file, validator, fixture or contract test exists yet.
-Ajv is the approved target validator but is not installed (package addition requires a
-separate owner-approved phase).
+**Status (A3.3a):**
+
+- **Exists:** V1 JSON Schemas ([schemas/v1/](schemas/v1/): one common schema and seven
+  contract schemas), one valid example per contract ([examples/v1/](examples/v1/)), the trusted
+  schema loader (`scripts/ai/contract-schemas.mjs`, Ajv 8.20.0 strict mode, local files only)
+  and schema tests (`node --test "test/ai/*.node-test.mjs"`). These tests are not yet run by CI.
+- **Not implemented yet:** parsing of untrusted artifact bytes, the validator API and CLI;
+  SHA, evidence and approval verification; GateDecision aggregation; GitHub integration.
+- Schema validity is structural only: a schema-valid GateDecision (even one saying PASS) is not
+  an authoritative decision, and a schema-valid EvidenceRef or ApprovalRef is not verified.
 
 ## Purpose
 
@@ -95,13 +102,15 @@ approvals. PASS is eligibility for human action only.
 Review Bot runtime output (customer-feedback analysis) uses separate application schemas in a
 different trust domain. Only conventions are shared with engineering contracts.
 
-## Implementation slices (planned, not started)
+## Implementation slices
 
-| Slice | Content | Prerequisite |
+| Slice | Content | Prerequisite / status |
 |---|---|---|
-| A3.1 | ADRs and this documentation | — |
-| A3.2 | Add Ajv as an exact-pinned devDependency (isolated commit) | Owner package approval |
-| A3.3 | Common + seven schemas, schema tests, one CI step | Owner workflow approval |
+| A3.1 | ADRs and this documentation | Done |
+| A3.2 | Add Ajv as an exact-pinned devDependency (isolated commit) | Done (ajv 8.20.0) |
+| A3.3a | Common + seven schemas, examples, trusted loader, schema tests | Done |
+| A3.3b | Untrusted-input parsing, validator API and CLI | Not started |
+| — | CI step running the contract tests | Owner workflow approval; not started |
 | A3.4 | Business-rule and security/policy validation; TaskSpec block extraction | — |
 | A3.5 | SHA, evidence and ApprovalRef verification | — |
 | A3.6 | Deterministic gate aggregator and policy table | — |
