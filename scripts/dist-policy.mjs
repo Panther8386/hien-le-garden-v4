@@ -47,6 +47,7 @@ export const PRIVATE_ENTRIES = new Set([
   'docs',
   '.github',
   'BACKEND.md',
+  'CLAUDE.md',
   'wrangler.toml',
   'package.json',
   'package-lock.json',
