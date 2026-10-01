@@ -34,6 +34,7 @@ For bounded project/release decisions use [decisions/](../decisions/README.md) i
 | [ADR-AI-001](ADR-AI-001-github-system-of-record.md) | GitHub and tracked repository artifacts are the system of record | Accepted |
 | [ADR-AI-002](ADR-AI-002-deterministic-gates-outrank-ai.md) | Deterministic gates outrank AI judgments | Accepted |
 | [ADR-AI-003](ADR-AI-003-human-production-authority.md) | Human authority is required for production | Accepted |
-| [ADR-AI-004](ADR-AI-004-machine-readable-engineering-contracts.md) | Machine-readable engineering contracts | Accepted |
+| [ADR-AI-004](ADR-AI-004-machine-readable-engineering-contracts.md) | Machine-readable engineering contracts | Accepted (parse layer superseded by ADR-AI-007) |
 | [ADR-AI-005](ADR-AI-005-deterministic-sha-bound-gates.md) | Deterministic, SHA-bound gate decisions | Accepted |
 | [ADR-AI-006](ADR-AI-006-human-approval-evidence.md) | Human approval evidence | Accepted |
+| [ADR-AI-007](ADR-AI-007-contract-input-parsing.md) | Contract input parsing | Accepted |

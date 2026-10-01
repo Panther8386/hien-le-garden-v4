@@ -1,6 +1,7 @@
 # ADR-AI-004: Machine-readable engineering contracts
 
-- Status: Accepted
+- Status: Accepted. Parse-layer rules (byte cap, canonical bytes, duplicate and reserved keys)
+  superseded by [ADR-AI-007](ADR-AI-007-contract-input-parsing.md); the text below is unchanged history.
 - Date: 2026-10-01
 - Deciders: Vĩnh (owner)
 

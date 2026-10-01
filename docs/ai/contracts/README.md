@@ -41,7 +41,7 @@ JSON parse → schema → business rules → security/policy → SHA/evidence �
 
 | Layer | Checks |
 |---|---|
-| Parse | Byte cap before parsing; canonical bytes (rejects duplicate keys); reserved keys rejected |
+| Parse | 2 MiB byte cap before decoding; UTF-8 only (no BOM, no NUL, fatal decoding); duplicate keys explicitly rejected; no canonical-byte requirement; unexpected or reserved property names rejected by the closed schemas ([ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md)) |
 | Schema | `artifact_type`, `schema_version` (integer `1`), required fields, unknown fields rejected, closed enums, 40-hex SHAs, path grammar, bounded strings/arrays |
 | Business rules | Cross-field and cross-artifact consistency (IDs unique, references exist, changed files within scope) |
 | Security/policy | Secret-like and PII-like values, always-forbidden paths, evidence host allowlist, prose not accepted as deterministic evidence |
