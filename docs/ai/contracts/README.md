@@ -3,16 +3,21 @@
 Architecture of the machine-readable contract layer. Decisions:
 [ADR-AI-004](../adr/ADR-AI-004-machine-readable-engineering-contracts.md) (contracts, validation),
 [ADR-AI-005](../adr/ADR-AI-005-deterministic-sha-bound-gates.md) (gates, evidence, SHA),
-[ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval).
+[ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval),
+[ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md) (input parsing).
 
-**Status (A3.3a):**
+**Status (A3.3b):**
 
 - **Exists:** V1 JSON Schemas ([schemas/v1/](schemas/v1/): one common schema and seven
   contract schemas), one valid example per contract ([examples/v1/](examples/v1/)), the trusted
-  schema loader (`scripts/ai/contract-schemas.mjs`, Ajv 8.20.0 strict mode, local files only)
-  and schema tests (`node --test "test/ai/*.node-test.mjs"`). These tests are not yet run by CI.
-- **Not implemented yet:** parsing of untrusted artifact bytes, the validator API and CLI;
-  SHA, evidence and approval verification; GateDecision aggregation; GitHub integration.
+  schema loader (`scripts/ai/contract-schemas.mjs`, Ajv 8.20.0 strict mode, local files only),
+  and the parser/validator and CLI (`scripts/ai/validate-contract.mjs`):
+  `node scripts/ai/validate-contract.mjs <file>` (exit 0 valid, 1 invalid, 2 usage/I/O,
+  3 internal). Input rules per ADR-AI-007: 2 MiB byte cap, UTF-8 only, duplicate keys
+  rejected, no canonical-byte requirement.
+- **Tests:** `node --test "test/ai/*.node-test.mjs"`. **CI does not run these tests yet.**
+- **Not implemented yet:** TaskSpec Markdown block extraction; SHA freshness; evidence trust;
+  approval verification; deterministic GateDecision aggregation; GitHub integration.
 - Schema validity is structural only: a schema-valid GateDecision (even one saying PASS) is not
   an authoritative decision, and a schema-valid EvidenceRef or ApprovalRef is not verified.
 
@@ -109,7 +114,7 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.1 | ADRs and this documentation | Done |
 | A3.2 | Add Ajv as an exact-pinned devDependency (isolated commit) | Done (ajv 8.20.0) |
 | A3.3a | Common + seven schemas, examples, trusted loader, schema tests | Done |
-| A3.3b | Untrusted-input parsing, validator API and CLI | Not started |
+| A3.3b | Untrusted-input parsing, validator API and CLI (ADR-AI-007) | Done |
 | — | CI step running the contract tests | Owner workflow approval; not started |
 | A3.4 | Business-rule and security/policy validation; TaskSpec block extraction | — |
 | A3.5 | SHA, evidence and ApprovalRef verification | — |
