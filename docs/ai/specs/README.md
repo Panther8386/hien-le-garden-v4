@@ -53,8 +53,38 @@ validator (`validateContractBytes`, [ADR-AI-007](../adr/ADR-AI-007-contract-inpu
   whitespace-only payload is returned and rejected later by JSON parsing.
 - **Byte rules for the whole Markdown file** (as ADR-AI-007): at most 2,097,152 bytes, no UTF-8
   BOM, no NUL byte, valid UTF-8. **Payload limit:** at most 1,048,576 bytes.
-- Passing extraction says nothing about schema validity, approval or SHA freshness. Business
-  and security/policy validation of TaskSpecs are not implemented yet.
+- Passing extraction says nothing about schema validity, approval or SHA freshness.
+  Security/policy validation of TaskSpecs is not implemented yet.
+
+## Business and path validation (V1)
+
+Implemented by `scripts/ai/taskspec-business.mjs` (`validateTaskSpecBusiness`) on a TaskSpec
+that has already passed schema validation. It is deterministic and lexical: no filesystem, Git
+or network access. Errors carry only a rule ID and a JSON pointer, never values.
+
+- **`BR-FILENAME`:** the caller-supplied file name is a **basename only** (no `/` or `\`) and
+  must be exactly `<spec_id>-<slug>.md`, case-sensitive, where `<spec_id>` is the TaskSpec's
+  `spec_id` (its grammar is owned by the schema), the slug matches
+  `^[a-z0-9]+(?:-[a-z0-9]+)*$` (1–64 characters) and the whole name is at most 100 characters.
+  This ties the file to its spec for traceability; it does not prove that a `spec_id` is unique
+  across the repository.
+- **`BR-ID-UNIQUE`:** IDs are unique within each collection (`requirements`,
+  `acceptance_criteria`, `constraints`, `semantic_evals`, `human_gates`), compared as exact
+  strings. Each repeat after the first is reported.
+- **Paths** are compared as exact, case-sensitive strings (Git semantics), without
+  normalization. A scope ending in `/` is a directory prefix (`foo/` covers `foo/` and anything
+  beneath it, but not `foo/barista/` from `foo/bar/`); otherwise it is an exact file. A file
+  `foo` and a directory `foo/` are different, non-overlapping scopes.
+- **`BR-SCOPE-CONFLICT`:** an allowed entry that is identical to, or inside, a forbidden entry
+  is rejected (it could never be used). A forbidden entry inside an allowed directory is valid
+  narrowing (deny wins at execution time); a forbidden entry that overlaps nothing is valid.
+- **`BR-PATH-CASE-AMBIGUOUS`:** two distinct declared paths are rejected when they would refer
+  to overlapping or same-named entries only on a case-insensitive filesystem (ASCII case folding
+  is used for this check only), e.g. `migrations/` with `Migrations/`, or allowed `Scripts/`
+  with forbidden `scripts/ai/`.
+- Passing business validation means only "passes deterministic TaskSpec business validation".
+  It is not approval, authorization, freshness, mergeability or deployability. Protected-scope,
+  human-gate, declared-change and secret policies are a later layer (not implemented).
 
 ## Approval binding
 
