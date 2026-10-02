@@ -65,6 +65,18 @@ jobs:
       - name: Staging binding guard on wrangler.toml (blocking)
         run: node scripts/check-staging-bindings.mjs
 
+      # Pure Node contract tooling (no workerd): schemas, validator and CLI tests.
+      # One file per node --test call with an explicit existence check: node --test
+      # silently skips a path that matches nothing when another path resolves.
+      # Add new files here.
+      - name: AI contract tests (node:test)
+        run: |
+          set -e
+          for f in test/ai/contract-schemas.node-test.mjs test/ai/contract-validator.node-test.mjs; do
+            test -f "$f"
+            node --test "$f"
+          done
+
       - name: Vitest isolated (excluding 3 R2 files)
         run: npx vitest run --exclude test/assetInventoryLines.test.js --exclude test/assetPhotos.test.js --exclude test/financeAttachments.test.js
 
