@@ -6,7 +6,7 @@ Architecture of the machine-readable contract layer. Decisions:
 [ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval),
 [ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md) (input parsing).
 
-**Status (A3.3b):**
+**Status (A3.4a):**
 
 - **Exists:** V1 JSON Schemas ([schemas/v1/](schemas/v1/): one common schema and seven
   contract schemas), one valid example per contract ([examples/v1/](examples/v1/)), the trusted
@@ -15,9 +15,15 @@ Architecture of the machine-readable contract layer. Decisions:
   `node scripts/ai/validate-contract.mjs <file>` (exit 0 valid, 1 invalid, 2 usage/I/O,
   3 internal). Input rules per ADR-AI-007: 2 MiB byte cap, UTF-8 only, duplicate keys
   rejected, no canonical-byte requirement.
-- **Tests:** `node --test "test/ai/*.node-test.mjs"`. **CI does not run these tests yet.**
-- **Not implemented yet:** TaskSpec Markdown block extraction; SHA freshness; evidence trust;
-  approval verification; deterministic GateDecision aggregation; GitHub integration.
+- **TaskSpec machine-block extraction** exists (`scripts/ai/extract-taskspec.mjs`, lexical
+  only; grammar in [specs/README.md](../specs/README.md)).
+- **Tests:** `test/ai/*.node-test.mjs`. PR CI (`.github/workflows/test.yml`, job `test`, step
+  "AI contract tests (node:test)") runs the two contract test files one per `node --test`
+  call with an existence check; verified on Linux in A3.3c. The TaskSpec extractor tests are
+  not yet in the CI step.
+- **Not implemented yet:** TaskSpec business validation; TaskSpec security/policy validation;
+  end-to-end TaskSpec validation; SHA freshness; evidence trust; approval verification;
+  deterministic GateDecision aggregation; GitHub integration.
 - Schema validity is structural only: a schema-valid GateDecision (even one saying PASS) is not
   an authoritative decision, and a schema-valid EvidenceRef or ApprovalRef is not verified.
 
@@ -115,8 +121,9 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.2 | Add Ajv as an exact-pinned devDependency (isolated commit) | Done (ajv 8.20.0) |
 | A3.3a | Common + seven schemas, examples, trusted loader, schema tests | Done |
 | A3.3b | Untrusted-input parsing, validator API and CLI (ADR-AI-007) | Done |
-| — | CI step running the contract tests | Owner workflow approval; not started |
-| A3.4 | Business-rule and security/policy validation; TaskSpec block extraction | — |
+| A3.3c | CI step running the contract tests | Done (Linux CI verified) |
+| A3.4a | TaskSpec machine-block extractor and tests | Done locally; not yet in CI |
+| A3.4b–d | TaskSpec business validation, security/policy validation, end-to-end composition | Not started |
 | A3.5 | SHA, evidence and ApprovalRef verification | — |
 | A3.6 | Deterministic gate aggregator and policy table | — |
 | A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006) |
