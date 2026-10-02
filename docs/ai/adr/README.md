@@ -38,3 +38,4 @@ For bounded project/release decisions use [decisions/](../decisions/README.md) i
 | [ADR-AI-005](ADR-AI-005-deterministic-sha-bound-gates.md) | Deterministic, SHA-bound gate decisions | Accepted |
 | [ADR-AI-006](ADR-AI-006-human-approval-evidence.md) | Human approval evidence | Accepted |
 | [ADR-AI-007](ADR-AI-007-contract-input-parsing.md) | Contract input parsing | Accepted |
+| [ADR-AI-008](ADR-AI-008-taskspec-scope-classes-and-authority.md) | TaskSpec protected scope policy and authority boundary | Accepted |
