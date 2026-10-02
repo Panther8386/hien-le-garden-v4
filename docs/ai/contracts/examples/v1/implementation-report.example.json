@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "artifact_type": "ImplementationReport",
+  "spec_id": "SPEC-AI-001",
+  "run_id": "RUN-local-20261001T120000Z-0a1b2c3d",
+  "created_at": "2026-10-01T12:30:00Z",
+  "producer": { "kind": "agent", "name": "claude-coding-agent" },
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "result_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "files": {
+    "changed": ["docs/ai/contracts/README.md"],
+    "created": ["scripts/ai/validate-contract.mjs", "test/ai/contract-validator.node-test.mjs"],
+    "deleted": []
+  },
+  "checks_run": [
+    { "check_id": "contract_tests", "outcome": "passed", "summary": "Self-reported local run; not CI evidence." }
+  ],
+  "requirements": [
+    {
+      "id": "R-01",
+      "status": "met",
+      "evidence": [
+        {
+          "kind": "repo_line",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "path": "scripts/ai/validate-contract.mjs",
+          "start_line": 10,
+          "end_line": 24
+        }
+      ]
+    },
+    { "id": "R-02", "status": "met", "evidence": [] }
+  ],
+  "deviations": [],
+  "risks": ["Validator output format may need adjustment once CI integration exists."],
+  "security_notes": ["Error output lists JSON paths and keywords only."],
+  "package_changes": [],
+  "migration_changes": [],
+  "status": "completed",
+  "iterations_used": 1
+}

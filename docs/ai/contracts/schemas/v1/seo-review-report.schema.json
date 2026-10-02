@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hlg:ai-contract:v1:seo-review-report",
+  "title": "SEOReviewReport (V1)",
+  "description": "AI SEO review observations. Advisory: findings carry no blocking or gate fields; gate impact is derived by deterministic policy (ADR-AI-005).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "spec_id",
+    "run_id",
+    "created_at",
+    "producer",
+    "source_commit",
+    "base_commit",
+    "status",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "artifact_type": { "const": "SEOReviewReport" },
+    "spec_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/SpecId" },
+    "run_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RunId" },
+    "created_at": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Timestamp" },
+    "producer": {
+      "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Producer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "kind": { "const": "agent" }, "name": true }
+    },
+    "source_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "base_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "status": { "enum": ["completed", "incomplete", "error"] },
+    "summary": { "type": "string", "maxLength": 2000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Finding",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "finding_id": true,
+          "severity": true,
+          "category": {
+            "enum": [
+              "metadata",
+              "indexing",
+              "structured_data",
+              "content",
+              "performance",
+              "accessibility",
+              "links"
+            ]
+          },
+          "title": true,
+          "summary": true,
+          "location": true,
+          "evidence": true,
+          "confidence": true,
+          "recommendation": true
+        }
+      }
+    }
+  }
+}

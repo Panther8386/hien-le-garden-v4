@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "artifact_type": "CodeReviewReport",
+  "spec_id": "SPEC-AI-001",
+  "run_id": "RUN-local-20261001T120000Z-0a1b2c3d",
+  "created_at": "2026-10-01T12:40:00Z",
+  "producer": { "kind": "agent", "name": "hlg-code-review-bot" },
+  "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "completed",
+  "summary": "One test-coverage observation.",
+  "findings": [
+    {
+      "finding_id": "F-001",
+      "severity": "low",
+      "category": "test_gap",
+      "title": "No test for an empty input file",
+      "summary": "The validator tests do not cover a zero-byte input file.",
+      "location": {
+        "path": "test/ai/contract-validator.node-test.mjs",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "evidence": [
+        {
+          "kind": "git_diff",
+          "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "head_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "path": "test/ai/contract-validator.node-test.mjs"
+        }
+      ],
+      "confidence": "medium",
+      "recommendation": "Add a test case for a zero-byte file."
+    }
+  ]
+}

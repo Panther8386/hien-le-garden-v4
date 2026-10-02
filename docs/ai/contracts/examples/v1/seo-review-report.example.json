@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "artifact_type": "SEOReviewReport",
+  "spec_id": "SPEC-AI-001",
+  "run_id": "RUN-local-20261001T120000Z-0a1b2c3d",
+  "created_at": "2026-10-01T12:50:00Z",
+  "producer": { "kind": "agent", "name": "hlg-seo-review-bot" },
+  "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "completed",
+  "summary": "Change does not touch public pages.",
+  "findings": [
+    {
+      "finding_id": "F-001",
+      "severity": "info",
+      "category": "indexing",
+      "title": "No public page changed",
+      "summary": "All changed files are private paths outside the public build output.",
+      "location": null,
+      "evidence": [],
+      "confidence": "high",
+      "recommendation": ""
+    }
+  ]
+}

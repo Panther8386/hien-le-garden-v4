@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hlg:ai-contract:v1:implementation-report",
+  "title": "ImplementationReport (V1)",
+  "description": "Concise results reported by the implementation agent. Advisory self-report: checks_run is not CI evidence. No reasoning or transcript fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "spec_id",
+    "run_id",
+    "created_at",
+    "producer",
+    "base_commit",
+    "result_commit",
+    "files",
+    "checks_run",
+    "requirements",
+    "deviations",
+    "risks",
+    "security_notes",
+    "package_changes",
+    "migration_changes",
+    "status",
+    "iterations_used"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "artifact_type": { "const": "ImplementationReport" },
+    "spec_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/SpecId" },
+    "run_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RunId" },
+    "created_at": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Timestamp" },
+    "producer": {
+      "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Producer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "kind": { "const": "agent" }, "name": true }
+    },
+    "base_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "result_commit": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/Sha" },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed", "created", "deleted"],
+      "properties": {
+        "changed": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RepoFilePath" }
+        },
+        "created": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RepoFilePath" }
+        },
+        "deleted": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RepoFilePath" }
+        }
+      }
+    },
+    "checks_run": {
+      "description": "Self-reported by the implementation agent. Metadata only; never gate evidence.",
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "outcome", "summary"],
+        "properties": {
+          "check_id": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/CheckId" },
+          "outcome": { "enum": ["passed", "failed", "not_run"] },
+          "summary": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "evidence"],
+        "properties": {
+          "id": { "type": "string", "maxLength": 5, "pattern": "^R-[0-9]{2,3}$" },
+          "status": { "enum": ["met", "partially_met", "not_met"] },
+          "evidence": {
+            "type": "array",
+            "maxItems": 10,
+            "items": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/EvidenceRef" }
+          }
+        }
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "risks": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "security_notes": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "package_changes": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "from", "to"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 214,
+            "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+          },
+          "from": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 64 }, { "type": "null" }] },
+          "to": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 64 }, { "type": "null" }] }
+        }
+      }
+    },
+    "migration_changes": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "$ref": "urn:hlg:ai-contract:v1:common#/$defs/RepoFilePath" }
+    },
+    "status": { "enum": ["completed", "partial", "aborted", "iteration_limit"] },
+    "iterations_used": { "type": "integer", "minimum": 1, "maximum": 10 }
+  }
+}

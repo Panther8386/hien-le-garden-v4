@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hlg:ai-contract:v1:common",
+  "title": "HLG AI contract V1 common definitions",
+  "description": "Structural definitions only. Schema validity never proves that a commit exists or is current, that evidence holds, or that an approval is authentic (ADR-AI-005, ADR-AI-006).",
+  "$defs": {
+    "Sha": {
+      "description": "Git object id: 40 lowercase hex characters. Syntax only.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "RepoFilePath": {
+      "description": "Repository-relative file path: forward slashes, no leading slash, no drive letter, no backslash, no '.' or '..' segment, no empty segment, no glob characters.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"
+    },
+    "ScopePath": {
+      "description": "RepoFilePath grammar with an optional trailing '/'. A trailing '/' means a directory prefix; otherwise an exact file. No globs in V1.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?$"
+    },
+    "SpecId": {
+      "type": "string",
+      "maxLength": 12,
+      "pattern": "^SPEC-AI-[0-9]{3,4}$"
+    },
+    "RunId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^RUN-(?:gh-[0-9]{1,20}-[0-9]{1,4}|local-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8})$"
+    },
+    "Timestamp": {
+      "description": "UTC audit timestamp. Audit metadata only; never freshness authority.",
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "Producer": {
+      "description": "Who produced the artifact. Metadata, not authentication.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "enum": ["agent", "ci", "aggregator"] },
+        "name": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" }
+      }
+    },
+    "CheckId": {
+      "description": "Deterministic check identifier (slug). Registry membership is checked outside the schema.",
+      "type": "string",
+      "maxLength": 41,
+      "pattern": "^[a-z][a-z0-9_]{1,40}$"
+    },
+    "ArtifactType": {
+      "enum": [
+        "TaskSpec",
+        "ImplementationReport",
+        "CodeReviewReport",
+        "SecurityReviewReport",
+        "SEOReviewReport",
+        "EvalReport",
+        "GateDecision"
+      ]
+    },
+    "EvidenceRef": {
+      "description": "Structural pointer to inspectable evidence. Not trusted until verified (ADR-AI-005). Human approvals are ApprovalRef, not EvidenceRef.",
+      "type": "object",
+      "discriminator": { "propertyName": "kind" },
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "repo_file",
+            "repo_line",
+            "git_commit",
+            "git_diff",
+            "test",
+            "ci_check",
+            "http_probe",
+            "schema_validation"
+          ]
+        },
+        "commit": true,
+        "path": true,
+        "start_line": true,
+        "end_line": true,
+        "base_commit": true,
+        "head_commit": true,
+        "file": true,
+        "name": true,
+        "provider": true,
+        "check_name": true,
+        "workflow_run_id": true,
+        "run_attempt": true,
+        "conclusion": true,
+        "target": true,
+        "outcome": true,
+        "body_sha256": true,
+        "run_id": true,
+        "artifact_type": true,
+        "schema_version": true
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit", "path"],
+          "properties": {
+            "kind": { "const": "repo_file" },
+            "commit": { "$ref": "#/$defs/Sha" },
+            "path": { "$ref": "#/$defs/RepoFilePath" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit", "path", "start_line", "end_line"],
+          "properties": {
+            "kind": { "const": "repo_line" },
+            "commit": { "$ref": "#/$defs/Sha" },
+            "path": { "$ref": "#/$defs/RepoFilePath" },
+            "start_line": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+            "end_line": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit"],
+          "properties": {
+            "kind": { "const": "git_commit" },
+            "commit": { "$ref": "#/$defs/Sha" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "base_commit", "head_commit", "path"],
+          "properties": {
+            "kind": { "const": "git_diff" },
+            "base_commit": { "$ref": "#/$defs/Sha" },
+            "head_commit": { "$ref": "#/$defs/Sha" },
+            "path": { "anyOf": [{ "$ref": "#/$defs/RepoFilePath" }, { "type": "null" }] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit", "file", "name"],
+          "properties": {
+            "kind": { "const": "test" },
+            "commit": { "$ref": "#/$defs/Sha" },
+            "file": { "$ref": "#/$defs/RepoFilePath" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 300 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "provider", "check_name", "workflow_run_id", "run_attempt", "commit", "conclusion"],
+          "properties": {
+            "kind": { "const": "ci_check" },
+            "provider": { "const": "github_actions" },
+            "check_name": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "workflow_run_id": { "type": "string", "maxLength": 20, "pattern": "^[0-9]{1,20}$" },
+            "run_attempt": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "commit": { "$ref": "#/$defs/Sha" },
+            "conclusion": {
+              "enum": ["success", "failure", "cancelled", "skipped", "timed_out", "neutral", "action_required"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "target", "outcome", "body_sha256", "run_id"],
+          "properties": {
+            "kind": { "const": "http_probe" },
+            "target": {
+              "type": "string",
+              "maxLength": 300,
+              "pattern": "^https://(?:hienlegarden\\.vn|staging\\.hien-le-garden-v4\\.pages\\.dev|[0-9a-f]{8}\\.hien-le-garden-v4\\.pages\\.dev)(?:/[A-Za-z0-9._~%/-]{0,200})?$"
+            },
+            "outcome": { "enum": ["pass", "fail", "inconclusive"] },
+            "body_sha256": {
+              "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }]
+            },
+            "run_id": { "$ref": "#/$defs/RunId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "artifact_type", "run_id", "schema_version", "outcome"],
+          "properties": {
+            "kind": { "const": "schema_validation" },
+            "artifact_type": { "$ref": "#/$defs/ArtifactType" },
+            "run_id": { "$ref": "#/$defs/RunId" },
+            "schema_version": { "type": "integer", "const": 1 },
+            "outcome": { "enum": ["valid", "invalid"] }
+          }
+        }
+      ]
+    },
+    "Finding": {
+      "description": "AI-authored review observation. Gate impact is derived by deterministic policy, never set by the producer (ADR-AI-005). Confidence is informational only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "severity",
+        "category",
+        "title",
+        "summary",
+        "location",
+        "evidence",
+        "confidence",
+        "recommendation"
+      ],
+      "properties": {
+        "finding_id": { "type": "string", "maxLength": 5, "pattern": "^F-[0-9]{3}$" },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "category": {
+          "enum": [
+            "correctness",
+            "error_handling",
+            "test_gap",
+            "maintainability",
+            "performance",
+            "compatibility",
+            "scope",
+            "authn",
+            "authz",
+            "injection",
+            "secret_exposure",
+            "pii_exposure",
+            "data_integrity",
+            "dependency",
+            "configuration",
+            "artifact_exposure",
+            "metadata",
+            "indexing",
+            "structured_data",
+            "content",
+            "accessibility",
+            "links"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "location": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "start_line", "end_line"],
+              "properties": {
+                "path": { "$ref": "#/$defs/RepoFilePath" },
+                "start_line": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+                "end_line": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "evidence": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/EvidenceRef" } },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "recommendation": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "ApprovalRef": {
+      "description": "Structural pointer to an external human-approval source. Carries no authority; validity is decided by verification code (ADR-AI-006).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_type", "source", "pr_number", "source_id", "object_sha"],
+      "properties": {
+        "approval_type": { "enum": ["spec", "package_change", "migration", "merge", "production"] },
+        "source": { "enum": ["github_pr_comment", "github_merge", "github_environment_review"] },
+        "pr_number": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "source_id": {
+          "anyOf": [{ "type": "string", "maxLength": 20, "pattern": "^[0-9]{1,20}$" }, { "type": "null" }]
+        },
+        "object_sha": { "$ref": "#/$defs/Sha" }
+      }
+    }
+  }
+}
