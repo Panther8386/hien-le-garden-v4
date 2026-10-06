@@ -6,7 +6,7 @@ Architecture of the machine-readable contract layer. Decisions:
 [ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval),
 [ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md) (input parsing).
 
-**Status (A3.4c):**
+**Status (A3.4c complete; A3.4d in progress locally):**
 
 - **Exists:** V1 JSON Schemas ([schemas/v1/](schemas/v1/): one common schema and seven
   contract schemas), one valid example per contract ([examples/v1/](examples/v1/)), the trusted
@@ -35,7 +35,13 @@ Architecture of the machine-readable contract layer. Decisions:
   re-reviewed with no bypass found), CI enforcement and Linux CI evidence are complete.
   PR #5 remains Draft; no merge or deployment authority is granted. Other review findings
   remain open or deferred (see the slice table).
-- **Not implemented yet:** end-to-end TaskSpec validation; SHA freshness; evidence trust;
+- **A3.4d (local, branch `feature/hlg-ai-taskspec-composer`):** the supported TaskSpec composer
+  (`scripts/ai/validate-taskspec.mjs`; EXTRACT → SECRET_SCAN → CONTRACT → TYPE → BUSINESS →
+  POLICY, ADR-AI-009) and the shared linear secret detector (`scripts/ai/secret-detector.mjs`)
+  exist with tests (`test/ai/validate-taskspec.node-test.mjs`,
+  `test/ai/secret-detector.node-test.mjs`). These two test files are not yet in the CI step and
+  have no Linux CI evidence; findings F2, F3 and F4 remain open.
+- **Not implemented yet:** SHA freshness; evidence trust;
   approval verification; deterministic GateDecision aggregation; base-branch validation of
   governance-sensitive changes; GitHub integration.
 - Schema validity is structural only: a schema-valid GateDecision (even one saying PASS) is not
@@ -64,12 +70,17 @@ free-form chat, so that decisions are reproducible from tracked definitions and 
 JSON parse → schema → business rules → security/policy → SHA/evidence → deterministic aggregation
 ```
 
+For a TaskSpec file the supported composer runs EXTRACT → SECRET_SCAN → CONTRACT (parse and
+schema) → TYPE → BUSINESS → POLICY, failing closed at the first failing stage
+([ADR-AI-009](../adr/ADR-AI-009-taskspec-composition-and-secret-scan.md),
+[specs/README.md](../specs/README.md)).
+
 | Layer | Checks |
 |---|---|
 | Parse | 2 MiB byte cap before decoding; UTF-8 only (no BOM, no NUL, fatal decoding); duplicate keys explicitly rejected; no canonical-byte requirement; unexpected or reserved property names rejected by the closed schemas ([ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md)) |
 | Schema | `artifact_type`, `schema_version` (integer `1`), required fields, unknown fields rejected, closed enums, 40-hex SHAs, path grammar, bounded strings/arrays |
 | Business rules | Cross-field and cross-artifact consistency (IDs unique, references exist, changed files within scope) |
-| Security/policy | Secret-like and PII-like values, always-forbidden paths, evidence host allowlist, prose not accepted as deterministic evidence |
+| Security/policy | High-confidence secret formats only (no PII, entropy or bare-word scanning; [ADR-AI-008](../adr/ADR-AI-008-taskspec-scope-classes-and-authority.md)), always-forbidden paths, evidence host allowlist, prose not accepted as deterministic evidence |
 | SHA/evidence | Referenced commits, paths and lines exist; all inputs bound to the expected head/base; approvals verified at source |
 | Aggregation | Deterministic GateDecision (ADR-AI-005) |
 
@@ -139,7 +150,7 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.4a | TaskSpec machine-block extractor and tests | Done (Linux CI verified) |
 | A3.4b | TaskSpec business and path validation and tests | Done (Linux CI verified) |
 | A3.4c | TaskSpec security / capability policy and tests (ADR-AI-008) | Done (Linux CI verified on Draft PR #5 at `8144004`, run 37435892253) |
-| A3.4d | End-to-end TaskSpec composition | Not started; blocked by open findings F2 (business must run before policy), F3 (linear-time `sk-` detection before narrative scanning), F4 (schema-first ordering) |
+| A3.4d | End-to-end TaskSpec composition | In progress locally: ADR-AI-009, shared linear secret detector and composer committed; not yet in CI. Open findings F2 (business must run before policy), F3 (linear-time `sk-` detection before narrative scanning), F4 (schema-first ordering) stay open until independent review and Linux CI |
 | A3.5 | SHA, evidence and ApprovalRef verification | Common path safety for ImplementationReport / EvidenceRef / Finding paths before repository paths are trusted |
 | A3.6 | Deterministic gate aggregator and policy table | Deferred findings F6 (protect deterministic-check configuration), F8 (governance-specific gate), F9 (producer/verifier separation) |
 | A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006); F6/F8/F9 as for A3.6 |

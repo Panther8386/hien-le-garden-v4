@@ -192,6 +192,28 @@ test('sk: 39 / 40 / 41 run characters, digit and uppercase requirements', () => 
   }
 });
 
+// F3-R1 (independent review, LOW): the only uppercase letter is exactly A or Z and the only
+// digit is exactly 0 or 9, at 39 / 40 / 41 run characters. Fails if A-Z or 0-9 were narrowed.
+test('sk: range endpoints A, Z, 0 and 9 as the only qualifying characters', () => {
+  for (const upper of ['A', 'Z']) {
+    for (const digit of ['0', '9']) {
+      for (const n of [39, 40, 41]) {
+        const lower = 'q'.repeat(n - 2);
+        for (const body of [upper + digit + lower, lower + digit + upper, digit + lower + upper]) {
+          const text = SK + body;
+          assert.equal(detect(text), n >= 40, `upper=${upper} digit=${digit} n=${n}`);
+          same(text);
+        }
+      }
+    }
+  }
+  // Each endpoint alone, with the other requirement met by a mid-range character.
+  for (const [ch, other] of [['A', '5'], ['Z', '5'], ['0', 'M'], ['9', 'M']]) {
+    assert.equal(detect(SK + ch + other + 'q'.repeat(38)), true, ch);
+    assert.equal(detect(SK + ch + 'q'.repeat(39)), false, ch + ' alone');
+  }
+});
+
 test('sk: systematic grid of boundaries, compositions and suffixes matches the legacy oracle', () => {
   const before = ['', 'a', 'Z', '5', '_', '-', ' ', '.', ':', '/', '\n', '\t', 'é'];
   const bodies = [];

@@ -120,7 +120,42 @@ that has passed schema and business validation.
 - **Result:** errors are `{ rule, path }` (`E_TASKSPEC_POLICY`, at most 20, sorted).
   On success, `protectedCategories` lists the touched categories — classification metadata
   only, not a capability, approval or authorization.
-- End-to-end composition (extraction → schema → business → policy) is a later slice (A3.4d).
+- Policy is a stage of the composer below; on its own it assumes, and does not re-check, that
+  its input passed the earlier stages.
+
+## Composition (V1)
+
+Implemented by `scripts/ai/validate-taskspec.mjs` as decided in
+[ADR-AI-009](../adr/ADR-AI-009-taskspec-composition-and-secret-scan.md). It is the **supported
+entry point** for validating a TaskSpec file:
+`createTaskSpecValidator().validateTaskSpecMarkdown(bytes, { fileName })`, with `bytes` a
+`Uint8Array` of the whole Markdown file and `fileName` its basename.
+
+```
+EXTRACT → SECRET_SCAN → CONTRACT → TYPE → BUSINESS → POLICY → RESULT
+```
+
+- **EXTRACT:** the machine-block grammar and byte rules above (2,097,152-byte cap before
+  decoding, no BOM, no NUL, fatal UTF-8, exactly one block).
+- **SECRET_SCAN:** the complete Markdown file, including the raw machine block, is checked with
+  the shared high-confidence detector (`scripts/ai/secret-detector.mjs`). Failure:
+  `E_TASKSPEC_SECRET` with the single error `{ rule: "SEC-NARRATIVE-SECRET", path: "" }`, never a
+  location, line or excerpt. The text is decoded with the extractor's exact UTF-8 rules, only
+  after EXTRACT has accepted the bytes.
+- **CONTRACT:** ADR-AI-007 parsing and schema validation of the block.
+- **TYPE:** the contract-valid artifact must be a TaskSpec (`E_TASKSPEC_WRONG_TYPE` otherwise),
+  because the schema is chosen by the payload's own `artifact_type`. The TaskSpec is then deeply
+  frozen; BUSINESS and POLICY receive that same object.
+- **BUSINESS** and **POLICY:** the layers above, with their own codes and errors.
+- **Fail closed:** the first failing stage ends validation; no later stage runs, and there is no
+  partial pass. Failures are `{ ok: false, stage, code, errorCount, errors }` (EXTRACT failures
+  may add the extractor's `line`); success is
+  `{ ok: true, spec, protectedCategories, startLine, endLine }`.
+- **Supported entry point:** the stage functions remain importable for unit tests, but
+  production code must use the composer. A CI test enforces this import boundary in the
+  repository; it is not a language-level sandbox.
+- A pass means only "passes deterministic TaskSpec validation". It is not approval and grants no
+  merge, deployment or production authority.
 
 ## Approval binding
 
