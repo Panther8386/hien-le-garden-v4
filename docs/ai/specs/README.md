@@ -81,6 +81,10 @@ or network access. Errors carry only a rule ID and a JSON pointer, never values.
   to overlapping or same-named entries only on a case-insensitive filesystem (ASCII case folding
   is used for this check only), e.g. `migrations/` with `Migrations/`, or allowed `Scripts/`
   with forbidden `scripts/ai/`.
+- **`BR-PATH-TRAILING-DOT`:** an allowed or forbidden scope path with any segment ending in
+  `.` (e.g. `CLAUDE.md.`, `scripts/ai./x.mjs`) is invalid. Windows strips trailing dots, so
+  such a path would alias a different (possibly protected) path. It is rejected, never
+  normalized.
 - Passing business validation means only "passes deterministic TaskSpec business validation".
   It is not approval, authorization, freshness, mergeability or deployability. Protected-scope,
   human-gate, declared-change and secret policies are the next layer (below).

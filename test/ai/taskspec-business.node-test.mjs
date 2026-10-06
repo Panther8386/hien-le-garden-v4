@@ -1,5 +1,6 @@
 // Tests for TaskSpec business and path validation (A3.4b). The validator assumes a
-// schema-valid TaskSpec; schema, extraction and policy rules are tested elsewhere.
+// schema-valid TaskSpec; schema, extraction and policy rules are tested elsewhere (policy
+// is imported only for the F1 layer-contract tests).
 //
 //   node --test test/ai/taskspec-business.node-test.mjs
 //
@@ -15,6 +16,7 @@ import {
   overlaps,
   validateTaskSpecBusiness,
 } from '../../scripts/ai/taskspec-business.mjs';
+import { validateTaskSpecPolicy } from '../../scripts/ai/taskspec-policy.mjs';
 
 const BS = String.fromCharCode(92);
 const FILE = 'SPEC-AI-034-task-validation.md';
@@ -249,6 +251,137 @@ test('case: ambiguity within allowed_paths is reported at the later entry', () =
 
 test('case: non-ambiguous declarations pass', () => {
   assert.deepEqual(check(withScope(['docs/', 'docs/A.md', 'src/'], ['lib/', 'docs/B/'])), { ok: true });
+});
+
+// ---------------------------------------------------------------- BR-PATH-TRAILING-DOT (F1)
+
+// Schema-valid scope paths that Windows resolves to protected entries by stripping the
+// trailing dot. Before this rule they passed business and policy validation.
+const F1_PROBES = [
+  'CLAUDE.md.',
+  'package.json.',
+  'wrangler.toml.',
+  'scripts/ai./taskspec-policy.mjs',
+  'migrations./0044_x.sql',
+  '.github./workflows/deploy.yml',
+  'docs/ai/adr./ADR-AI-009.md',
+];
+const TRAILING_DOT_SHAPES = ['docs/ai/adr./', 'a./b/c', 'a./b./c.', 'a..', 'x/.../y'];
+const DOT_CONTROLS = [
+  '.github/',
+  '.github/workflows/deploy.yml',
+  'docs/ai/',
+  'file.name',
+  'foo.bar/baz.txt',
+  'a/.b/c',
+  '.env.example',
+  'migrations/',
+  'CLAUDE.md',
+];
+
+for (const p of [...F1_PROBES, ...TRAILING_DOT_SHAPES]) {
+  test(`trailing dot: allowed ${JSON.stringify(p)} is BR-PATH-TRAILING-DOT`, () => {
+    const r = check(withScope([p], []));
+    assert.equal(r.code, 'E_TASKSPEC_BUSINESS');
+    assert.deepEqual(r.errors, [{ rule: 'BR-PATH-TRAILING-DOT', path: '/scope/allowed_paths/0' }]);
+    assert.equal(r.errorCount, 1);
+  });
+}
+
+test('trailing dot: forbidden entries are rejected with the forbidden pointer', () => {
+  for (const p of [...F1_PROBES, ...TRAILING_DOT_SHAPES]) {
+    assert.deepEqual(rules(check(withScope(['src/'], [p]))), ['BR-PATH-TRAILING-DOT /scope/forbidden_paths/0'], p);
+  }
+});
+
+test('trailing dot: a forbidden alias never stands in for excluding the canonical path', () => {
+  // "CLAUDE.md." does not cover "CLAUDE.md"; the forbidden entry is rejected rather than
+  // being accepted as an apparent exclusion.
+  assert.deepEqual(rules(check(withScope(['CLAUDE.md'], ['CLAUDE.md.']))), ['BR-PATH-TRAILING-DOT /scope/forbidden_paths/0']);
+  assert.deepEqual(rules(check(withScope(['scripts/'], ['scripts/ai./']))), ['BR-PATH-TRAILING-DOT /scope/forbidden_paths/0']);
+});
+
+test('trailing dot: controls with inner or leading dots stay valid in both lists', () => {
+  for (const p of DOT_CONTROLS) {
+    assert.deepEqual(check(withScope([p], [])), { ok: true }, `allowed ${p}`);
+    assert.deepEqual(check(withScope(['src/'], [p])), { ok: true }, `forbidden ${p}`);
+  }
+});
+
+test('trailing dot: only offending entries are reported, at their own index', () => {
+  const r = check(withScope(['docs/', 'src/', 'a./b', 'lib/file.name'], ['x/', 'y./', 'z.txt']));
+  assert.deepEqual(rules(r), ['BR-PATH-TRAILING-DOT /scope/allowed_paths/2', 'BR-PATH-TRAILING-DOT /scope/forbidden_paths/1']);
+  assert.equal(r.errorCount, 2);
+});
+
+test('trailing dot: one error per entry even with several dotted segments', () => {
+  const r = check(withScope(['a./b./c.'], ['d./e.']));
+  assert.deepEqual(rules(r), ['BR-PATH-TRAILING-DOT /scope/allowed_paths/0', 'BR-PATH-TRAILING-DOT /scope/forbidden_paths/0']);
+  assert.equal(r.errorCount, 2);
+});
+
+test('trailing dot: coexists with existing rules, sorted by path then rule', () => {
+  const r = check(withScope(['CLAUDE.md.', 'Docs/x.md', 'docs/', 'scripts/a./x.js'], ['scripts/']));
+  assert.deepEqual(rules(r), [
+    'BR-PATH-TRAILING-DOT /scope/allowed_paths/0',
+    'BR-PATH-CASE-AMBIGUOUS /scope/allowed_paths/2',
+    'BR-PATH-TRAILING-DOT /scope/allowed_paths/3',
+    'BR-SCOPE-CONFLICT /scope/allowed_paths/3',
+  ]);
+  assert.equal(r.errorCount, 4);
+});
+
+test('trailing dot: a case-ambiguous dotted pair reports both rules', () => {
+  assert.deepEqual(rules(check(withScope(['Migrations./'], ['migrations./']))), [
+    'BR-PATH-TRAILING-DOT /scope/allowed_paths/0',
+    'BR-PATH-CASE-AMBIGUOUS /scope/forbidden_paths/0',
+    'BR-PATH-TRAILING-DOT /scope/forbidden_paths/0',
+  ]);
+});
+
+test('trailing dot: more than 20 violations returns 20 sorted with the full errorCount', () => {
+  const allowed = Array.from({ length: 25 }, (_, i) => `d${i}./`);
+  const r = check(withScope(allowed, []));
+  assert.equal(r.errorCount, 25);
+  assert.equal(r.errors.length, MAX_BUSINESS_ERRORS);
+  assert.ok(r.errors.every((e) => e.rule === 'BR-PATH-TRAILING-DOT'));
+  const keys = r.errors.map((e) => e.path);
+  assert.deepEqual(keys, [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+});
+
+test('trailing dot: errors contain no path values', () => {
+  const r = check(withScope([...F1_PROBES], ['docs/ai/adr./']));
+  assert.equal(r.ok, false);
+  const out = JSON.stringify(r);
+  for (const leak of ['CLAUDE', 'package', 'wrangler', 'taskspec-policy', '0044', 'deploy', 'ADR-AI', 'adr.', '.github']) {
+    assert.ok(!out.includes(leak), leak);
+  }
+});
+
+// F1 layer contract: a schema-valid alias path stops at BUSINESS and is never presented
+// to A3.4c policy as a business-valid TaskSpec. Policy itself is unchanged.
+function businessThenPolicy(spec) {
+  const business = check(spec);
+  if (!business.ok) return { stage: 'BUSINESS', result: business };
+  return { stage: 'POLICY', result: validateTaskSpecPolicy(spec) };
+}
+
+test('F1 layer contract: every confirmed alias path is rejected before policy', () => {
+  for (const p of F1_PROBES) {
+    const { stage, result } = businessThenPolicy(withScope([p], []));
+    assert.equal(stage, 'BUSINESS', p);
+    assert.deepEqual(result.errors, [{ rule: 'BR-PATH-TRAILING-DOT', path: '/scope/allowed_paths/0' }], p);
+  }
+});
+
+test('F1 layer contract: the canonical paths still reach policy and are classified', () => {
+  const claude = businessThenPolicy(withScope(['CLAUDE.md'], []));
+  assert.equal(claude.stage, 'POLICY');
+  assert.deepEqual(claude.result, { ok: true, protectedCategories: ['GOVERNANCE'] });
+  const wrangler = businessThenPolicy(withScope(['wrangler.toml'], []));
+  assert.equal(wrangler.stage, 'POLICY');
+  assert.equal(wrangler.result.ok, false);
+  assert.ok(wrangler.result.errors.some((e) => e.rule === 'POL-GATE-PRODUCTION'));
 });
 
 // ---------------------------------------------------------------- error model

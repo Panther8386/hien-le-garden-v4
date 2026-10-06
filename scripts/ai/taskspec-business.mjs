@@ -8,7 +8,9 @@
 //
 // Paths are lexical, exact and case-sensitive (Git semantics): no OS path library, no
 // normalization, no lowercasing. ASCII case folding is used only to detect paths that
-// would collide on a case-insensitive filesystem.
+// would collide on a case-insensitive filesystem. A scope path with a segment ending in
+// "." is rejected (Windows strips trailing dots, so it would alias another path); it is
+// never rewritten.
 //
 // A successful result means only "passes deterministic TaskSpec business validation":
 // not approved, authorized, current, mergeable or deployable.
@@ -60,6 +62,13 @@ function related(a, b) {
 // entries on a case-insensitive filesystem but not under exact Git semantics.
 export function isCaseAmbiguous(a, b) {
   return a !== b && related(foldAscii(a), foldAscii(b)) && !related(a, b);
+}
+
+// True when any segment ends in "." (one trailing "/" directory marker is ignored).
+// Lexical only: the path is inspected, never normalized.
+function hasTrailingDotSegment(p) {
+  const body = p.endsWith(SLASH) ? p.slice(0, -1) : p;
+  return body.split(SLASH).some((seg) => seg.endsWith('.'));
 }
 
 // ---- rules ----
@@ -124,6 +133,13 @@ export function validateTaskSpecBusiness(spec, { fileName } = {}) {
     for (let j = i + 1; j < entries.length; j++) {
       if (isCaseAmbiguous(entries[i].p, entries[j].p)) add('BR-PATH-CASE-AMBIGUOUS', entries[j].ptr);
     }
+  }
+
+  // BR-PATH-TRAILING-DOT: a segment ending in "." is a Windows alias of the path without
+  // the dot (e.g. "CLAUDE.md." -> "CLAUDE.md"), so it could slip past protected-scope
+  // classification. Rejected in both lists, one error per entry, never normalized.
+  for (const { p, ptr } of entries) {
+    if (hasTrailingDotSegment(p)) add('BR-PATH-TRAILING-DOT', ptr);
   }
 
   if (found.size === 0) return { ok: true };
