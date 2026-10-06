@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { TASKSPEC_STAGES, createTaskSpecValidator } from '../../scripts/ai/validate-taskspec.mjs';
 import { containsHighConfidenceSecret } from '../../scripts/ai/secret-detector.mjs';
 
@@ -569,11 +570,21 @@ test('reentrancy: nested calls on the same validator use independent snapshots',
 
 // Repository enforcement, not a language-level sandbox: production JavaScript outside the
 // allowlist must neither reference the business/policy modules by a literal specifier nor
-// mention the stage entry functions. Before matching, the source is normalized: JavaScript
-// string escapes (hex and both Unicode escape forms) and percent-escapes are decoded, and specifiers
-// are compared case-insensitively, so literal variants such as `?query`, `#hash`, `%2D` and
-// case changes are caught. Computed or concatenated specifiers (e.g. built from variables)
-// cannot be detected by this bounded check and are left to code review.
+// mention the stage entry functions. Two matching layers are combined (a reference found by
+// either counts):
+//  1. Whole-source layer: JavaScript hex/Unicode escapes and percent-escapes are decoded and
+//     the text is lower-cased before matching the specifier pattern.
+//  2. Literal layer: every quote character is tried as the start of a string literal, which
+//     is cooked with JavaScript string semantics (line continuations, single-character and
+//     identity escapes, hex/Unicode escapes; template literals with `${` are skipped). The
+//     cooked value is then normalized as URL/file resolution would see it, in this order:
+//     drop ASCII TAB/LF/CR, trim leading/trailing C0 controls and spaces, backslash -> "/",
+//     cut at the first "?" or "#", percent-decode, lower-case, and strip trailing dots and
+//     spaces from the last path segment. A last segment of taskspec-business|policy with an
+//     optional .mjs is a reference.
+// Malformed escapes are kept literally and never throw. Computed or concatenated specifiers
+// (e.g. built from variables) cannot be detected by this bounded check and are left to code
+// review.
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'test', 'images', 'videos', '.wrangler', '.superpowers']);
 const HEX = '[0-9a-fA-F]';
 const JS_ESCAPE = new RegExp(`${BS}${BS}x(${HEX}{2})|${BS}${BS}u${BS}{(${HEX}{1,6})${BS}}|${BS}${BS}u(${HEX}{4})`, 'g');
@@ -591,10 +602,100 @@ function normalizeSource(source) {
     .replace(PERCENT, (_, h) => codePoint(h));
 }
 
+const TAB = String.fromCharCode(9);
+const LF = String.fromCharCode(10);
+const CR = String.fromCharCode(13);
+const LS = String.fromCharCode(0x2028);
+const PS = String.fromCharCode(0x2029);
+const QUOTES = new Set(["'", '"', '`']);
+const SIMPLE_ESCAPES = { n: LF, t: TAB, r: CR, b: String.fromCharCode(8), f: String.fromCharCode(12), v: String.fromCharCode(11) };
+const MAX_LITERAL = 2048;
+const isHex = (s) => s.length > 0 && /^[0-9a-fA-F]+$/.test(s);
+
+// Cooks the string literal starting at src[start] (a quote). Returns the value, or null when
+// the text from that quote is not a complete literal (unterminated, too long, or a template
+// with an expression). Malformed escapes keep their characters (deterministic, no throw).
+function cookLiteral(src, start) {
+  const quote = src[start];
+  let out = '';
+  let i = start + 1;
+  while (i < src.length && i - start <= MAX_LITERAL) {
+    const c = src[i];
+    if (c === quote) return out;
+    if (quote !== '`' && (c === LF || c === CR)) return null;
+    if (quote === '`' && c === '$' && src[i + 1] === '{') return null;
+    if (c !== BS) {
+      out += c;
+      i += 1;
+      continue;
+    }
+    const n = src[i + 1];
+    if (n === undefined) return null;
+    if (n === CR) {
+      i += src[i + 2] === LF ? 3 : 2; // line continuation (CRLF or CR)
+    } else if (n === LF || n === LS || n === PS) {
+      i += 2; // line continuation
+    } else if (Object.hasOwn(SIMPLE_ESCAPES, n)) {
+      out += SIMPLE_ESCAPES[n];
+      i += 2;
+    } else if (n === '0' && !/[0-9]/.test(src[i + 2] || '')) {
+      out += String.fromCharCode(0);
+      i += 2;
+    } else if (n === 'x' && isHex(src.slice(i + 2, i + 4)) && src.slice(i + 2, i + 4).length === 2) {
+      out += String.fromCharCode(parseInt(src.slice(i + 2, i + 4), 16));
+      i += 4;
+    } else if (n === 'u' && src[i + 2] === '{') {
+      const close = src.indexOf('}', i + 3);
+      const hex = close === -1 ? '' : src.slice(i + 3, close);
+      if (isHex(hex) && hex.length <= 8 && parseInt(hex, 16) <= 0x10ffff) {
+        out += String.fromCodePoint(parseInt(hex, 16));
+        i = close + 1;
+      } else {
+        out += n; // malformed: keep
+        i += 2;
+      }
+    } else if (n === 'u' && isHex(src.slice(i + 2, i + 6)) && src.slice(i + 2, i + 6).length === 4) {
+      out += String.fromCharCode(parseInt(src.slice(i + 2, i + 6), 16)); // lone surrogates allowed
+      i += 6;
+    } else {
+      out += n; // identity escape (and malformed x/u, kept literally)
+      i += 2;
+    }
+  }
+  return null;
+}
+
+const URL_IGNORED = new RegExp(`[${TAB}${LF}${CR}]`, 'g');
+const C0_OR_SPACE_EDGES = /^[\x00-\x20]+|[\x00-\x20]+$/g;
+const PROTECTED_SEGMENT = /^taskspec-(business|policy)(?:\.mjs)?$/;
+
+// Approximates the module a literal specifier resolves to; returns 'business', 'policy' or null.
+function specifierTarget(value) {
+  let v = value.replace(URL_IGNORED, '').replace(C0_OR_SPACE_EDGES, '').replaceAll(BS, '/');
+  const cut = v.search(/[?#]/);
+  if (cut !== -1) v = v.slice(0, cut);
+  v = v.replace(PERCENT, (_, h) => String.fromCharCode(parseInt(h, 16))).replaceAll(BS, '/').toLowerCase();
+  const last = v.split('/').pop().replace(/[. ]+$/, '');
+  const m = PROTECTED_SEGMENT.exec(last);
+  return m ? m[1] : null;
+}
+
+function literalRefs(source) {
+  const refs = [];
+  for (let i = 0; i < source.length; i++) {
+    if (!QUOTES.has(source[i])) continue;
+    const value = cookLiteral(source, i);
+    if (value === null) continue;
+    const target = specifierTarget(value);
+    if (target) refs.push(target);
+  }
+  return refs;
+}
+
 function boundaryHits(source) {
   const text = normalizeSource(source);
   return {
-    refs: uniqueSortedOf([...text.toLowerCase().matchAll(MODULE_REF)].map((m) => m[1])),
+    refs: uniqueSortedOf([...[...text.toLowerCase().matchAll(MODULE_REF)].map((m) => m[1]), ...literalRefs(source)]),
     fns: uniqueSortedOf([...text.matchAll(STAGE_FN)].map((m) => m[1])),
   };
 }
@@ -666,9 +767,16 @@ test('boundary: the check detects every literal specifier form, including C3-2 v
     `import { x } from './scripts/ai/taskspec${BS}x2dpolicy.mjs';`,
     `import { x } from './scripts/ai/taskspec${BS}u002dbusiness.mjs';`,
     `import { x } from './scripts/ai/taskspec${BS}u{2d}policy.mjs';`,
+    `import { x } from './scripts/ai/taskspec${BS}u{00002d}business.mjs';`,
+    `import { x } from './scripts/ai/${BS}x74askspec-policy.mjs';`,
+    `import { x } from './scripts/ai/%74askspec-business.mjs';`,
+    `import { x } from './scripts/ai%2Ftaskspec-policy.mjs';`,
+    `import { x } from '../../scripts/ai/taskspec-policy.mjs';`,
+    `import { x } from './/taskspec-business.mjs';`,
+    `import { x } from 'file:///D:/repo/scripts/ai/taskspec-policy.mjs';`,
   ];
   for (const s of moduleOnly) assert.ok(boundaryHits(s).refs.length === 1, s);
-  for (const s of ['const fn = lib.validateTaskSpecPolicy;', 'validateTaskSpecBusiness(spec)']) {
+  for (const s of ['const fn = lib.validateTaskSpecPolicy;', 'validateTaskSpecBusiness(spec)', `const f = validateTaskSpec${BS}u0050olicy;`]) {
     assert.ok(boundaryHits(s).fns.length === 1, s);
   }
   for (const s of [
@@ -679,6 +787,80 @@ test('boundary: the check detects every literal specifier form, including C3-2 v
     "import x from './validate-taskspec.mjs';",
   ]) {
     assert.deepEqual(boundaryHits(s), { refs: [], fns: [] }, s);
+  }
+});
+
+// R3-1: literal representations that Node turns into a protected module path. Each sample is
+// first proven relevant with Node's own semantics (vm evaluates the literal on test-owned
+// constants; URL resolution then yields the protected file), and only then must the guard
+// flag it.
+const BASE = 'file:///repo/scripts/ai/consumer.mjs';
+const R31 = [
+  ['identity escape \\-', `'./taskspec${BS}-policy.mjs'`, 'policy'],
+  ['identity escape \\p', `'./tasks${BS}pec-policy.mjs'`, 'policy'],
+  ['identity escape \\s (business)', `"./taskspec-bu${BS}siness.mjs"`, 'business'],
+  ['line continuation LF', `'./taskspec-pol${BS}${LF}icy.mjs'`, 'policy'],
+  ['line continuation CRLF', `'./taskspec-busi${BS}${CR}${LF}ness.mjs'`, 'business'],
+  ['line continuation in template', `\`./taskspec-pol${BS}${LF}icy.mjs\``, 'policy'],
+  ['escaped TAB', `'./taskspec-po${BS}tlicy.mjs'`, 'policy'],
+  ['escaped LF', `'./taskspec-${BS}nbusiness.mjs'`, 'business'],
+  ['escaped CR', `'./tasks${BS}rpec-policy.mjs'`, 'policy'],
+  ['trailing space', `'./taskspec-policy.mjs '`, 'policy'],
+  ['trailing TAB escape and leading space', `' ./taskspec-business.mjs${BS}t'`, 'business'],
+  ['backslash separator', `'.${BS}${BS}taskspec-policy.mjs'`, 'policy'],
+  ['backslash separators (business)', `'..${BS}${BS}ai${BS}${BS}taskspec-business.mjs'`, 'business'],
+  // Combinations (normalization order).
+  ['identity escape + query', `'./tasks${BS}pec-policy.mjs?v=2'`, 'policy'],
+  ['backslash + case', `'.${BS}${BS}TaskSpec-Business.MJS'`, 'business'],
+  ['percent escape + trailing space', `'./taskspec%2Dpolicy.mjs  '`, 'policy'],
+  ['hex escape + hash', `'./taskspec${BS}x2dbusiness.mjs#h'`, 'business'],
+  ['continuation + percent + query', `'./task${BS}${LF}spec%2dpolicy.mjs?x=1'`, 'policy'],
+];
+
+test('boundary R3-1: each sample is relevant (Node semantics) and is detected', () => {
+  for (const [name, literal, expected] of R31) {
+    const value = vm.runInNewContext(literal);
+    assert.equal(cookLiteral(literal, 0), value, `${name}: cooking differs from Node`);
+    const resolved = decodeURIComponent(new URL(value, BASE).pathname).toLowerCase();
+    assert.equal(resolved, `/repo/scripts/ai/taskspec-${expected}.mjs`, `${name}: not relevant`);
+    for (const form of [`import { x } from ${literal};`, `export * from ${literal};`, `await import(${literal});`, `require(${literal});`]) {
+      assert.deepEqual(boundaryHits(form).refs, [expected], `${name}: ${form}`);
+    }
+  }
+});
+
+test('boundary R3-1: lookalikes that do not resolve to the protected modules stay clean', () => {
+  for (const s of [
+    `import x from './taskspec${BS}-policy-registry.mjs';`,
+    "import x from './taskspec-policy-registry.mjs ';",
+    "import x from './taskspec-policy.js';",
+    `import x from './taskspec-policy.mjs${BS}${BS}extra.mjs';`,
+    "const note = 'taskspec policy module';",
+  ]) {
+    assert.deepEqual(boundaryHits(s), { refs: [], fns: [] }, s);
+  }
+});
+
+test('boundary R3-1: malformed escapes never throw and never hide a real reference', () => {
+  const malformed = [
+    "'./taskspec-policy.mjs%'",
+    "'%2'",
+    `'${BS}x'`,
+    `'${BS}xG1'`,
+    `'${BS}u'`,
+    `'${BS}u12'`,
+    `'${BS}u{}'`,
+    `'${BS}u{110000}'`,
+    `'${BS}uD800'`,
+    `'${BS}`,
+    "'unterminated",
+    '`template ${expression}`',
+  ];
+  for (const m of malformed) {
+    const first = boundaryHits(`const a = ${m}`);
+    assert.deepEqual(boundaryHits(`const a = ${m}`), first, m);
+    const withRef = `const a = ${m};${LF}import { x } from './taskspec-policy.mjs';`;
+    assert.deepEqual(boundaryHits(withRef).refs, ['policy'], m);
   }
 });
 
