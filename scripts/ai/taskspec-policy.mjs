@@ -8,50 +8,25 @@
 //
 // The protected registry is trusted committed data (taskspec-policy-registry.mjs); callers
 // cannot supply or weaken policy. Path semantics are A3.4b's covers / overlaps /
-// isCaseAmbiguous, reused, not reimplemented. Pure: no filesystem, Git, network,
-// environment or logging; the input is only read.
+// isCaseAmbiguous, reused, not reimplemented. Secret detection is the shared detector
+// (secret-detector.mjs). Pure: no filesystem, Git, network, environment or logging; the
+// input is only read.
 //
 // Errors carry only { rule, path } (JSON pointer from schema field names and indices).
 // No matched text, credential fragments, lengths or free-text values are ever returned.
 
+import { containsHighConfidenceSecret } from './secret-detector.mjs';
 import { covers, isCaseAmbiguous, overlaps } from './taskspec-business.mjs';
 import { CATEGORY_REQUIREMENTS, PROTECTED_REGISTRY } from './taskspec-policy-registry.mjs';
+
+// High-confidence credential formats are owned by the shared detector (ADR-AI-009);
+// re-exported here for import compatibility.
+export { containsHighConfidenceSecret };
 
 export const MAX_POLICY_ERRORS = 20;
 
 const TYPED_CATEGORIES = ['MIGRATION', 'PACKAGE', 'PRODUCTION'];
 const SAFE_POINTER = /^[A-Za-z0-9_/~-]{0,200}$/;
-
-// ---- high-confidence credential formats (prefix + fixed structure only) ----
-// Built from fragments so this source file contains no credential-shaped literal.
-
-const DASH5 = '-'.repeat(5);
-const TOKEN_CHARS = 'A-Za-z0-9._~+/-';
-const SECRET_PATTERNS = [
-  // PEM private key header (any key type).
-  new RegExp(`${DASH5}BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY${DASH5}`),
-  // GitHub classic tokens (ghp_, gho_, ghu_, ghs_, ghr_ + 36 alphanumerics).
-  new RegExp('(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{36}(?![A-Za-z0-9])'),
-  // GitHub fine-grained personal access tokens.
-  new RegExp('(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{80,}'),
-  // Brevo API / SMTP keys (BREVO_API_KEY, lib/email.js).
-  new RegExp('(?<![A-Za-z0-9_])x(?:key|smtp)sib-[0-9a-f]{64}-[A-Za-z0-9]{16}(?![A-Za-z0-9])'),
-  // Telegram bot token (TELEGRAM_BOT_TOKEN).
-  new RegExp('(?<![0-9])[0-9]{8,10}:AA[A-Za-z0-9_-]{33}(?![A-Za-z0-9_-])'),
-  // Authorization header carrying a credential value (needs a digit and a letter).
-  new RegExp(
-    `Authorization:[ \\t]*Bearer[ \\t]+(?=[${TOKEN_CHARS}]*[0-9])(?=[${TOKEN_CHARS}]*[A-Za-z])[${TOKEN_CHARS}]{20,}`,
-    'i',
-  ),
-  // OpenAI / Anthropic style secret keys (needs a digit and an uppercase letter).
-  new RegExp('(?<![A-Za-z0-9_])sk-(?=[A-Za-z0-9_-]*[0-9])(?=[A-Za-z0-9_-]*[A-Z])[A-Za-z0-9_-]{40,}'),
-];
-
-// Boolean only: never returns match material.
-export function containsHighConfidenceSecret(text) {
-  if (typeof text !== 'string') throw new TypeError('containsHighConfidenceSecret: text must be a string');
-  return SECRET_PATTERNS.some((re) => re.test(text));
-}
 
 function pointerSegment(seg) {
   return String(seg).replaceAll('~', '~0').replaceAll('/', '~1');

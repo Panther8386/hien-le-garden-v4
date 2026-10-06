@@ -72,7 +72,7 @@ jobs:
       - name: AI contract tests (node:test)
         run: |
           set -e
-          for f in test/ai/contract-schemas.node-test.mjs test/ai/contract-validator.node-test.mjs test/ai/taskspec-extractor.node-test.mjs test/ai/taskspec-business.node-test.mjs test/ai/taskspec-policy.node-test.mjs; do
+          for f in test/ai/contract-schemas.node-test.mjs test/ai/contract-validator.node-test.mjs test/ai/taskspec-extractor.node-test.mjs test/ai/taskspec-business.node-test.mjs test/ai/taskspec-policy.node-test.mjs test/ai/secret-detector.node-test.mjs test/ai/validate-taskspec.node-test.mjs; do
             test -f "$f"
             node --test "$f"
           done
