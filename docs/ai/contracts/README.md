@@ -6,7 +6,7 @@ Architecture of the machine-readable contract layer. Decisions:
 [ADR-AI-006](../adr/ADR-AI-006-human-approval-evidence.md) (human approval),
 [ADR-AI-007](../adr/ADR-AI-007-contract-input-parsing.md) (input parsing).
 
-**Status (A3.4c complete; A3.4d in progress locally):**
+**Status (A3.4d complete):**
 
 - **Exists:** V1 JSON Schemas ([schemas/v1/](schemas/v1/): one common schema and seven
   contract schemas), one valid example per contract ([examples/v1/](examples/v1/)), the trusted
@@ -24,23 +24,40 @@ Architecture of the machine-readable contract layer. Decisions:
   only: a pass is not approval or authority, and `protectedCategories` is classification
   metadata only.
 - **Tests:** `test/ai/*.node-test.mjs`. PR CI (`.github/workflows/test.yml`, job `test`, step
-  "AI contract tests (node:test)") runs the contract-schema, contract-validator, TaskSpec
-  extractor, TaskSpec business and TaskSpec policy test files, one per `node --test` call
-  with an existence check (`set -e`, `test -f`). Verified on Linux in A3.3c, A3.4a and A3.4b;
-  for A3.4c the step passed on PR #5 at exact SHA `8144004702d2532d7cbe0fe0b8b1e2eb739f6134`
-  (workflow "Tests", run 37435892253, `pull_request`, attempt 1; checks `test` and
-  "Release artifact boundary (R-1)" both success). That evidence applies to that SHA only.
+  "AI contract tests (node:test)") runs seven test files: contract-schema, contract-validator,
+  TaskSpec extractor, TaskSpec business, TaskSpec policy, secret detector and TaskSpec composer,
+  one per `node --test` call with an existence check (`set -e`, `test -f`). Verified on Linux
+  in A3.3c, A3.4a and A3.4b; for A3.4c the step passed on PR #5 at exact SHA
+  `8144004702d2532d7cbe0fe0b8b1e2eb739f6134` (workflow "Tests", run 37435892253,
+  `pull_request`, attempt 1; checks `test` and "Release artifact boundary (R-1)" both success).
+  For A3.4d the seven-file step passed on PR #6 (see below). Each piece of evidence applies to
+  its SHA only.
 - **A3.4c closeout:** implementation, independent security review, remediation of finding F1
   (HIGH, Windows trailing-dot path aliases; fixed by `BR-PATH-TRAILING-DOT` in `8ff7dbe`,
   re-reviewed with no bypass found), CI enforcement and Linux CI evidence are complete.
   PR #5 remains Draft; no merge or deployment authority is granted. Other review findings
   remain open or deferred (see the slice table).
-- **A3.4d (local, branch `feature/hlg-ai-taskspec-composer`):** the supported TaskSpec composer
-  (`scripts/ai/validate-taskspec.mjs`; EXTRACT → SECRET_SCAN → CONTRACT → TYPE → BUSINESS →
-  POLICY, ADR-AI-009) and the shared linear secret detector (`scripts/ai/secret-detector.mjs`)
-  exist with tests (`test/ai/validate-taskspec.node-test.mjs`,
-  `test/ai/secret-detector.node-test.mjs`). These two test files are not yet in the CI step and
-  have no Linux CI evidence; findings F2, F3 and F4 remain open.
+- **A3.4d closeout (TaskSpec composer, ADR-AI-009):** complete.
+  - Supported entry point: `createTaskSpecValidator().validateTaskSpecMarkdown(bytes, { fileName })`
+    (`scripts/ai/validate-taskspec.mjs`). Stage order EXTRACT → SECRET_SCAN → CONTRACT → TYPE →
+    BUSINESS → POLICY → RESULT; the first failing stage ends validation. Shared linear
+    high-confidence secret detector: `scripts/ai/secret-detector.mjs`.
+  - Findings: F2 (business must run before policy) **closed** — independent review PASS,
+    composer/business/TYPE behaviour validated, exact-head Linux CI PASS. F3 (linear `sk-`
+    detection) **closed** — shared detector reviewed, linear `sk-` handling established, the
+    secret-detector suite ran in the successful fail-closed Linux step. F4 (schema-first
+    ordering) **closed** — independent review PASS, composer and import-boundary behaviour
+    validated, the composer suite ran in the successful fail-closed Linux step, R-1 PASS.
+    Review findings C3-1, C3-2, R3-1, R4-1, R4-2 and R4-3 are closed.
+  - Linux CI evidence: PR #6, workflow "Tests", run 37474931828, `pull_request`, exact head
+    `0a7b6c25f31c5f05981ff1117bb5586c9cf15d6e`, conclusion success; checks `test` and
+    "Release artifact boundary (R-1)" both PASS. GitHub-hosted `ubuntu-latest`, Node 22
+    configured via `actions/setup-node@v4`. Per-suite Linux test counts, the exact Node patch
+    version and the result of the individual symlink assertion are not available from
+    unauthenticated evidence (symlink detail: UNKNOWN); closure rests on the successful
+    fail-closed step and workflow.
+  - Closure is an owner decision on that evidence. PR #6 remains Draft and unmerged; no merge,
+    deployment or production authority is granted, and no production change was made.
 - **Not implemented yet:** SHA freshness; evidence trust;
   approval verification; deterministic GateDecision aggregation; base-branch validation of
   governance-sensitive changes; GitHub integration.
@@ -150,7 +167,7 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.4a | TaskSpec machine-block extractor and tests | Done (Linux CI verified) |
 | A3.4b | TaskSpec business and path validation and tests | Done (Linux CI verified) |
 | A3.4c | TaskSpec security / capability policy and tests (ADR-AI-008) | Done (Linux CI verified on Draft PR #5 at `8144004`, run 37435892253) |
-| A3.4d | End-to-end TaskSpec composition | In progress locally: ADR-AI-009, shared linear secret detector and composer committed; not yet in CI. Open findings F2 (business must run before policy), F3 (linear-time `sk-` detection before narrative scanning), F4 (schema-first ordering) stay open until independent review and Linux CI |
+| A3.4d | End-to-end TaskSpec composition | Done (Linux CI verified on Draft PR #6 at `0a7b6c2`, run 37474931828); F2, F3, F4 closed |
 | A3.5 | SHA, evidence and ApprovalRef verification | Common path safety for ImplementationReport / EvidenceRef / Finding paths before repository paths are trusted |
 | A3.6 | Deterministic gate aggregator and policy table | Deferred findings F6 (protect deterministic-check configuration), F8 (governance-specific gate), F9 (producer/verifier separation) |
 | A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006); F6/F8/F9 as for A3.6 |
