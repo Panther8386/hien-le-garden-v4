@@ -156,9 +156,11 @@ EXTRACT → SECRET_SCAN → CONTRACT → TYPE → BUSINESS → POLICY → RESULT
   result.
 - **Supported entry point:** the stage functions remain importable for unit tests, but
   production code must use the composer. A repository test checks this import boundary
-  (literal specifiers, including query, hash, percent-encoded and case variants); it is
-  designed to be enforced by the test suite and future CI wiring. It is not a language-level
-  sandbox: computed specifiers are left to code review.
+  (literal specifiers, including query, hash, percent-encoded and case variants). That test
+  runs in the deterministic "AI contract tests (node:test)" CI step on Linux; for A3.4d it
+  passed at the exact head of Draft PR #6 (see
+  [contracts/README.md](../contracts/README.md)). It is not a language-level sandbox:
+  computed specifiers are left to code review.
 - A pass means only "passes deterministic TaskSpec validation". It is not approval and grants no
   merge, deployment or production authority.
 

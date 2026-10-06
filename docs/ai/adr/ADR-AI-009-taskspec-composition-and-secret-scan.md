@@ -205,3 +205,19 @@ exact PR head.
 
 Medium. The order and boundary can be changed only by a reviewed change to GOVERNANCE scope and a
 superseding ADR.
+
+## Post-acceptance status update (2026-10-06)
+
+Implementation status only. This note does not change the decision or its rationale above; the
+sections above, including "Finding status", record the state when this ADR was accepted.
+
+- **A3.4d implementation: COMPLETE**, as decided above.
+- **Current finding status:** F2, F3 and F4 are **CLOSED**; review findings C3-1, C3-2, R3-1,
+  R4-1, R4-2 and R4-3 are **CLOSED**.
+- **Linux CI evidence:** Draft PR #6, workflow "Tests", run 37474931828, event `pull_request`,
+  exact head `0a7b6c25f31c5f05981ff1117bb5586c9cf15d6e`, conclusion success; checks `test` PASS
+  and "Release artifact boundary (R-1)" PASS. Closure rests on that successful fail-closed
+  workflow; the individual Linux symlink assertion result is UNKNOWN from the available
+  evidence.
+- PR #6 was Draft and unmerged at closure. This status grants no merge, deployment or
+  production authority.
