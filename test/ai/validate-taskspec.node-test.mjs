@@ -576,7 +576,9 @@ test('reentrancy: nested calls on the same validator use independent snapshots',
 //     the text is lower-cased before matching the specifier pattern.
 //  2. Literal layer: every quote character is tried as the start of a string literal, which
 //     is cooked with JavaScript string semantics (line continuations, single-character and
-//     identity escapes, hex/Unicode escapes; template literals with `${` are skipped). The
+//     identity escapes, hex/Unicode escapes with any number of leading zeros, legacy octal
+//     escapes; template literals with `${` are skipped). There is no per-literal length cap;
+//     work-budget and file-size limits fail closed with the marker 'review'. The
 //     cooked value is then normalized as URL/file resolution would see it, in this order:
 //     drop ASCII TAB/LF/CR, trim leading/trailing C0 controls and spaces, backslash -> "/",
 //     cut at the first "?" or "#", percent-decode, lower-case, and strip trailing dots and
@@ -587,15 +589,25 @@ test('reentrancy: nested calls on the same validator use independent snapshots',
 // review.
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'test', 'images', 'videos', '.wrangler', '.superpowers']);
 const HEX = '[0-9a-fA-F]';
-const JS_ESCAPE = new RegExp(`${BS}${BS}x(${HEX}{2})|${BS}${BS}u${BS}{(${HEX}{1,6})${BS}}|${BS}${BS}u(${HEX}{4})`, 'g');
+const JS_ESCAPE = new RegExp(`${BS}${BS}x(${HEX}{2})|${BS}${BS}u${BS}{(${HEX}+)${BS}}|${BS}${BS}u(${HEX}{4})`, 'g');
 const PERCENT = new RegExp(`%(${HEX}{2})`, 'g');
 const MODULE_REF = /['"`/]taskspec-(business|policy)(?:\.mjs)?(?:[?#][^'"`\n]*)?['"`]/g;
 const STAGE_FN = /\bvalidateTaskSpec(Business|Policy)\b/g;
 
+// Code point of a hex digit string, or null if it is above 0x10FFFF. Leading zeros are
+// accepted in any number (as JavaScript does for the braced form); the significant digits are
+// length-checked before parseInt, so a long value can never overflow into a valid one.
+function hexCodePoint(hex) {
+  const significant = hex.replace(/^0+/, '');
+  if (significant.length > 6) return null;
+  const n = significant === '' ? 0 : parseInt(significant, 16);
+  return n <= 0x10ffff ? n : null;
+}
+
 function normalizeSource(source) {
   const codePoint = (hex) => {
-    const n = parseInt(hex, 16);
-    return n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    const n = hexCodePoint(hex);
+    return n === null ? '' : String.fromCodePoint(n);
   };
   return source
     .replace(JS_ESCAPE, (_, x, braced, u) => codePoint(x || braced || u))
@@ -609,17 +621,33 @@ const LS = String.fromCharCode(0x2028);
 const PS = String.fromCharCode(0x2029);
 const QUOTES = new Set(["'", '"', '`']);
 const SIMPLE_ESCAPES = { n: LF, t: TAB, r: CR, b: String.fromCharCode(8), f: String.fromCharCode(12), v: String.fromCharCode(11) };
-const MAX_LITERAL = 2048;
 const isHex = (s) => s.length > 0 && /^[0-9a-fA-F]+$/.test(s);
+const isHexChar = (c) => c !== undefined && /^[0-9a-fA-F]$/.test(c);
+const isOctalChar = (c) => c !== undefined && c >= '0' && c <= '7';
 
-// Cooks the string literal starting at src[start] (a quote). Returns the value, or null when
-// the text from that quote is not a complete literal (unterminated, too long, or a template
-// with an expression). Malformed escapes keep their characters (deterministic, no throw).
-function cookLiteral(src, start) {
+// Bounds (R4-2). There is no per-literal length cap: a literal is cooked to its closing quote
+// however long it is. Each candidate scan stops at the next unescaped quote of its own kind
+// (or a newline outside templates), so the scans of one quote kind tile the source and the
+// total work is roughly linear. Pathological input (e.g. long runs of escaped quotes) is
+// bounded by a work budget, and very large files by a size limit; exceeding either is FAIL
+// CLOSED: the file is reported with the marker 'review', never treated as clean.
+const MAX_SOURCE_CHARS = 4 * 1024 * 1024;
+const WORK_PER_CHAR = 64;
+const WORK_BASE = 65536;
+const OVER_BUDGET = Symbol('over budget');
+
+// Cooks the string literal starting at src[start] (a quote). Returns the value, null when the
+// text from that quote is not a complete literal (unterminated, or a template with an
+// expression), or OVER_BUDGET. Malformed escapes keep their characters (deterministic, no
+// throw). Legacy octal escapes (sloppy-mode Annex B, R4-3) are decoded: a first digit 0-3
+// takes up to three octal digits, 4-7 up to two; strict code rejects them, but the guard scans
+// all repository source, including sloppy CommonJS.
+function cookLiteral(src, start, budget) {
   const quote = src[start];
   let out = '';
   let i = start + 1;
-  while (i < src.length && i - start <= MAX_LITERAL) {
+  while (i < src.length) {
+    if (--budget.left < 0) return OVER_BUDGET;
     const c = src[i];
     if (c === quote) return out;
     if (quote !== '`' && (c === LF || c === CR)) return null;
@@ -638,18 +666,25 @@ function cookLiteral(src, start) {
     } else if (Object.hasOwn(SIMPLE_ESCAPES, n)) {
       out += SIMPLE_ESCAPES[n];
       i += 2;
-    } else if (n === '0' && !/[0-9]/.test(src[i + 2] || '')) {
-      out += String.fromCharCode(0);
-      i += 2;
+    } else if (isOctalChar(n)) {
+      const maxDigits = n <= '3' ? 3 : 2;
+      let j = i + 1;
+      while (j < i + 1 + maxDigits && isOctalChar(src[j])) j++;
+      out += String.fromCharCode(parseInt(src.slice(i + 1, j), 8));
+      i = j;
     } else if (n === 'x' && isHex(src.slice(i + 2, i + 4)) && src.slice(i + 2, i + 4).length === 2) {
       out += String.fromCharCode(parseInt(src.slice(i + 2, i + 4), 16));
       i += 4;
     } else if (n === 'u' && src[i + 2] === '{') {
-      const close = src.indexOf('}', i + 3);
-      const hex = close === -1 ? '' : src.slice(i + 3, close);
-      if (isHex(hex) && hex.length <= 8 && parseInt(hex, 16) <= 0x10ffff) {
-        out += String.fromCodePoint(parseInt(hex, 16));
-        i = close + 1;
+      let j = i + 3;
+      while (isHexChar(src[j])) {
+        if (--budget.left < 0) return OVER_BUDGET;
+        j++;
+      }
+      const cp = j > i + 3 && src[j] === '}' ? hexCodePoint(src.slice(i + 3, j)) : null;
+      if (cp !== null) {
+        out += String.fromCodePoint(cp);
+        i = j + 1;
       } else {
         out += n; // malformed: keep
         i += 2;
@@ -681,10 +716,13 @@ function specifierTarget(value) {
 }
 
 function literalRefs(source) {
+  if (source.length > MAX_SOURCE_CHARS) return ['review'];
+  const budget = { left: WORK_PER_CHAR * source.length + WORK_BASE };
   const refs = [];
   for (let i = 0; i < source.length; i++) {
     if (!QUOTES.has(source[i])) continue;
-    const value = cookLiteral(source, i);
+    const value = cookLiteral(source, i, budget);
+    if (value === OVER_BUDGET) return [...refs, 'review'];
     if (value === null) continue;
     const target = specifierTarget(value);
     if (target) refs.push(target);
@@ -774,6 +812,8 @@ test('boundary: the check detects every literal specifier form, including C3-2 v
     `import { x } from '../../scripts/ai/taskspec-policy.mjs';`,
     `import { x } from './/taskspec-business.mjs';`,
     `import { x } from 'file:///D:/repo/scripts/ai/taskspec-policy.mjs';`,
+    `const u = import.meta.resolve('./taskspec-policy.mjs');`,
+    `const u = new URL('./taskspec-business.mjs', import.meta.url);`,
   ];
   for (const s of moduleOnly) assert.ok(boundaryHits(s).refs.length === 1, s);
   for (const s of ['const fn = lib.validateTaskSpecPolicy;', 'validateTaskSpecBusiness(spec)', `const f = validateTaskSpec${BS}u0050olicy;`]) {
@@ -820,7 +860,7 @@ const R31 = [
 test('boundary R3-1: each sample is relevant (Node semantics) and is detected', () => {
   for (const [name, literal, expected] of R31) {
     const value = vm.runInNewContext(literal);
-    assert.equal(cookLiteral(literal, 0), value, `${name}: cooking differs from Node`);
+    assert.equal(cookLiteral(literal, 0, { left: Infinity }), value, `${name}: cooking differs from Node`);
     const resolved = decodeURIComponent(new URL(value, BASE).pathname).toLowerCase();
     assert.equal(resolved, `/repo/scripts/ai/taskspec-${expected}.mjs`, `${name}: not relevant`);
     for (const form of [`import { x } from ${literal};`, `export * from ${literal};`, `await import(${literal});`, `require(${literal});`]) {
@@ -861,6 +901,123 @@ test('boundary R3-1: malformed escapes never throw and never hide a real referen
     assert.deepEqual(boundaryHits(`const a = ${m}`), first, m);
     const withRef = `const a = ${m};${LF}import { x } from './taskspec-policy.mjs';`;
     assert.deepEqual(boundaryHits(withRef).refs, ['policy'], m);
+  }
+});
+
+// R4: Node itself is the oracle. vm evaluates each literal as a sloppy script (the semantics a
+// CommonJS .js file gets), URL resolution gives the module path, and the guard must report
+// exactly the protected module that path names (or nothing).
+const R4_IMPORT_FORMS = (literal) => [`import { x } from ${literal};`, `require(${literal});`, `await import(${literal});`];
+
+function oracleTarget(literal) {
+  const value = vm.runInNewContext(literal);
+  assert.equal(cookLiteral(literal, 0, { left: Infinity }), value, 'cooking differs from Node');
+  const resolved = decodeURIComponent(new URL(value, BASE).pathname).toLowerCase();
+  const m = /\/scripts\/ai\/taskspec-(business|policy)\.mjs$/.exec(resolved);
+  return m ? m[1] : null;
+}
+
+function assertGuardMatchesOracle(name, literal, mustBeProtected) {
+  const target = oracleTarget(literal);
+  if (mustBeProtected) assert.ok(target, `${name}: sample is not relevant`);
+  for (const form of R4_IMPORT_FORMS(literal)) {
+    assert.deepEqual(boundaryHits(form).refs, target ? [target] : [], `${name}: ${form.slice(0, 80)}`);
+  }
+}
+
+test('boundary R4-1: braced Unicode escapes with any number of leading zeros', () => {
+  const cases = [
+    ['u{2d}', `'./taskspec${BS}u{2d}policy.mjs'`],
+    ['u{02d}', `'./taskspec${BS}u{02d}business.mjs'`],
+    ['u{000000002d}', `'./taskspec${BS}u{000000002d}policy.mjs'`],
+    ['200 leading zeros', `'./taskspec${BS}u{${'0'.repeat(200)}2d}business.mjs'`],
+    ['escaped letter', `'./${BS}u{0000000074}askspec-policy.mjs'`],
+  ];
+  for (const [name, literal] of cases) assertGuardMatchesOracle(name, literal, true);
+  // The whole-source layer has no digit cap either.
+  assert.ok(normalizeSource(`'./taskspec${BS}u{${'0'.repeat(50)}2d}policy.mjs'`).includes('taskspec-policy'));
+
+  // Upper boundary is valid; above it, empty, unterminated and huge values are invalid in
+  // JavaScript and are handled without a crash.
+  assert.equal(vm.runInNewContext(`'${BS}u{10FFFF}'`), String.fromCodePoint(0x10ffff));
+  assert.equal(cookLiteral(`'${BS}u{10FFFF}'`, 0, { left: Infinity }), String.fromCodePoint(0x10ffff));
+  for (const bad of [`'${BS}u{110000}'`, `'${BS}u{1${'0'.repeat(30)}}'`, `'${BS}u{}'`, `'${BS}u{2d'`, `'${BS}u{2g}'`]) {
+    assert.throws(() => vm.runInNewContext(bad), { name: 'SyntaxError' }, bad); // vm errors come from another realm
+    const withRef = `const a = ${bad};${LF}import { x } from './taskspec-policy.mjs';`;
+    assert.deepEqual(boundaryHits(withRef).refs, ['policy'], bad);
+  }
+});
+
+function paddedLiterals(n) {
+  return {
+    query: `'./tasks${BS}pec-policy.mjs?${'q'.repeat(n)}'`,
+    fragment: `'./tasks${BS}pec-business.mjs#${'f'.repeat(n)}'`,
+    dotSlash: `'${'./'.repeat(Math.ceil(n / 2))}tasks${BS}pec-policy.mjs'`,
+    upAndBack: `'${'x/../'.repeat(Math.ceil(n / 5))}tasks${BS}pec-business.mjs'`,
+  };
+}
+
+test('boundary R4-2: long padded literals are analysed in full (no length cap)', () => {
+  for (const n of [2040, 2047, 2048, 2049, 2050, 4096, 20000, 200000]) {
+    for (const [name, literal] of Object.entries(paddedLiterals(n))) {
+      // The escape defeats the whole-source layer, so only full literal analysis catches it.
+      assert.deepEqual([...normalizeSource(literal).toLowerCase().matchAll(MODULE_REF)], [], `${name} ${n}`);
+      assertGuardMatchesOracle(`${name} ${n}`, literal, true);
+    }
+  }
+});
+
+test('boundary R4-2: exhausting the work budget or the size limit fails closed', () => {
+  // Thousands of escaped backticks: every one starts a candidate that scans to the end.
+  const pathological = 'const t = `' + (BS + '`').repeat(20000) + '`;';
+  assert.ok(boundaryHits(pathological).refs.includes('review'));
+  const oversize = 'x'.repeat(MAX_SOURCE_CHARS + 1);
+  assert.deepEqual(boundaryHits(oversize).refs, ['review']);
+  // A file just under the size limit with ordinary content stays clean.
+  const big = ("const s = 'lorem ipsum';" + LF).repeat(Math.floor(MAX_SOURCE_CHARS / 26));
+  assert.deepEqual(boundaryHits(big).refs, []);
+});
+
+test('boundary R4-3: legacy octal escapes (sloppy CommonJS) are decoded', () => {
+  // [name, literal, rejected in strict code]. Strict code (all ESM) rejects legacy octal
+  // escapes; the guard still decodes them because it scans every repository source file,
+  // including sloppy CommonJS. A lone \0 (no digit after it) is not legacy octal and is valid
+  // everywhere.
+  const protectedCases = [
+    ['\\55 (two digits, 4-7)', `'./taskspec${BS}55policy.mjs'`, true],
+    ['\\055 (three digits, 0-3)', `'./taskspec${BS}055business.mjs'`, true],
+    ['\\164 = t', `'./${BS}164askspec-policy.mjs'`, true],
+    ['\\7 trailing (one digit, C0 trimmed by URL)', `'./taskspec-business.mjs${BS}7'`, true],
+    ['\\0 trailing (not legacy octal)', `'./taskspec-policy.mjs${BS}0'`, false],
+  ];
+  for (const [name, literal, strictRejects] of protectedCases) {
+    assertGuardMatchesOracle(name, literal, true);
+    const strict = () => vm.runInNewContext(`'use strict'; ${literal}`);
+    if (strictRejects) assert.throws(strict, { name: 'SyntaxError' }, name);
+    else assert.doesNotThrow(strict, name);
+  }
+  // Digit-consumption boundaries: the oracle decides, and these do not name a protected module.
+  const unprotected = [
+    ['\\55 then octal-looking 5', `'./taskspec${BS}555policy.mjs'`],
+    ['\\055 then 1', `'./taskspec${BS}0551policy.mjs'`],
+    ['\\005 then 5', `'./taskspec${BS}0055policy.mjs'`],
+    ['\\9 identity', `'./taskspec-polic${BS}9.mjs'`],
+    ['\\8 identity', `'./taskspec${BS}8policy.mjs'`],
+    ['\\08 = NUL then 8', `'./taskspec-policy.mjs${BS}08'`],
+  ];
+  for (const [name, literal] of unprotected) assertGuardMatchesOracle(name, literal, false);
+});
+
+test('boundary R4: malformed long escapes, octal-like text and long literals do not hide later imports', () => {
+  for (const m of [
+    `'${BS}u{${'1'.repeat(30)}}'`,
+    `'${BS}u{${'0'.repeat(5000)}'`,
+    `'${BS}8${BS}9${BS}08${BS}777'`,
+    `'${'x'.repeat(100000)}'`,
+    `'${'./'.repeat(50000)}unrelated.mjs'`,
+  ]) {
+    const withRef = `const a = ${m};${LF}import { x } from './tasks${BS}pec-policy.mjs';`;
+    assert.deepEqual(boundaryHits(withRef).refs, ['policy'], m.slice(0, 40));
   }
 });
 
