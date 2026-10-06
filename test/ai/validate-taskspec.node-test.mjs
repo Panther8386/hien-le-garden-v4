@@ -456,15 +456,152 @@ test('hook: receives only the stage name, and a throwing hook never yields ok:tr
   }
 });
 
+// ---------------------------------------------------------------- byte snapshot (C3-1)
+
+// A safe Markdown whose bytes a hook can "poison" in place (same length) in three ways that
+// would each change the outcome if a stage read the caller's array: break the marker line
+// (EXTRACT), inject a secret into a placeholder (SECRET_SCAN), and widen the scope to a
+// protected path (POLICY).
+function poisonable() {
+  const key = skKey();
+  const text = markdown(validSpec(), { before: 'Note: ' + 'P'.repeat(key.length) + '\n' });
+  const poison = (bytes) => {
+    const at = (needle) => {
+      const s = new TextDecoder().decode(bytes);
+      const i = s.indexOf(needle);
+      assert.ok(i >= 0, 'poison anchor missing');
+      return enc(s.slice(0, i)).length; // byte offset (ASCII before the anchors anyway)
+    };
+    bytes.set(enc('~~~'), at(MARKER)); // malformed marker
+    bytes.set(enc(key), at('P'.repeat(key.length))); // narrative secret
+    bytes.set(enc('migrations/'), at('docs/notes/')); // protected scope (same length)
+  };
+  return { text, poison };
+}
+
+test('snapshot: the poisoned bytes really change the outcome when validated directly', () => {
+  const { text, poison } = poisonable();
+  const bytes = enc(text);
+  poison(bytes);
+  const { result, stages: s } = run(bytes);
+  assert.deepEqual(s, ['EXTRACT']);
+  assert.equal(result.code, 'E_TASKSPEC_MARKER_MALFORMED');
+});
+
+test('snapshot: mutating the caller bytes in any stage hook cannot change the result', () => {
+  for (const kind of ['Uint8Array', 'Buffer']) {
+    for (const stage of ALL) {
+      const { text, poison } = poisonable();
+      const bytes = kind === 'Buffer' ? Buffer.from(text) : enc(text);
+      const seen = [];
+      const v = createTaskSpecValidator({
+        onStage: (s) => {
+          seen.push(s);
+          if (s === stage) poison(bytes);
+        },
+      });
+      const result = v.validateTaskSpecMarkdown(bytes, { fileName: FILE });
+      assert.deepEqual(seen, ALL, `${kind} ${stage}`);
+      assert.equal(result.ok, true, `${kind} ${stage}`);
+      assert.deepEqual(result.protectedCategories, [], `${kind} ${stage}`);
+      assert.deepEqual([...result.spec.scope.allowed_paths], ['docs/notes/']);
+      // The composer neither restores nor otherwise touches the caller's memory.
+      assert.ok(new TextDecoder().decode(bytes).includes('migrations/'), `${kind} ${stage}`);
+    }
+  }
+});
+
+test('snapshot: a narrative secret removed by the SECRET_SCAN hook is still found', () => {
+  const key = skKey();
+  const text = markdown(validSpec(), { before: 'Leak: ' + key + '\n' });
+  const bytes = Buffer.from(text);
+  const v = createTaskSpecValidator({
+    onStage: (s) => {
+      if (s === 'SECRET_SCAN') bytes.fill(0x78, 6, 6 + key.length); // overwrite with "x"
+    },
+  });
+  const result = v.validateTaskSpecMarkdown(bytes, { fileName: FILE });
+  assert.equal(result.stage, 'SECRET_SCAN');
+  assert.equal(result.code, 'E_TASKSPEC_SECRET');
+  assert.ok(!new TextDecoder().decode(bytes).includes(key));
+});
+
+test('snapshot: a Buffer view over shared memory is snapshotted, not aliased', () => {
+  const text = markdown(validSpec());
+  const backing = Buffer.alloc(text.length + 16, 0x20);
+  backing.write(text, 8);
+  const view = backing.subarray(8, 8 + text.length); // shares memory with backing
+  const v = createTaskSpecValidator({
+    onStage: (s) => {
+      if (s === 'CONTRACT') backing.write('"schema_version": 7', 8 + text.indexOf('"schema_version": 1'));
+    },
+  });
+  const result = v.validateTaskSpecMarkdown(view, { fileName: FILE });
+  assert.equal(result.ok, true);
+  assert.equal(result.spec.schema_version, 1);
+  assert.ok(new TextDecoder().decode(view).includes('"schema_version": 7'));
+});
+
+test('reentrancy: nested calls on the same validator use independent snapshots', () => {
+  const { text, poison } = poisonable();
+  const outer = enc(text);
+  const innerText = markdown(validSpec(), { before: ghKey() + '\n' });
+  let inner;
+  let fired = false;
+  const v = createTaskSpecValidator({
+    onStage: (s) => {
+      if (!fired && s === 'SECRET_SCAN') {
+        fired = true;
+        poison(outer);
+        inner = v.validateTaskSpecMarkdown(enc(innerText), { fileName: FILE });
+      }
+    },
+  });
+  const result = v.validateTaskSpecMarkdown(outer, { fileName: FILE });
+  assert.equal(result.ok, true);
+  assert.equal(inner.stage, 'SECRET_SCAN');
+  assert.equal(inner.code, 'E_TASKSPEC_SECRET');
+  const again = v.validateTaskSpecMarkdown(enc(text), { fileName: FILE });
+  assert.equal(again.ok, true);
+});
+
 // ---------------------------------------------------------------- supported entry point (F2)
 
 // Repository enforcement, not a language-level sandbox: production JavaScript outside the
-// allowlist must neither reference the business/policy modules by specifier nor mention the
-// stage entry functions. Dynamically computed specifiers are out of reach of this check and
-// are left to review.
+// allowlist must neither reference the business/policy modules by a literal specifier nor
+// mention the stage entry functions. Before matching, the source is normalized: JavaScript
+// string escapes (hex and both Unicode escape forms) and percent-escapes are decoded, and specifiers
+// are compared case-insensitively, so literal variants such as `?query`, `#hash`, `%2D` and
+// case changes are caught. Computed or concatenated specifiers (e.g. built from variables)
+// cannot be detected by this bounded check and are left to code review.
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'test', 'images', 'videos', '.wrangler', '.superpowers']);
-const MODULE_REF = /['"`](?:[^'"`\n]*\/)?taskspec-(business|policy)(?:\.mjs)?['"`]/g;
+const HEX = '[0-9a-fA-F]';
+const JS_ESCAPE = new RegExp(`${BS}${BS}x(${HEX}{2})|${BS}${BS}u${BS}{(${HEX}{1,6})${BS}}|${BS}${BS}u(${HEX}{4})`, 'g');
+const PERCENT = new RegExp(`%(${HEX}{2})`, 'g');
+const MODULE_REF = /['"`/]taskspec-(business|policy)(?:\.mjs)?(?:[?#][^'"`\n]*)?['"`]/g;
 const STAGE_FN = /\bvalidateTaskSpec(Business|Policy)\b/g;
+
+function normalizeSource(source) {
+  const codePoint = (hex) => {
+    const n = parseInt(hex, 16);
+    return n <= 0x10ffff ? String.fromCodePoint(n) : '';
+  };
+  return source
+    .replace(JS_ESCAPE, (_, x, braced, u) => codePoint(x || braced || u))
+    .replace(PERCENT, (_, h) => codePoint(h));
+}
+
+function boundaryHits(source) {
+  const text = normalizeSource(source);
+  return {
+    refs: uniqueSortedOf([...text.toLowerCase().matchAll(MODULE_REF)].map((m) => m[1])),
+    fns: uniqueSortedOf([...text.matchAll(STAGE_FN)].map((m) => m[1])),
+  };
+}
+
+function uniqueSortedOf(values) {
+  return [...new Set(values)].sort();
+}
 const EXPECTED = {
   'scripts/ai/validate-taskspec.mjs': { refs: ['business', 'policy'], fns: ['Business', 'Policy'] },
   'scripts/ai/taskspec-business.mjs': { refs: [], fns: ['Business'] },
@@ -484,8 +621,6 @@ function productionSources(dir = '.', out = []) {
   return out;
 }
 
-const uniqueSorted = (matches) => [...new Set(matches)].sort();
-
 test('boundary: only the composer consumes validateTaskSpecBusiness / validateTaskSpecPolicy', () => {
   const files = productionSources();
   assert.ok(files.length > 100, 'scan found too few production sources');
@@ -495,9 +630,7 @@ test('boundary: only the composer consumes validateTaskSpecBusiness / validateTa
   }
   const violations = [];
   for (const file of files) {
-    const source = readFileSync(file, 'utf8');
-    const refs = uniqueSorted([...source.matchAll(MODULE_REF)].map((m) => m[1]));
-    const fns = uniqueSorted([...source.matchAll(STAGE_FN)].map((m) => m[1]));
+    const { refs, fns } = boundaryHits(readFileSync(file, 'utf8'));
     const expected = EXPECTED[file] || { refs: [], fns: [] };
     if (JSON.stringify(refs) !== JSON.stringify(expected.refs) || JSON.stringify(fns) !== JSON.stringify(expected.fns)) {
       violations.push(file);
@@ -506,19 +639,52 @@ test('boundary: only the composer consumes validateTaskSpecBusiness / validateTa
   assert.deepEqual(violations, []);
 });
 
-test('boundary: the check itself detects static, re-export, dynamic and namespace forms', () => {
-  const samples = [
-    "import { validateTaskSpecPolicy } from '../scripts/ai/taskspec-policy.mjs';",
-    "export { validateTaskSpecBusiness } from './taskspec-business.mjs';",
-    "const m = await import('./scripts/ai/taskspec-policy.mjs');",
-    "import * as b from \"./taskspec-business\";",
-    'const fn = lib.validateTaskSpecPolicy;',
+test('boundary: the check detects every literal specifier form, including C3-2 variants', () => {
+  const P = './scripts/ai/taskspec-';
+  const moduleOnly = [
+    // Existing forms (specifier only; the identifier is avoided on purpose).
+    `import { x } from '${P}policy.mjs';`,
+    `import { x as y } from '${P}business.mjs';`,
+    `import * as b from "${P}business";`,
+    `import d from '../taskspec-policy.mjs';`,
+    `import 'taskspec-policy.mjs';`,
+    `export { x } from './taskspec-business.mjs';`,
+    `export * from "./taskspec-policy";`,
+    `const m = await import('${P}policy.mjs');`,
+    'const m = await import(`./taskspec-business.mjs`);',
+    `const r = require('${P}policy');`,
+    // C3-2: query, hash, percent-encoded hyphen (both cases), case variants.
+    `import { x } from '${P}policy.mjs?v=1';`,
+    `import { x } from '${P}business.mjs#frag';`,
+    `import { x } from '${P}policy?x';`,
+    `import { x } from './scripts/ai/taskspec%2Dpolicy.mjs';`,
+    `import { x } from './scripts/ai/taskspec%2dbusiness.mjs';`,
+    `import { x } from './scripts/ai/TaskSpec-Policy.MJS';`,
+    `import { x } from './scripts/ai/TASKSPEC-BUSINESS';`,
+    // Further literal encodings decoded by the same normalization.
+    `import { x } from './scripts/ai/taskspec-policy%2Emjs';`,
+    `import { x } from './scripts/ai/taskspec${BS}x2dpolicy.mjs';`,
+    `import { x } from './scripts/ai/taskspec${BS}u002dbusiness.mjs';`,
+    `import { x } from './scripts/ai/taskspec${BS}u{2d}policy.mjs';`,
   ];
-  for (const s of samples) {
-    const hit = [...s.matchAll(MODULE_REF)].length + [...s.matchAll(STAGE_FN)].length;
-    assert.ok(hit > 0, s);
+  for (const s of moduleOnly) assert.ok(boundaryHits(s).refs.length === 1, s);
+  for (const s of ['const fn = lib.validateTaskSpecPolicy;', 'validateTaskSpecBusiness(spec)']) {
+    assert.ok(boundaryHits(s).fns.length === 1, s);
   }
-  assert.equal([..."import x from './taskspec-policy-registry.mjs';".matchAll(MODULE_REF)].length, 0);
+  for (const s of [
+    "import x from './taskspec-policy-registry.mjs';",
+    "import x from './taskspec-policyx.mjs';",
+    "import x from './my-taskspec-business.mjs';",
+    '// taskspec-policy rules are described in the specs README',
+    "import x from './validate-taskspec.mjs';",
+  ]) {
+    assert.deepEqual(boundaryHits(s), { refs: [], fns: [] }, s);
+  }
+});
+
+test('boundary: computed specifiers are a documented limitation of this check', () => {
+  const computed = "const name = 'policy'; await import('./taskspec-' + name + '.mjs');";
+  assert.deepEqual(boundaryHits(computed).refs, []);
 });
 
 // ---------------------------------------------------------------- fixture safety

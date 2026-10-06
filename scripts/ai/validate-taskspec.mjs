@@ -7,9 +7,9 @@
 //
 // Consumers use createTaskSpecValidator().validateTaskSpecMarkdown(bytes, { fileName }).
 // The stage functions stay exported from their modules for unit tests, but they are not
-// supported consumer entry points; the import boundary is enforced by
-// test/ai/validate-taskspec.node-test.mjs in CI. This is repository enforcement, not a
-// language-level sandbox.
+// supported consumer entry points. The import boundary is checked by
+// test/ai/validate-taskspec.node-test.mjs, designed to be enforced by the repository test
+// suite and future CI wiring. This is repository enforcement, not a language-level sandbox.
 //
 // A PASS means only "passes deterministic TaskSpec validation": not approval, merge,
 // deployment or production authority (ADR-AI-003, ADR-AI-006, ADR-AI-008).
@@ -41,7 +41,9 @@ function deepFreeze(value) {
 }
 
 // onStage (optional, for tests): called with the stage name just before that stage runs.
-// It receives nothing else, so it cannot alter inputs or results or skip a stage; if it
+// It receives no internal validation object. It may mutate caller-owned state (including the
+// caller's bytes), but validation reads only its own byte snapshot, which the callback cannot
+// reach through this API, so it cannot alter stage inputs or results or skip a stage. If it
 // throws, the error propagates and validation never returns ok: true.
 export function createTaskSpecValidator({ onStage } = {}) {
   if (onStage !== undefined && typeof onStage !== 'function') {
@@ -56,10 +58,16 @@ export function createTaskSpecValidator({ onStage } = {}) {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('validateTaskSpecMarkdown: bytes must be a Uint8Array');
     if (typeof fileName !== 'string') throw new TypeError('validateTaskSpecMarkdown: fileName must be a string');
 
+    // Private copy of the caller's bytes, taken before any hook runs: every stage reads only
+    // this snapshot, so later changes to the caller's array (or memory shared with it, e.g. a
+    // Buffer) cannot change what is validated. new Uint8Array(typedArray) copies into a new
+    // buffer; slice() is not used because Buffer#slice shares memory.
+    const stableBytes = new Uint8Array(bytes);
+
     // EXTRACT: authoritative byte/decode gate (size, BOM, NUL, fatal UTF-8) and the single
     // machine block.
     enter('EXTRACT');
-    const extracted = extractTaskSpecBlock(bytes);
+    const extracted = extractTaskSpecBlock(stableBytes);
     if (!extracted.ok) {
       const result = failure('EXTRACT', extracted.code);
       if (extracted.line !== undefined) result.line = extracted.line;
@@ -73,7 +81,7 @@ export function createTaskSpecValidator({ onStage } = {}) {
       // EXTRACT has already validated these exact bytes. This decoder MUST stay semantically
       // identical to the extractor's UTF-8 decoder (fatal, ignoreBOM); it exists only to give
       // SECRET_SCAN the whole-Markdown text.
-      markdown = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      markdown = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(stableBytes);
     } catch {
       return failure('SECRET_SCAN', 'E_ENCODING');
     }

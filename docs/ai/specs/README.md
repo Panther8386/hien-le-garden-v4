@@ -151,9 +151,14 @@ EXTRACT → SECRET_SCAN → CONTRACT → TYPE → BUSINESS → POLICY → RESULT
   partial pass. Failures are `{ ok: false, stage, code, errorCount, errors }` (EXTRACT failures
   may add the extractor's `line`); success is
   `{ ok: true, spec, protectedCategories, startLine, endLine }`.
+- **Input snapshot:** the composer copies the caller's bytes before any stage (or test hook)
+  runs and validates only that copy, so later changes to the caller's array cannot change the
+  result.
 - **Supported entry point:** the stage functions remain importable for unit tests, but
-  production code must use the composer. A CI test enforces this import boundary in the
-  repository; it is not a language-level sandbox.
+  production code must use the composer. A repository test checks this import boundary
+  (literal specifiers, including query, hash, percent-encoded and case variants); it is
+  designed to be enforced by the test suite and future CI wiring. It is not a language-level
+  sandbox: computed specifiers are left to code review.
 - A pass means only "passes deterministic TaskSpec validation". It is not approval and grants no
   merge, deployment or production authority.
 
