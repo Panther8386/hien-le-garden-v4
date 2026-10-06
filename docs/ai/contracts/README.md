@@ -25,9 +25,16 @@ Architecture of the machine-readable contract layer. Decisions:
   metadata only.
 - **Tests:** `test/ai/*.node-test.mjs`. PR CI (`.github/workflows/test.yml`, job `test`, step
   "AI contract tests (node:test)") runs the contract-schema, contract-validator, TaskSpec
-  extractor and TaskSpec business test files, one per `node --test` call with an existence
-  check (verified on Linux in A3.3c, A3.4a and A3.4b). The TaskSpec policy tests are not yet
-  in the CI step.
+  extractor, TaskSpec business and TaskSpec policy test files, one per `node --test` call
+  with an existence check (`set -e`, `test -f`). Verified on Linux in A3.3c, A3.4a and A3.4b;
+  for A3.4c the step passed on PR #5 at exact SHA `8144004702d2532d7cbe0fe0b8b1e2eb739f6134`
+  (workflow "Tests", run 37435892253, `pull_request`, attempt 1; checks `test` and
+  "Release artifact boundary (R-1)" both success). That evidence applies to that SHA only.
+- **A3.4c closeout:** implementation, independent security review, remediation of finding F1
+  (HIGH, Windows trailing-dot path aliases; fixed by `BR-PATH-TRAILING-DOT` in `8ff7dbe`,
+  re-reviewed with no bypass found), CI enforcement and Linux CI evidence are complete.
+  PR #5 remains Draft; no merge or deployment authority is granted. Other review findings
+  remain open or deferred (see the slice table).
 - **Not implemented yet:** end-to-end TaskSpec validation; SHA freshness; evidence trust;
   approval verification; deterministic GateDecision aggregation; base-branch validation of
   governance-sensitive changes; GitHub integration.
@@ -131,8 +138,8 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.3c | CI step running the contract tests | Done (Linux CI verified) |
 | A3.4a | TaskSpec machine-block extractor and tests | Done (Linux CI verified) |
 | A3.4b | TaskSpec business and path validation and tests | Done (Linux CI verified) |
-| A3.4c | TaskSpec security / capability policy and tests (ADR-AI-008) | Done locally; not yet in CI |
-| A3.4d | End-to-end TaskSpec composition | Not started |
-| A3.5 | SHA, evidence and ApprovalRef verification | — |
-| A3.6 | Deterministic gate aggregator and policy table | — |
-| A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006) |
+| A3.4c | TaskSpec security / capability policy and tests (ADR-AI-008) | Done (Linux CI verified on Draft PR #5 at `8144004`, run 37435892253) |
+| A3.4d | End-to-end TaskSpec composition | Not started; blocked by open findings F2 (business must run before policy), F3 (linear-time `sk-` detection before narrative scanning), F4 (schema-first ordering) |
+| A3.5 | SHA, evidence and ApprovalRef verification | Common path safety for ImplementationReport / EvidenceRef / Finding paths before repository paths are trusted |
+| A3.6 | Deterministic gate aggregator and policy table | Deferred findings F6 (protect deterministic-check configuration), F8 (governance-specific gate), F9 (producer/verifier separation) |
+| A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006); F6/F8/F9 as for A3.6 |
