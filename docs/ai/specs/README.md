@@ -54,7 +54,6 @@ validator (`validateContractBytes`, [ADR-AI-007](../adr/ADR-AI-007-contract-inpu
 - **Byte rules for the whole Markdown file** (as ADR-AI-007): at most 2,097,152 bytes, no UTF-8
   BOM, no NUL byte, valid UTF-8. **Payload limit:** at most 1,048,576 bytes.
 - Passing extraction says nothing about schema validity, approval or SHA freshness.
-  Security/policy validation of TaskSpecs is not implemented yet.
 
 ## Business and path validation (V1)
 
@@ -82,9 +81,46 @@ or network access. Errors carry only a rule ID and a JSON pointer, never values.
   to overlapping or same-named entries only on a case-insensitive filesystem (ASCII case folding
   is used for this check only), e.g. `migrations/` with `Migrations/`, or allowed `Scripts/`
   with forbidden `scripts/ai/`.
+- **`BR-PATH-TRAILING-DOT`:** an allowed or forbidden scope path with any segment ending in
+  `.` (e.g. `CLAUDE.md.`, `scripts/ai./x.mjs`) is invalid. Windows strips trailing dots, so
+  such a path would alias a different (possibly protected) path. It is rejected, never
+  normalized.
 - Passing business validation means only "passes deterministic TaskSpec business validation".
   It is not approval, authorization, freshness, mergeability or deployability. Protected-scope,
-  human-gate, declared-change and secret policies are a later layer (not implemented).
+  human-gate, declared-change and secret policies are the next layer (below).
+
+## Security / capability policy (V1)
+
+Implemented by `scripts/ai/taskspec-policy.mjs` (`validateTaskSpecPolicy`) with the trusted
+registry `scripts/ai/taskspec-policy-registry.mjs`, as decided in
+[ADR-AI-008](../adr/ADR-AI-008-taskspec-scope-classes-and-authority.md). It runs on a TaskSpec
+that has passed schema and business validation.
+
+- **Declaration policy only.** It checks that the TaskSpec *declares* what HLG policy requires
+  for the protected scopes it touches. **Declaration ≠ approval ≠ execution authority:** a pass
+  is not approval, not a satisfied human gate, and grants no execution, merge or deploy
+  authority. Authority actions (merge, deploy, production migration, secret, GitHub or
+  Cloudflare changes, etc.) are outside TaskSpec authority.
+- **Protected categories** (committed registry; callers cannot supply or weaken it):
+  PACKAGE (`package.json`, `package-lock.json`), MIGRATION (`migrations/`), PRODUCTION
+  (`wrangler.toml`, `.github/workflows/deploy.yml`, the artifact-boundary and staging-guard
+  scripts) and GOVERNANCE (`CLAUDE.md`, `.github/`, `docs/ai/adr/`, `docs/ai/contracts/schemas/`,
+  `docs/ai/specs/`, `scripts/ai/`, `test/ai/`).
+- **Touch:** an allowed entry lexically overlaps a registry entry (A3.4b semantics). A forbidden
+  entry excludes a registry entry only when it covers it completely. Case ambiguity between an
+  allowed entry and a registry entry fails (`POL-PROTECTED-CASE`).
+- **Required declarations:** PACKAGE needs `declared_changes.package` and a `package_change`
+  gate; MIGRATION needs `declared_changes.migration` and a `migration` gate; PRODUCTION needs
+  `declared_changes.production_config` and a `production` gate; GOVERNANCE needs a `custom`
+  gate (V1 limitation: free text, never interpreted, not approval). Requirements of
+  overlapping categories accumulate (`.github/workflows/deploy.yml` is PRODUCTION and
+  GOVERNANCE). `declared_changes` must match the touched categories in both directions.
+- **Secrets:** conservative high-confidence credential formats only, in every string of the
+  TaskSpec; no PII, entropy or bare-word matching. Errors never contain matched material.
+- **Result:** errors are `{ rule, path }` (`E_TASKSPEC_POLICY`, at most 20, sorted).
+  On success, `protectedCategories` lists the touched categories — classification metadata
+  only, not a capability, approval or authorization.
+- End-to-end composition (extraction → schema → business → policy) is a later slice (A3.4d).
 
 ## Approval binding
 
