@@ -1,10 +1,15 @@
 // Shared hash-preserving, keyboard-accessible tabs. Hidden tabs are permission gates.
+// normalizeHash: once permissions are known, rewrite a hash that points at a hidden tab
+// to the tab actually shown (before that, keep it so a deep link survives the permission load).
 window.HLGTabs = {
-  refresh(root = document.querySelector('[data-tabs]')) {
+  refresh(root = document.querySelector('[data-tabs]'), { normalizeHash = false } = {}) {
     if (!root) return;
     const tabs = [...root.querySelectorAll('[role="tab"]')];
     const available = tabs.filter((tab) => !tab.hidden);
     const selected = available.find((tab) => tab.dataset.tab === location.hash.slice(1)) || available[0];
+    if (normalizeHash && selected && location.hash && location.hash.slice(1) !== selected.dataset.tab) {
+      history.replaceState(null, '', `#${selected.dataset.tab}`);
+    }
     tabs.forEach((tab) => {
       const active = tab === selected;
       tab.setAttribute('aria-selected', String(active));

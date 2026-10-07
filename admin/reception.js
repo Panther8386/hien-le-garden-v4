@@ -102,7 +102,7 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
   currentPermissions = me.permissions || [];
   document.getElementById('openNewBookingBtn').hidden = !can('bookings.manage');
   document.getElementById('tab-uu-dai').hidden = !can('promo.redeem');
-  window.HLGTabs.refresh();
+  window.HLGTabs.refresh(undefined, { normalizeHash: true });
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
@@ -1518,6 +1518,12 @@ async function refreshNewBookingRoomOptions() {
 const newBookingOverlay = document.getElementById('newBookingOverlay');
 let newBookingBlocked = [];
 let newBookingOverflow = '';
+// True while POST /api/bookings/staff is in flight: blocks a second submit (no server-side
+// idempotency yet) and keeps the dialog open so the outcome is not lost.
+let newBookingSubmitting = false;
+function requestCloseNewBooking() {
+  if (!newBookingSubmitting) closeNewBooking();
+}
 function closeNewBooking() {
   newBookingOverlay.classList.add('hidden');
   newBookingBlocked.forEach((el) => { el.inert = false; });
@@ -1534,12 +1540,12 @@ document.getElementById('openNewBookingBtn').addEventListener('click', () => {
   document.body.style.overflow = 'hidden';
   document.getElementById('newBookingForm').elements.guestName.focus();
 });
-document.getElementById('closeNewBookingBtn').addEventListener('click', closeNewBooking);
+document.getElementById('closeNewBookingBtn').addEventListener('click', requestCloseNewBooking);
 newBookingOverlay.addEventListener('click', (event) => {
-  if (event.target === newBookingOverlay) closeNewBooking();
+  if (event.target === newBookingOverlay) requestCloseNewBooking();
 });
 newBookingOverlay.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') { event.preventDefault(); closeNewBooking(); }
+  if (event.key === 'Escape') { event.preventDefault(); requestCloseNewBooking(); }
   if (event.key !== 'Tab') return;
   const targets = [...newBookingOverlay.querySelectorAll('button,input,select,textarea')].filter((el) => !el.disabled && el.getClientRects().length);
   const first = targets[0], last = targets.at(-1);
@@ -1549,6 +1555,7 @@ newBookingOverlay.addEventListener('keydown', (event) => {
 
 document.getElementById('newBookingForm').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (newBookingSubmitting) return;
   const form = event.target;
   const data = new FormData(form);
   const errorEl = document.getElementById('newBookingError');
@@ -1559,6 +1566,16 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
     errorEl.textContent = 'Vui lòng chọn phòng cụ thể';
     return;
   }
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const closeBtn = document.getElementById('closeNewBookingBtn');
+  const setSubmitting = (on) => {
+    newBookingSubmitting = on;
+    submitBtn.disabled = on;
+    closeBtn.disabled = on;
+    form.setAttribute('aria-busy', String(on));
+  };
+  setSubmitting(true);
 
   let response;
   try {
@@ -1578,16 +1595,21 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
       }),
     });
   } catch (err) {
+    setSubmitting(false);
     errorEl.textContent = 'Có lỗi khi tạo đặt phòng';
+    submitBtn.focus();
     return;
   }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    setSubmitting(false);
     errorEl.textContent = body.error || 'Có lỗi khi tạo đặt phòng';
+    submitBtn.focus();
     return;
   }
 
+  setSubmitting(false);
   form.reset();
   closeNewBooking();
   refreshNewBookingRoomOptions();
