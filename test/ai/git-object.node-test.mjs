@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   GIT_TIMEOUT_MS,
   MAX_BLOB_BYTES,
@@ -189,6 +190,45 @@ test('blob: the returned entry must name exactly the requested path, once', () =
   assert.deepEqual(fake(Buffer.alloc(0)).resolveRegularBlob(C2, 'a.txt'), { ok: false, code: 'E_GIT_PATH_MISSING' });
 });
 
+// L-1: a hand-built (malformed) tree whose 100644 entries point at a tree, a commit, a tag and a
+// missing object. ls-tree reports every one of them as "100644 blob" because it derives the type
+// from the mode; the resolver must check the referenced object itself.
+function malformedCommit() {
+  const entry = (mode, name, sha) => Buffer.concat([Buffer.from(`${mode} ${name}\0`, 'latin1'), Buffer.from(sha, 'hex')]);
+  const raw = Buffer.concat([
+    entry('100644', 'fake-commit', C1),
+    entry('100644', 'fake-missing', MISSING),
+    entry('100644', 'fake-tag', TAG),
+    entry('100644', 'fake-tree', TREE),
+    entry('100644', 'real.txt', BLOB_A),
+  ]);
+  const tree = main.git(['hash-object', '-t', 'tree', '--literally', '-w', '--stdin'], { input: raw });
+  return main.git(['commit-tree', tree, '-m', 'malformed']);
+}
+const BAD = malformedCommit();
+
+test('L-1: ls-tree really reports the malformed entries as regular blobs (fixture check)', () => {
+  for (const name of ['fake-tree', 'fake-missing', 'fake-commit', 'fake-tag']) {
+    assert.match(main.git(['ls-tree', BAD, '--', name]), /^100644 blob [0-9a-f]{40}\t/, name);
+  }
+});
+
+test('L-1: resolveRegularBlob confirms the referenced object is an existing blob', () => {
+  assert.deepEqual(resolver.resolveRegularBlob(BAD, 'fake-tree'), { ok: false, code: 'E_GIT_NOT_BLOB', type: 'tree' });
+  assert.deepEqual(resolver.resolveRegularBlob(BAD, 'fake-missing'), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+  assert.deepEqual(resolver.resolveRegularBlob(BAD, 'fake-commit'), { ok: false, code: 'E_GIT_NOT_BLOB', type: 'commit' });
+  assert.deepEqual(resolver.resolveRegularBlob(BAD, 'fake-tag'), { ok: false, code: 'E_GIT_NOT_BLOB', type: 'tag' });
+  assert.deepEqual(resolver.resolveRegularBlob(BAD, 'real.txt'), { ok: true, commit: BAD, path: 'real.txt', mode: '100644', oid: BLOB_A });
+});
+
+test('L-1: the object check runs after ls-tree on the oid it returned', () => {
+  const { r, calls } = countingResolver();
+  assert.equal(r.resolveRegularBlob(C2, 'a.txt').ok, true);
+  const names = calls.map((c) => c.args[0] + (c.args[1] === '--batch-check' ? ' --batch-check' : ''));
+  assert.deepEqual(names, ['cat-file --batch-check', 'ls-tree', 'cat-file --batch-check']);
+  assert.equal(calls[2].args.length, 2);
+});
+
 test('path: L0-valid punctuation is passed literally, as one argv element after "--"', () => {
   const { r, calls } = countingResolver();
   const res = r.resolveRegularBlob(C2, 'my_file-v1.2.txt');
@@ -245,7 +285,7 @@ test('replace: a replace ref cannot substitute commits or blob content', () => {
 
 // ---------------------------------------------------------------- environment sanitization
 
-test('env: sanitizedGitEnv removes every GIT_* variable (any case) and sets the two required ones', () => {
+test('env: sanitizedGitEnv removes every GIT_* variable (any case) and sets the three required ones', () => {
   const env = sanitizedGitEnv({
     PATH: '/usr/bin',
     HOME: '/home/x',
@@ -263,8 +303,17 @@ test('env: sanitizedGitEnv removes every GIT_* variable (any case) and sets the 
     GIT_TERMINAL_PROMPT: '1',
     GIT_EXEC_PATH: '/e',
     GIT_SSH_COMMAND: 'evil',
+    GIT_NO_LAZY_FETCH: '0',
   });
-  assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/home/x', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0' });
+  assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/home/x', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' });
+});
+
+test('env: an inherited GIT_NO_LAZY_FETCH=0 is overridden to 1 for every Git call', () => {
+  withEnv({ GIT_NO_LAZY_FETCH: '0', git_no_lazy_fetch: '0' }, () => {
+    const env = sanitizedGitEnv();
+    assert.equal(env.GIT_NO_LAZY_FETCH, '1');
+    assert.equal(Object.keys(env).filter((k) => /^GIT_NO_LAZY_FETCH$/i.test(k)).length, 1);
+  });
 });
 
 test('env: inherited GIT_DIR, GIT_OBJECT_DIRECTORY and GIT_ALTERNATE_OBJECT_DIRECTORIES are ignored', () => {
@@ -287,6 +336,47 @@ test('env: inherited GIT_DIR, GIT_OBJECT_DIRECTORY and GIT_ALTERNATE_OBJECT_DIRE
   withEnv({ GIT_NO_REPLACE_OBJECTS: '0' }, () => {
     assert.equal(sanitizedGitEnv().GIT_NO_REPLACE_OBJECTS, '1');
   });
+});
+
+// ---------------------------------------------------------------- L-2: partial clone, no lazy fetch
+
+// A disposable promisor remote and a blob:none partial clone of it, over file:// (no network).
+test('L-2: a missing promisor blob is reported missing and never fetched', () => {
+  const server = makeRepo('hlg-git-promisor-src-');
+  writeFileSync(path.join(server.dir, 'lazy.txt'), 'lazy content\n');
+  server.git(['add', 'lazy.txt']);
+  server.git(['commit', '-q', '-m', 'lazy']);
+  server.git(['config', 'uploadpack.allowFilter', 'true']);
+  server.git(['config', 'uploadpack.allowAnySHA1InWant', 'true']);
+  const cloneDir = mkdtempSync(path.join(tmpdir(), 'hlg-git-promisor-clone-'));
+  roots.push(cloneDir);
+  execFileSync('git', ['clone', '-q', '--no-local', '--filter=blob:none', '--no-checkout', pathToFileURL(server.dir).href, cloneDir], {
+    env: cleanEnv(),
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const inClone = (args, env) => execFileSync('git', args, { cwd: cloneDir, env, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const head = inClone(['rev-parse', 'HEAD'], cleanEnv());
+  const blob = inClone(['rev-parse', 'HEAD:lazy.txt'], cleanEnv());
+  const present = () => {
+    try {
+      inClone(['cat-file', '-e', blob], { ...cleanEnv(), GIT_NO_LAZY_FETCH: '1' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.equal(present(), false, 'fixture: the blob must start out missing in the partial clone');
+
+  const clone = createGitObjectResolver({ repoRoot: cloneDir });
+  withEnv({ GIT_NO_LAZY_FETCH: '0' }, () => {
+    assert.deepEqual(clone.readBlob(blob, 100), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+    assert.deepEqual(clone.resolveRegularBlob(head, 'lazy.txt'), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+  });
+  assert.equal(present(), false, 'the resolver must not have fetched the blob');
+
+  // Control: plain Git with lazy fetch allowed does fetch it, so the clone really is a promisor.
+  assert.equal(inClone(['cat-file', '-p', blob], cleanEnv()), 'lazy content');
+  assert.equal(present(), true);
 });
 
 // ---------------------------------------------------------------- working-tree independence

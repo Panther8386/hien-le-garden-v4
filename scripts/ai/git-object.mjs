@@ -13,8 +13,11 @@
 //   - Git runs through execFileSync with an argv array and shell: false, in the trusted repoRoot,
 //     with a finite timeout and output bound, and an environment from which every GIT_* variable
 //     is removed (GIT_DIR, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_CONFIG_*,
-//     ...). GIT_NO_REPLACE_OBJECTS=1 and GIT_TERMINAL_PROMPT=0 are then set, and every call
-//     passes --no-replace-objects, so replace refs cannot substitute objects.
+//     ...). GIT_NO_REPLACE_OBJECTS=1, GIT_TERMINAL_PROMPT=0 and GIT_NO_LAZY_FETCH=1 are then set,
+//     and every call passes --no-replace-objects, so replace refs cannot substitute objects and a
+//     partial clone never fetches a missing object from a remote.
+//   - A regular-blob entry is confirmed against the referenced object itself, which must exist
+//     locally and be of type blob.
 //   - Path lookup uses --literal-pathspecs, --full-tree and "--" before the path, and the single
 //     returned entry must name exactly the requested path.
 //
@@ -40,6 +43,9 @@ export function sanitizedGitEnv(env = process.env) {
   }
   out.GIT_NO_REPLACE_OBJECTS = '1';
   out.GIT_TERMINAL_PROMPT = '0';
+  // Partial clones: never fetch a missing promisor object from a remote; a missing object is a
+  // local fact (missing), not something to retrieve.
+  out.GIT_NO_LAZY_FETCH = '1';
   return out;
 }
 
@@ -119,6 +125,11 @@ export function createGitObjectResolver({ repoRoot, runner = runGitProcess } = {
     // Byte-exact comparison (L0 paths are ASCII, so latin1 decoding is lossless here).
     if (returnedPath !== path) return fail('E_GIT_PATH_MISMATCH');
     if (type !== 'blob' || !REGULAR_BLOB_MODES.has(mode)) return fail('E_GIT_NOT_REGULAR_BLOB', { mode });
+    // ls-tree derives "blob" from the entry's mode; a malformed tree can point a 100644 entry
+    // at a tree, commit, tag or missing object. Confirm the referenced object itself.
+    const target = objectInfo(oid);
+    if (!target.ok) return target;
+    if (target.type !== 'blob') return fail('E_GIT_NOT_BLOB', { type: target.type });
     return { ok: true, commit, path, mode, oid };
   }
 
