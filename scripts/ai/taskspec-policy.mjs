@@ -16,8 +16,8 @@
 // No matched text, credential fragments, lengths or free-text values are ever returned.
 
 import { containsHighConfidenceSecret } from './secret-detector.mjs';
-import { covers, isCaseAmbiguous, overlaps } from './taskspec-business.mjs';
-import { CATEGORY_REQUIREMENTS, PROTECTED_REGISTRY } from './taskspec-policy-registry.mjs';
+import { covers, overlaps } from './taskspec-business.mjs';
+import { CATEGORY_REQUIREMENTS, PROTECTED_REGISTRY, isProtectedPathCaseAlias } from './taskspec-policy-registry.mjs';
 
 // High-confidence credential formats are owned by the shared detector (ADR-AI-009);
 // re-exported here for import compatibility.
@@ -66,13 +66,16 @@ export function validateTaskSpecPolicy(spec) {
   const add = (rule, path) => found.set(`${path}|${rule}`, { rule, path });
   const allowedPtr = (i) => `/scope/allowed_paths/${i}`;
 
+  // Case ambiguity against protected paths fails closed regardless of forbidden entries
+  // (registry helper, the single source for protected case aliases).
+  allowed.forEach((a, i) => {
+    if (isProtectedPathCaseAlias(a)) add('POL-PROTECTED-CASE', allowedPtr(i));
+  });
+
   // Protected touches (A3.4b overlaps), minus registry entries fully excluded by a forbidden
-  // entry (covers). Case ambiguity against protected paths fails closed regardless.
+  // entry (covers).
   const touched = new Map(); // category -> Set(allowed index)
   for (const { path: protectedPath, category } of PROTECTED_REGISTRY) {
-    allowed.forEach((a, i) => {
-      if (isCaseAmbiguous(a, protectedPath)) add('POL-PROTECTED-CASE', allowedPtr(i));
-    });
     if (forbidden.some((f) => covers(f, protectedPath))) continue;
     allowed.forEach((a, i) => {
       if (overlaps(a, protectedPath)) {

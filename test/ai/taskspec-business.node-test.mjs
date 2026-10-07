@@ -1,14 +1,26 @@
-// Tests for TaskSpec business and path validation (A3.4b). The validator assumes a
+// Tests for TaskSpec business and path validation (A3.4b) and the common repository path
+// policy L0 (A3.5a, scripts/ai/repo-path.mjs, ADR-AI-010). The validator assumes a
 // schema-valid TaskSpec; schema, extraction and policy rules are tested elsewhere (policy
-// is imported only for the F1 layer-contract tests).
+// is imported only for the F1 layer-contract and protected-case tests).
 //
 //   node --test test/ai/taskspec-business.node-test.mjs
 //
-// Named *.node-test.mjs so Vitest never runs it in workerd. No filesystem access: the
-// TaskSpec fixture is built inline. The backslash is built at runtime (BS).
+// Named *.node-test.mjs so Vitest never runs it in workerd. TaskSpec fixtures are built
+// inline; the only files read are the V1 common schema and repo-path.mjs (to check that the
+// L0 grammar matches the schema and that the module stays pure). The backslash is built at
+// runtime (BS).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  REPO_FILE_PATH_PATTERN,
+  REPO_PATH_MAX_LENGTH,
+  SCOPE_PATH_PATTERN,
+  isSafeRepoPath,
+  repoPathViolations,
+} from '../../scripts/ai/repo-path.mjs';
+import { isProtectedPathCaseAlias } from '../../scripts/ai/taskspec-policy-registry.mjs';
 import {
   MAX_BUSINESS_ERRORS,
   covers,
@@ -462,4 +474,154 @@ test('preconditions: malformed deeper object never returns ok:true', () => {
   const noForbidden = baseSpec();
   delete noForbidden.scope.forbidden_paths;
   assert.throws(() => check(noForbidden), TypeError);
+});
+
+// ---------------------------------------------------------------- common path policy L0 (A3.5a)
+
+const l0 = (p, options) => repoPathViolations(p, options);
+
+test('L0: grammar patterns and length limit are identical to the V1 common schema', () => {
+  const defs = JSON.parse(readFileSync('docs/ai/contracts/schemas/v1/common.schema.json', 'utf8')).$defs;
+  assert.equal(REPO_FILE_PATH_PATTERN, defs.RepoFilePath.pattern);
+  assert.equal(SCOPE_PATH_PATTERN, defs.ScopePath.pattern);
+  assert.equal(REPO_PATH_MAX_LENGTH, defs.RepoFilePath.maxLength);
+  assert.equal(REPO_PATH_MAX_LENGTH, defs.ScopePath.maxLength);
+  assert.equal(defs.RepoFilePath.minLength, 1);
+});
+
+test('L0: the module is pure (no imports, platform, environment, filesystem or process use)', () => {
+  const source = readFileSync('scripts/ai/repo-path.mjs', 'utf8');
+  for (const forbidden of [/^\s*import\s/m, /\bimport\(/, /\brequire\(/, /\bprocess\./, /node:/, /\bfs\./, /\bpath\.(?:resolve|join|normalize)/]) {
+    assert.ok(!forbidden.test(source), String(forbidden));
+  }
+});
+
+test('L0: measured A3.5-PRE cases', () => {
+  const cases = [
+    ['CLAUDE.md.', ['PATH-TRAILING-DOT']],
+    ['...', ['PATH-TRAILING-DOT']],
+    ['CON', ['PATH-DEVICE-NAME']],
+    ['aux.json', ['PATH-DEVICE-NAME']],
+    ['LPT1.md', ['PATH-DEVICE-NAME']],
+    ['.git/config', ['PATH-GIT-SEGMENT']],
+    ['-rf', ['PATH-LEADING-DASH']],
+    ['Claude.md', []], // lexically fine; rejected as a protected case alias (below)
+  ];
+  for (const [p, expected] of cases) {
+    assert.deepEqual(l0(p), expected, p);
+    assert.deepEqual(l0(p, { directory: true }), expected, `${p} (scope)`);
+  }
+  assert.equal(isProtectedPathCaseAlias('Claude.md'), true);
+});
+
+test('L0: trailing-dot segments are rejected, never trimmed', () => {
+  for (const p of ['CLAUDE.md.', 'foo./bar', 'a/b...', 'x.', 'a/.b./c', 'docs/ai/adr./x.md']) {
+    assert.deepEqual(l0(p), ['PATH-TRAILING-DOT'], p);
+  }
+  assert.deepEqual(l0('docs/ai/adr./', { directory: true }), ['PATH-TRAILING-DOT']);
+});
+
+test('L0: Windows device names are rejected case-insensitively, bare or with an extension', () => {
+  const names = ['CON', 'PRN', 'AUX', 'NUL'];
+  for (let d = 0; d <= 9; d++) names.push(`COM${d}`, `LPT${d}`);
+  for (const name of names) {
+    const mixed = name[0] + name.slice(1).toLowerCase();
+    for (const p of [name, name.toLowerCase(), mixed, `${name}.txt`, `${name.toLowerCase()}.tar.gz`, `dir/${name}`, `dir/${name}.md/x`]) {
+      assert.deepEqual(l0(p), ['PATH-DEVICE-NAME'], p);
+    }
+  }
+  for (const p of ['con', 'CON.txt', 'aux.json', 'LPT1.md', 'com9.log']) assert.deepEqual(l0(p), ['PATH-DEVICE-NAME'], p);
+  assert.deepEqual(l0('CON/', { directory: true }), ['PATH-DEVICE-NAME']);
+});
+
+test('L0: device-name lookalikes that are not reserved stay valid', () => {
+  for (const p of ['console.md', 'con-tent.md', 'contrib/x', 'comx.md', 'com10.txt', 'lpt.md', 'lpt10', 'nul1.md', 'auxiliary/x', 'prnt', 'x.con', 'docs/aux-notes.md']) {
+    assert.deepEqual(l0(p), [], p);
+  }
+});
+
+test('L0: a .git segment is rejected at any depth and in any case', () => {
+  for (const p of ['.git', '.git/config', '.GIT/config', 'foo/.git/config', 'a/b/.Git', 'a/.gIt/b/c']) {
+    assert.deepEqual(l0(p), ['PATH-GIT-SEGMENT'], p);
+  }
+  assert.deepEqual(l0('.git/', { directory: true }), ['PATH-GIT-SEGMENT']);
+  for (const p of ['.gitignore', '.github/workflows/test.yml', 'git/x', 'x.git/y', '.gitattributes', 'a/.git-blame-ignore-revs']) {
+    assert.deepEqual(l0(p), [], p);
+  }
+});
+
+test('L0: segments starting with "-" are rejected', () => {
+  for (const p of ['-rf', 'foo/-bar', '--help/file', 'a/-', 'a/-b/c.md']) assert.deepEqual(l0(p), ['PATH-LEADING-DASH'], p);
+  for (const p of ['a-b/c', 'x/y-', 'docs/specs/SPEC-AI-001-x.md']) assert.deepEqual(l0(p), [], p);
+});
+
+test('L0: several rules on one path are reported once each, sorted', () => {
+  assert.deepEqual(l0('-x/.git/CON./aux.md'), ['PATH-DEVICE-NAME', 'PATH-GIT-SEGMENT', 'PATH-LEADING-DASH', 'PATH-TRAILING-DOT']);
+  assert.deepEqual(l0('a./b./CON/nul.txt'), ['PATH-DEVICE-NAME', 'PATH-TRAILING-DOT']);
+});
+
+test('L0: the V1 grammar and length limit are preserved (no broadening)', () => {
+  const grammarFailures = ['', '/abs/x', '../x', 'a/../b', './x', 'a//b', 'a' + BS + 'b', 'C:/x', 'a b', 'a/b c', 'ü.md', 'a%2Fb', 'x*', 'a/b/', 'a?b'];
+  for (const p of grammarFailures) assert.deepEqual(l0(p), ['PATH-GRAMMAR'], JSON.stringify(p));
+  assert.deepEqual(l0('a'.repeat(REPO_PATH_MAX_LENGTH)), []);
+  assert.deepEqual(l0('a'.repeat(REPO_PATH_MAX_LENGTH + 1)), ['PATH-GRAMMAR']);
+  assert.deepEqual(l0('a'.repeat(REPO_PATH_MAX_LENGTH - 1) + '/', { directory: true }), []);
+  assert.deepEqual(l0('a'.repeat(REPO_PATH_MAX_LENGTH) + '/', { directory: true }), ['PATH-GRAMMAR']);
+  // A directory marker is only accepted in the ScopePath form.
+  assert.deepEqual(l0('docs/'), ['PATH-GRAMMAR']);
+  assert.deepEqual(l0('docs/', { directory: true }), []);
+});
+
+test('L0: ordinary repository paths are accepted', () => {
+  for (const p of [
+    'CLAUDE.md',
+    'package.json',
+    'docs/ai/specs/README.md',
+    'docs/ai/adr/ADR-AI-010-evidence-approval-verification-and-path-safety.md',
+    'scripts/ai/validate-taskspec.mjs',
+    'test/ai/repo-path_check.node-test.mjs',
+    '.github/workflows/test.yml',
+    '.env.example',
+    'migrations/0042_x.sql',
+    'a/.b/c',
+    'foo.bar/baz.txt',
+  ]) {
+    assert.deepEqual(l0(p), [], p);
+    assert.equal(isSafeRepoPath(p), true, p);
+  }
+  for (const p of ['scripts/ai/', '.github/', 'docs/']) assert.equal(isSafeRepoPath(p, { directory: true }), true, p);
+});
+
+test('L0: deterministic regardless of call order, and rejects non-strings', () => {
+  const inputs = ['CLAUDE.md.', 'CON', '.git/config', '-rf', 'docs/x.md', '', 'aux.json'];
+  const first = inputs.map((p) => l0(p));
+  for (let round = 0; round < 3; round++) assert.deepEqual([...inputs].reverse().map((p) => l0(p)).reverse(), first);
+  for (const v of [undefined, null, 1, ['CON'], { path: 'x' }]) assert.throws(() => repoPathViolations(v), TypeError);
+});
+
+test('protected case aliases come from the registry and match POL-PROTECTED-CASE', () => {
+  const aliases = ['Claude.md', 'claude.md', 'Package.json', 'Migrations/', 'MIGRATIONS/0001_x.sql', 'Scripts/AI/x.mjs', '.GITHUB/workflows/test.yml', 'Wrangler.toml'];
+  const clean = ['CLAUDE.md', 'package.json', 'migrations/', 'docs/notes.md', 'scripts/other.mjs', 'readme.md'];
+  for (const p of aliases) assert.equal(isProtectedPathCaseAlias(p), true, p);
+  for (const p of clean) assert.equal(isProtectedPathCaseAlias(p), false, p);
+  for (const p of [...aliases, ...clean]) {
+    const r = validateTaskSpecPolicy(withScope([p], []));
+    const flagged = !r.ok && r.errors.some((e) => e.rule === 'POL-PROTECTED-CASE');
+    assert.equal(flagged, isProtectedPathCaseAlias(p), p);
+  }
+});
+
+test('business: L0 rules apply to allowed and forbidden scope paths with their own rule IDs', () => {
+  assert.deepEqual(rules(check(withScope(['docs/CON.md'], []))), ['BR-PATH-DEVICE-NAME /scope/allowed_paths/0']);
+  assert.deepEqual(rules(check(withScope(['src/'], ['.git/']))), ['BR-PATH-GIT-SEGMENT /scope/forbidden_paths/0']);
+  assert.deepEqual(rules(check(withScope(['-rf'], []))), ['BR-PATH-LEADING-DASH /scope/allowed_paths/0']);
+  assert.deepEqual(rules(check(withScope(['src/', 'x/-a./aux.md'], []))), [
+    'BR-PATH-DEVICE-NAME /scope/allowed_paths/1',
+    'BR-PATH-LEADING-DASH /scope/allowed_paths/1',
+    'BR-PATH-TRAILING-DOT /scope/allowed_paths/1',
+  ]);
+  // Input that skipped the schema is still caught.
+  assert.deepEqual(rules(check(withScope(['../x'], []))), ['BR-PATH-GRAMMAR /scope/allowed_paths/0']);
+  const out = JSON.stringify(check(withScope(['docs/CON.md', '-secretname'], ['.git/'])));
+  for (const leak of ['CON', 'secretname', '.git']) assert.ok(!out.includes(leak), leak);
 });

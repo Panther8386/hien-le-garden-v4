@@ -44,6 +44,13 @@ export const PROTECTED_REGISTRY = deepFreeze([
   { path: 'test/ai/', category: 'GOVERNANCE' },
 ]);
 
+// True when `path` names a registry entry only on a case-insensitive filesystem (e.g.
+// "Claude.md" vs "CLAUDE.md", "Migrations/" vs "migrations/"): a case alias of protected scope
+// (ADR-AI-008, ADR-AI-010 D16). Detection only; nothing is lower-cased or rewritten.
+export function isProtectedPathCaseAlias(path) {
+  return PROTECTED_REGISTRY.some((entry) => isCaseAmbiguous(path, entry.path));
+}
+
 // Declarations required when a category is touched. declaredChange is the
 // declared_changes field that must be true (GOVERNANCE has none in V1); gateType is the
 // human_gates[].type that must be declared at least once.
