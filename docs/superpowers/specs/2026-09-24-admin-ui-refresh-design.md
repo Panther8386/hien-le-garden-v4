@@ -1,6 +1,6 @@
 # Làm mới giao diện admin — thiết kế
 
-Ngày: 2026-09-24 · Trạng thái: chờ duyệt · Phần 2/2 (phần 1: `2026-09-24-admin-permissions-design.md`, triển khai trước)
+Ngày: 2026-09-24 · Trạng thái: đã được chủ dự án cho phép triển khai ngày 07/10/2026 trong chat; chưa nghiệm thu/release · Phần 2/2 (phần 1: `2026-09-24-admin-permissions-design.md`, triển khai trước)
 
 ## 1. Mục tiêu
 

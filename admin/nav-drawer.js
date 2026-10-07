@@ -48,6 +48,16 @@ const NAV_GROUPS = [
   },
 ];
 
+// Reuse the existing permission contracts while changing information architecture.
+const itemsByPage = Object.fromEntries(NAV_GROUPS.flatMap(g => g.items).map(i => [i.page, i]));
+NAV_GROUPS.splice(0, NAV_GROUPS.length, ...[
+ ['Vận hành', ['reception','dine-in-orders','gio-xanh']],
+ ['Khách hàng', ['customers','templates','manager']],
+ ['Tài chính', ['dashboard','finance']],
+ ['Kho & tài sản', ['asset-inventory-stock','asset-inventory','assets','asset-source-data','asset-config']],
+ ['Cài đặt', ['rooms','catalog','dine-in-menu','cancellation-policy','finance-categories','users','audit-log']],
+].map(([label,pages]) => ({label, items:pages.map(p => itemsByPage[p+'.html'])})));
+
 const ROLE_URL_PREFIX = { admin: '/manager', manager: '/manager', reception: '/reception', observer: '/observer' };
 
 // Page file -> clean URL slug under /manager, /reception, /observer (see _redirects).
@@ -127,7 +137,7 @@ function buildDrawer(role, username, permissions) {
   topbar.className = 'nav-topbar';
   const brand = document.createElement('span');
   brand.className = 'nav-brand';
-  brand.textContent = 'Hiền Lê Garden CRM';
+  brand.textContent = 'Hiền Lê Garden';
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'nav-toggle';
   toggleBtn.setAttribute('aria-label', 'Mở menu');
@@ -140,6 +150,10 @@ function buildDrawer(role, username, permissions) {
 
   const drawer = document.createElement('nav');
   drawer.className = 'nav-drawer';
+  drawer.id = 'adminNavigation';
+  drawer.setAttribute('aria-label', 'Điều hướng quản trị');
+  toggleBtn.setAttribute('aria-controls', drawer.id);
+  toggleBtn.setAttribute('aria-expanded', 'false');
 
   const drawerHeader = document.createElement('div');
   drawerHeader.className = 'nav-drawer-header';
@@ -171,6 +185,7 @@ function buildDrawer(role, username, permissions) {
       a.href = urlFor(role, item.page);
       a.className = 'nav-drawer-item' + (item.page.replace(/\.html$/, '') === page.replace(/\.html$/, '') ? ' active' : '');
       a.textContent = `${item.icon} ${item.label}`;
+      if (item.page === page) a.setAttribute('aria-current', 'page');
       groupEl.appendChild(a);
     });
 
@@ -181,7 +196,7 @@ function buildDrawer(role, username, permissions) {
   const drawerFooter = document.createElement('div');
   drawerFooter.className = 'nav-drawer-footer';
   const userLine = document.createElement('div');
-  userLine.textContent = `👤 ${username}`;
+  userLine.textContent = `${username} · ${({admin:'Quản trị viên',manager:'Quản lý',reception:'Lễ tân',observer:'Người quan sát'})[role] || role}`;
   const footerLinks = document.createElement('div');
   footerLinks.className = 'nav-drawer-footer-links';
   const homeLink = document.createElement('a');
@@ -218,21 +233,64 @@ function buildDrawer(role, username, permissions) {
   document.body.appendChild(drawer);
   document.body.classList.add('has-nav-drawer');
 
-  function openDrawer() {
-    drawer.classList.add('open');
-    overlay.classList.add('open');
-  }
-  function closeDrawer() {
-    drawer.classList.remove('open');
-    overlay.classList.remove('open');
-  }
 
-  toggleBtn.addEventListener('click', openDrawer);
-  closeBtn.addEventListener('click', closeDrawer);
-  overlay.addEventListener('click', closeDrawer);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeDrawer();
+  const bottom = document.createElement('nav');
+  bottom.className = 'nav-bottom';
+  bottom.setAttribute('aria-label', 'Truy cập nhanh');
+  ['reception','dine-in-orders','gio-xanh','customers','finance']
+    .map(p => itemsByPage[p+'.html']).filter(i => allows(permissions,i.perm)).slice(0,4).forEach(item => {
+      const link = document.createElement('a');
+      link.href = urlFor(role,item.page);
+      const icon = document.createElement('span'); icon.textContent = item.icon; icon.setAttribute('aria-hidden','true');
+      link.append(icon, ({'reception.html':'Hôm nay','dine-in-orders.html':'Order','gio-xanh.html':'Giờ Xanh','customers.html':'Khách hàng','finance.html':'Thu chi'})[item.page]);
+      if(item.page === page) { link.className='active'; link.setAttribute('aria-current','page'); }
+      bottom.append(link);
+    });
+  const more = document.createElement('button');
+  more.type='button'; more.textContent='☰ Thêm';
+  more.setAttribute('aria-controls', drawer.id); more.setAttribute('aria-expanded','false');
+  bottom.append(more); document.body.append(bottom);
+  const desktop = window.matchMedia('(min-width:1024px)');
+  let returnFocus;
+  let blocked = [];
+  let oldOverflow = '';
+  function openDrawer() {
+    if(desktop.matches) return;
+    returnFocus = document.activeElement;
+    drawer.inert = false;
+    drawer.setAttribute('role','dialog'); drawer.setAttribute('aria-modal','true');
+    drawer.classList.add('open'); overlay.classList.add('open');
+    blocked = [...document.body.children].filter(el => el !== drawer && el !== overlay && !el.inert);
+    blocked.forEach(el => { el.inert=true; });
+    oldOverflow=document.body.style.overflow; document.body.style.overflow='hidden';
+    toggleBtn.setAttribute('aria-expanded','true'); more.setAttribute('aria-expanded','true');
+    closeBtn.focus();
+  }
+  function closeDrawer(restore = true) {
+    const wasOpen=drawer.classList.contains('open');
+    drawer.classList.remove('open'); overlay.classList.remove('open');
+    drawer.removeAttribute('role'); drawer.removeAttribute('aria-modal');
+    drawer.inert=!desktop.matches;
+    blocked.forEach(el => { el.inert=false; }); blocked=[];
+    if(wasOpen) document.body.style.overflow=oldOverflow;
+    toggleBtn.setAttribute('aria-expanded','false'); more.setAttribute('aria-expanded','false');
+    if(wasOpen && restore) returnFocus?.focus();
+  }
+  toggleBtn.addEventListener('click', openDrawer); more.addEventListener('click',openDrawer);
+  closeBtn.addEventListener('click', () => closeDrawer()); overlay.addEventListener('click', () => closeDrawer());
+  desktop.addEventListener('change', () => closeDrawer(false));
+  closeDrawer(false);
+  document.addEventListener('keydown', event => {
+    if(!drawer.classList.contains('open')) return;
+    if(event.key==='Escape') { event.preventDefault(); closeDrawer(); }
+    if(event.key==='Tab') {
+      const targets=[...drawer.querySelectorAll('a[href],button')].filter(el => el.getClientRects().length);
+      const first=targets[0], last=targets.at(-1);
+      if(event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+      else if(!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+    }
   });
+
 }
 
 // Admin pages must never run against a stale cached build. Browsers only

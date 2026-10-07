@@ -100,6 +100,9 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
   }
   const me = await res.json();
   currentPermissions = me.permissions || [];
+  document.getElementById('openNewBookingBtn').hidden = !can('bookings.manage');
+  document.getElementById('tab-uu-dai').hidden = !can('promo.redeem');
+  window.HLGTabs.refresh(undefined, { normalizeHash: true });
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
@@ -671,6 +674,10 @@ function renderBookingCard(b) {
   const badge = document.createElement('span');
   badge.className = `status-badge status-${b.status}`;
   badge.textContent = statusLabel(b.status);
+  if (b.status === 'cancelled' && b.refundPercentApplied != null) {
+    const amount = Math.round((b.depositAmount || 0) * b.refundPercentApplied / 100);
+    badge.textContent += ` — hoàn ${b.refundPercentApplied}%: ${formatVnd(amount)}`;
+  }
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
 
@@ -820,6 +827,7 @@ function renderList(containerId, bookings, emptyText, buildActions) {
 
 async function loadPending() {
   const bookings = await fetchBookings('status=pending');
+  document.getElementById('pendingTabCount').textContent = bookings.length;
   renderList('pendingList', bookings, 'Không có yêu cầu nào đang chờ.', (actions, b) => {
     if (!can('bookings.manage')) return;
     const confirmBtn = document.createElement('button');
@@ -830,7 +838,7 @@ async function loadPending() {
     const rejectBtn = document.createElement('button');
     rejectBtn.textContent = 'Từ chối';
     rejectBtn.className = 'btn-secondary';
-    rejectBtn.addEventListener('click', () => rejectBooking(b.id));
+    rejectBtn.addEventListener('click', () => openCancelDialog(b));
     actions.appendChild(rejectBtn);
   });
 }
@@ -912,23 +920,6 @@ async function doBookingAction(id, action) {
   await refreshAll();
 }
 
-async function rejectBooking(id) {
-  let response;
-  try {
-    response = await fetch(`/api/bookings/${id}/reject`, { method: 'POST' });
-  } catch (err) {
-    showOpsError('Có lỗi xảy ra');
-    return;
-  }
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    showOpsError(body.error || 'Có lỗi xảy ra');
-    return;
-  }
-  showOpsError('');
-  await loadPending();
-}
-
 function daysBeforeCheckin(checkIn) {
   const now = new Date();
   const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -938,17 +929,11 @@ function daysBeforeCheckin(checkIn) {
 }
 
 let cancellingBooking = null;
-let cachedCancellationTiers = null;
 
 async function loadCancellationTiers() {
-  if (cachedCancellationTiers) return cachedCancellationTiers;
-  try {
-    const response = await fetch('/api/cancellation-policy');
-    cachedCancellationTiers = response.ok ? await response.json() : [];
-  } catch (err) {
-    cachedCancellationTiers = [];
-  }
-  return cachedCancellationTiers;
+  const response = await fetch('/api/cancellation-policy');
+  if (!response.ok) throw new Error('Không tải được chính sách hoàn cọc. Vui lòng thử lại.');
+  return response.json();
 }
 
 function findRefundPercent(tiers, daysBefore) {
@@ -957,12 +942,15 @@ function findRefundPercent(tiers, daysBefore) {
 }
 
 async function openCancelDialog(booking) {
+  document.getElementById('bookingActionStatus').textContent = '';
   cancellingBooking = booking;
   document.getElementById('cancelError').textContent = '';
   document.getElementById('cancelCash').checked = false;
   document.getElementById('cancelTransfer').checked = false;
 
-  const tiers = await loadCancellationTiers();
+  let tiers;
+  try { tiers = await loadCancellationTiers(); }
+  catch { showOpsError('Không tải được chính sách hoàn cọc. Vui lòng thử lại.'); return; }
   const daysBefore = daysBeforeCheckin(booking.checkIn);
   const refundPercent = findRefundPercent(tiers, daysBefore);
   const refundAmount = Math.round((booking.depositAmount || 0) * refundPercent / 100);
@@ -988,6 +976,8 @@ function closeCancelDialog() {
 document.getElementById('cancelCancelBtn').addEventListener('click', closeCancelDialog);
 
 document.getElementById('cancelSubmitBtn').addEventListener('click', async () => {
+  const submitBtn = document.getElementById('cancelSubmitBtn');
+  if (submitBtn.disabled || !cancellingBooking) return;
   const errorEl = document.getElementById('cancelError');
   errorEl.textContent = '';
 
@@ -1002,8 +992,10 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
   }
 
   let response;
+  submitBtn.disabled = true;
   try {
-    response = await fetch(`/api/bookings/${cancellingBooking.id}/cancel`, {
+    const action = cancellingBooking.status === 'pending' ? 'reject' : 'cancel';
+    response = await fetch(`/api/bookings/${cancellingBooking.id}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paymentMethod }),
@@ -1011,19 +1003,23 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
   } catch (err) {
     errorEl.textContent = 'Có lỗi xảy ra';
     return;
+  } finally {
+    submitBtn.disabled = false;
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi xảy ra';
     if (body.error === 'Vui lòng chọn hình thức thanh toán') {
-      // Server computed a nonzero refund from fresh tiers while our cached tiers said 0% (policy
-      // changed elsewhere while this dialog was open). Drop the stale cache so the next open
-      // re-fetches, and reveal the radios now so the operator can pick one without closing/reopening.
-      cachedCancellationTiers = null;
+      // Policy may have changed since opening the dialog. Require a payment method;
+      // opening again always fetches the latest policy instead of caching it.
       document.getElementById('cancelPaymentFields').classList.remove('hidden');
     }
     return;
   }
+  const result = await response.json();
+  document.getElementById('bookingActionStatus').textContent = result.refundAmount > 0
+    ? `Đã hủy và ghi khoản chi hoàn cọc ${formatVnd(result.refundAmount)} (${result.refundPercentApplied}%).`
+    : 'Đã hủy đặt phòng, không phát sinh khoản chi hoàn cọc.';
   closeCancelDialog();
   showOpsError('');
   await refreshAll();
@@ -1511,8 +1507,47 @@ async function refreshNewBookingRoomOptions() {
   document.getElementById('newBookingForm')[name].addEventListener('change', refreshNewBookingRoomOptions);
 });
 
+const newBookingOverlay = document.getElementById('newBookingOverlay');
+let newBookingBlocked = [];
+let newBookingOverflow = '';
+// True while POST /api/bookings/staff is in flight: blocks a second submit (no server-side
+// idempotency yet) and keeps the dialog open so the outcome is not lost.
+let newBookingSubmitting = false;
+function requestCloseNewBooking() {
+  if (!newBookingSubmitting) closeNewBooking();
+}
+function closeNewBooking() {
+  newBookingOverlay.classList.add('hidden');
+  newBookingBlocked.forEach((el) => { el.inert = false; });
+  newBookingBlocked = [];
+  document.body.style.overflow = newBookingOverflow;
+  document.getElementById('openNewBookingBtn').focus();
+}
+document.getElementById('openNewBookingBtn').addEventListener('click', () => {
+  if (!can('bookings.manage')) return;
+  newBookingOverlay.classList.remove('hidden');
+  newBookingBlocked = [...document.body.children].filter((el) => el !== newBookingOverlay && !el.inert);
+  newBookingBlocked.forEach((el) => { el.inert = true; });
+  newBookingOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.getElementById('newBookingForm').elements.guestName.focus();
+});
+document.getElementById('closeNewBookingBtn').addEventListener('click', requestCloseNewBooking);
+newBookingOverlay.addEventListener('click', (event) => {
+  if (event.target === newBookingOverlay) requestCloseNewBooking();
+});
+newBookingOverlay.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') { event.preventDefault(); requestCloseNewBooking(); }
+  if (event.key !== 'Tab') return;
+  const targets = [...newBookingOverlay.querySelectorAll('button,input,select,textarea')].filter((el) => !el.disabled && el.getClientRects().length);
+  const first = targets[0], last = targets.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
+
 document.getElementById('newBookingForm').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (newBookingSubmitting) return;
   const form = event.target;
   const data = new FormData(form);
   const errorEl = document.getElementById('newBookingError');
@@ -1523,6 +1558,16 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
     errorEl.textContent = 'Vui lòng chọn phòng cụ thể';
     return;
   }
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const closeBtn = document.getElementById('closeNewBookingBtn');
+  const setSubmitting = (on) => {
+    newBookingSubmitting = on;
+    submitBtn.disabled = on;
+    closeBtn.disabled = on;
+    form.setAttribute('aria-busy', String(on));
+  };
+  setSubmitting(true);
 
   let response;
   try {
@@ -1542,17 +1587,23 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
       }),
     });
   } catch (err) {
+    setSubmitting(false);
     errorEl.textContent = 'Có lỗi khi tạo đặt phòng';
+    submitBtn.focus();
     return;
   }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    setSubmitting(false);
     errorEl.textContent = body.error || 'Có lỗi khi tạo đặt phòng';
+    submitBtn.focus();
     return;
   }
 
+  setSubmitting(false);
   form.reset();
+  closeNewBooking();
   refreshNewBookingRoomOptions();
   await refreshAll();
 });

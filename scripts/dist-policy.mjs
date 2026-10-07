@@ -71,6 +71,10 @@ export const REQUIRED = [
   'favicon.svg',
   'admin/login.html',
   'admin/admin.css',
+  'admin/reception.html',
+  'admin/reception.js',
+  'admin/nav-drawer.js',
+  'admin/tabs.js',
   'tri-an-khach-hang/index.html',
   'bang-gia/index.html',
 ];
