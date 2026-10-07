@@ -135,7 +135,7 @@ function selfTest(distDir) {
       if (existsSync(path.join(distDir, top))) cpSync(path.join(distDir, top), path.join(copy, top), { recursive: true });
     }
 
-    for (const req of ['index.html', 'admin/login.html', '_redirects']) {
+    for (const req of ['index.html', 'admin/login.html', '_redirects', 'admin/tabs.js']) {
       const abs = path.join(copy, ...req.split('/'));
       rmSync(abs, { force: true });
       const res = checkDir(copy);
@@ -152,7 +152,7 @@ function selfTest(distDir) {
   }
   console.log(failures
     ? `self-test: FAILED (${failures} problem(s))`
-    : `self-test: OK (${PLANTS.length} planted paths + 3 missing-asset cases detected; clean copy passes)`);
+    : `self-test: OK (${PLANTS.length} planted paths + 4 missing-asset cases detected; clean copy passes)`);
   return failures === 0;
 }
 

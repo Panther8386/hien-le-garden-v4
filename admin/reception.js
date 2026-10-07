@@ -100,6 +100,9 @@ const BOOKING_HISTORY_PAGE_SIZE = 10;
   }
   const me = await res.json();
   currentPermissions = me.permissions || [];
+  document.getElementById('openNewBookingBtn').hidden = !can('bookings.manage');
+  document.getElementById('tab-uu-dai').hidden = !can('promo.redeem');
+  window.HLGTabs.refresh();
   catalogItems = await fetch('/api/catalog').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const dineMenuRaw = await fetch('/api/dine-in-menu').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   dineMenuItems = dineMenuRaw.filter((m) => m.isActive);
@@ -820,6 +823,7 @@ function renderList(containerId, bookings, emptyText, buildActions) {
 
 async function loadPending() {
   const bookings = await fetchBookings('status=pending');
+  document.getElementById('pendingTabCount').textContent = bookings.length;
   renderList('pendingList', bookings, 'Không có yêu cầu nào đang chờ.', (actions, b) => {
     if (!can('bookings.manage')) return;
     const confirmBtn = document.createElement('button');
@@ -1511,6 +1515,38 @@ async function refreshNewBookingRoomOptions() {
   document.getElementById('newBookingForm')[name].addEventListener('change', refreshNewBookingRoomOptions);
 });
 
+const newBookingOverlay = document.getElementById('newBookingOverlay');
+let newBookingBlocked = [];
+let newBookingOverflow = '';
+function closeNewBooking() {
+  newBookingOverlay.classList.add('hidden');
+  newBookingBlocked.forEach((el) => { el.inert = false; });
+  newBookingBlocked = [];
+  document.body.style.overflow = newBookingOverflow;
+  document.getElementById('openNewBookingBtn').focus();
+}
+document.getElementById('openNewBookingBtn').addEventListener('click', () => {
+  if (!can('bookings.manage')) return;
+  newBookingOverlay.classList.remove('hidden');
+  newBookingBlocked = [...document.body.children].filter((el) => el !== newBookingOverlay && !el.inert);
+  newBookingBlocked.forEach((el) => { el.inert = true; });
+  newBookingOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.getElementById('newBookingForm').elements.guestName.focus();
+});
+document.getElementById('closeNewBookingBtn').addEventListener('click', closeNewBooking);
+newBookingOverlay.addEventListener('click', (event) => {
+  if (event.target === newBookingOverlay) closeNewBooking();
+});
+newBookingOverlay.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') { event.preventDefault(); closeNewBooking(); }
+  if (event.key !== 'Tab') return;
+  const targets = [...newBookingOverlay.querySelectorAll('button,input,select,textarea')].filter((el) => !el.disabled && el.getClientRects().length);
+  const first = targets[0], last = targets.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
+
 document.getElementById('newBookingForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.target;
@@ -1553,6 +1589,7 @@ document.getElementById('newBookingForm').addEventListener('submit', async (even
   }
 
   form.reset();
+  closeNewBooking();
   refreshNewBookingRoomOptions();
   await refreshAll();
 });

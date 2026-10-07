@@ -7,21 +7,101 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Bảng hôm nay — Hiền Lê Garden CRM</title>
+  <title>Vận hành hôm nay — Hiền Lê Garden CRM</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/admin/admin.css" />
 </head>
 <body>
   <div class="page page-wide">
-    <h1>Bảng hôm nay</h1>
+    <div class="page-head"><h1>Vận hành hôm nay</h1><button type="button" id="openNewBookingBtn" hidden><span class="desktop-label">+ Đặt phòng mới</span><span class="mobile-label">+ Đặt</span></button></div>
+    <div class="tabs" data-tabs role="tablist" aria-label="Vận hành">
+      <button type="button" class="tab" role="tab" id="tab-viec" data-tab="viec" aria-controls="panel-viec">Việc cần làm <span id="pendingTabCount" class="tab-count">0</span></button>
+      <button type="button" class="tab" role="tab" id="tab-dat-phong" data-tab="dat-phong" aria-controls="panel-dat-phong">Đặt phòng</button>
+      <button type="button" class="tab" role="tab" id="tab-so-do" data-tab="so-do" aria-controls="panel-so-do">Sơ đồ phòng</button>
+      <button type="button" class="tab" role="tab" id="tab-uu-dai" data-tab="uu-dai" aria-controls="panel-uu-dai" hidden>Tra mã ưu đãi</button>
+    </div>
     <p id="opsError" class="error"></p>
 
-    <h2>🔔 Nhắc việc hôm nay</h2>
-    <div id="remindersSection"></div>
+    <section id="panel-viec" data-tab-panel="viec" role="tabpanel" aria-labelledby="tab-viec"><div class="ops-reminders"><h2>Nhắc việc hôm nay</h2>
+    <div id="remindersSection"></div></div><div class="ops-columns"><section>
 
-    <div id="newBookingSection">
-    <h2>+ Tạo đặt phòng mới</h2>
+    <h2>Cần xử lý</h2>
+    <div id="pendingList" class="booking-list"></div>
+
+    </section><section><h2>Hôm nay</h2>
+    <h3>Khách đến hôm nay</h3>
+    <div id="arrivalsList" class="booking-list"></div>
+    <h3>Khách đi hôm nay</h3>
+    <div id="departuresList" class="booking-list"></div>
+
+    </section></div></section><section id="panel-dat-phong" data-tab-panel="dat-phong" role="tabpanel" aria-labelledby="tab-dat-phong" hidden><h2>Đã xác nhận (sắp tới)</h2>
+    <div id="upcomingConfirmedList" class="booking-list"></div>
+
+    <h2>Đang ở</h2>
+    <div id="inhouseList" class="booking-list"></div>
+
+    <h2>Lịch sử đặt phòng</h2>
+    <label class="checkbox hidden" id="showHiddenBookingsWrap"><input type="checkbox" id="showHiddenBookings" /> Hiển thị các log đã ẩn</label>
+    <input type="text" id="bookingHistorySearch" placeholder="Tìm theo tên hoặc số điện thoại..." />
+    <div id="bookingHistoryList" class="booking-list"></div>
+    <div class="filters" id="bookingHistoryPagination">
+      <button type="button" id="bookingHistoryPrevBtn" class="btn-secondary">← Trước</button>
+      <span id="bookingHistoryPageInfo"></span>
+      <button type="button" id="bookingHistoryNextBtn" class="btn-secondary">Sau →</button>
+    </div>
+
+    </section><section id="panel-so-do" data-tab-panel="so-do" role="tabpanel" aria-labelledby="tab-so-do" hidden><h2>Trạng thái phòng</h2>
+    <div class="room-filters">
+      <label>Ngày <input type="date" id="roomDateFilter" /></label>
+      <label>Trạng thái
+        <select id="roomStatusFilter">
+          <option value="">Tất cả</option>
+          <option value="empty">Phòng trống</option>
+          <option value="booked">Đã có khách đặt</option>
+          <option value="booked_deposited">Đã đặt & có cọc</option>
+          <option value="occupied">Đang có khách</option>
+          <option value="used">Đã sử dụng</option>
+        </select>
+      </label>
+      <button type="button" id="saveRoomOrderBtn" class="hidden">Lưu bố cục</button>
+    </div>
+    <div id="roomsGrid" class="rooms-grid"></div>
+    <div id="roomLayoutHistory" class="room-layout-history"></div>
+
+    <table id="roomStatusLegend" class="legend-table">
+      <tbody>
+        <tr><td><span class="legend-swatch room-empty"></span></td><td>Trống</td></tr>
+        <tr><td><span class="legend-swatch room-booked"></span></td><td>Đã có khách đặt</td></tr>
+        <tr><td><span class="legend-swatch room-booked_deposited"></span></td><td>Đã đặt &amp; có cọc</td></tr>
+        <tr><td><span class="legend-swatch room-occupied"></span></td><td>Đang có khách</td></tr>
+        <tr><td><span class="legend-swatch room-used"></span></td><td>Đã sử dụng</td></tr>
+        <tr><td>🧹</td><td>Cần dọn phòng (hiện chồng lên bất kỳ trạng thái nào)</td></tr>
+      </tbody>
+    </table>
+
+    </section><section id="panel-uu-dai" data-tab-panel="uu-dai" role="tabpanel" aria-labelledby="tab-uu-dai" hidden><div id="promoLookupSection">
+    <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
+    <form id="lookupForm">
+      <label>Mã ưu đãi <input type="text" name="code" required autocapitalize="characters" /></label>
+      <button type="submit">Tra cứu</button>
+    </form>
+    <p id="lookupError" class="error"></p>
+
+    <section id="result" class="hidden">
+      <p>Khách: <strong id="guestName"></strong></p>
+      <p>Giảm giá: <strong id="discountPercent"></strong>%</p>
+      <p>Hạn dùng: <span id="expiresAt"></span></p>
+      <p>Trạng thái: <span id="status"></span></p>
+      <button id="redeemBtn">Đánh dấu đã dùng</button>
+      <button id="claimGiftBtn">Đã phát quà</button>
+      <p id="actionError" class="error"></p>
+    </section>
+    </div></section>
+  </div>
+
+  <div id="newBookingOverlay" class="confirm-overlay form-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="newBookingTitle"><div class="confirm-box wide">    <div id="newBookingSection">
+    <div class="page-head"><h2 id="newBookingTitle">Đặt phòng mới</h2><button type="button" id="closeNewBookingBtn" class="btn-ghost" aria-label="Đóng đặt phòng">✕</button></div>
     <form id="newBookingForm">
       <div class="form-row">
         <label>Họ tên <input type="text" name="guestName" required /></label>
@@ -65,80 +145,7 @@
     </form>
     </div>
 
-    <h2>Cần xử lý</h2>
-    <div id="pendingList" class="booking-list"></div>
-
-    <h2>Hôm nay</h2>
-    <h3>Khách đến hôm nay</h3>
-    <div id="arrivalsList" class="booking-list"></div>
-    <h3>Khách đi hôm nay</h3>
-    <div id="departuresList" class="booking-list"></div>
-
-    <h2>Đã xác nhận (sắp tới)</h2>
-    <div id="upcomingConfirmedList" class="booking-list"></div>
-
-    <h2>Đang ở</h2>
-    <div id="inhouseList" class="booking-list"></div>
-
-    <h2>Lịch sử đặt phòng</h2>
-    <label class="checkbox hidden" id="showHiddenBookingsWrap"><input type="checkbox" id="showHiddenBookings" /> Hiển thị các log đã ẩn</label>
-    <input type="text" id="bookingHistorySearch" placeholder="Tìm theo tên hoặc số điện thoại..." />
-    <div id="bookingHistoryList" class="booking-list"></div>
-    <div class="filters" id="bookingHistoryPagination">
-      <button type="button" id="bookingHistoryPrevBtn" class="btn-secondary">← Trước</button>
-      <span id="bookingHistoryPageInfo"></span>
-      <button type="button" id="bookingHistoryNextBtn" class="btn-secondary">Sau →</button>
-    </div>
-
-    <h2>Trạng thái phòng</h2>
-    <div class="room-filters">
-      <label>Ngày <input type="date" id="roomDateFilter" /></label>
-      <label>Trạng thái
-        <select id="roomStatusFilter">
-          <option value="">Tất cả</option>
-          <option value="empty">Phòng trống</option>
-          <option value="booked">Đã có khách đặt</option>
-          <option value="booked_deposited">Đã đặt & có cọc</option>
-          <option value="occupied">Đang có khách</option>
-          <option value="used">Đã sử dụng</option>
-        </select>
-      </label>
-      <button type="button" id="saveRoomOrderBtn" class="hidden">Lưu bố cục</button>
-    </div>
-    <div id="roomsGrid" class="rooms-grid"></div>
-    <div id="roomLayoutHistory" class="room-layout-history"></div>
-
-    <table id="roomStatusLegend" class="legend-table">
-      <tbody>
-        <tr><td><span class="legend-swatch room-empty"></span></td><td>Trống</td></tr>
-        <tr><td><span class="legend-swatch room-booked"></span></td><td>Đã có khách đặt</td></tr>
-        <tr><td><span class="legend-swatch room-booked_deposited"></span></td><td>Đã đặt &amp; có cọc</td></tr>
-        <tr><td><span class="legend-swatch room-occupied"></span></td><td>Đang có khách</td></tr>
-        <tr><td><span class="legend-swatch room-used"></span></td><td>Đã sử dụng</td></tr>
-        <tr><td>🧹</td><td>Cần dọn phòng (hiện chồng lên bất kỳ trạng thái nào)</td></tr>
-      </tbody>
-    </table>
-
-    <div id="promoLookupSection">
-    <h2>Tra cứu &amp; đổi mã ưu đãi</h2>
-    <form id="lookupForm">
-      <label>Mã ưu đãi <input type="text" name="code" required autocapitalize="characters" /></label>
-      <button type="submit">Tra cứu</button>
-    </form>
-    <p id="lookupError" class="error"></p>
-
-    <section id="result" class="hidden">
-      <p>Khách: <strong id="guestName"></strong></p>
-      <p>Giảm giá: <strong id="discountPercent"></strong>%</p>
-      <p>Hạn dùng: <span id="expiresAt"></span></p>
-      <p>Trạng thái: <span id="status"></span></p>
-      <button id="redeemBtn">Đánh dấu đã dùng</button>
-      <button id="claimGiftBtn">Đã phát quà</button>
-      <p id="actionError" class="error"></p>
-    </section>
-    </div>
-  </div>
-
+</div></div>
   <div id="confirmOverlay" class="confirm-overlay hidden">
     <div class="confirm-box">
       <h3>Xác nhận đặt phòng</h3>
@@ -187,6 +194,7 @@
     </div>
   </div>
 
+  <script src="/admin/tabs.js"></script>
   <script src="/admin/reception.js"></script>
   <script src="/admin/nav-drawer.js"></script>
 </body>
