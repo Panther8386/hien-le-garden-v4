@@ -582,6 +582,7 @@ tr:hover td { background:var(--bg); }
  .desktop-label { display:none; } .mobile-label { display:inline; }
  .filters input,.filters select { max-width:100%; min-width:0; }
  .legend-table { min-width:0; }
+ .legend-table td { white-space:normal; overflow-wrap:anywhere; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; } }
 @media print { body.has-nav-drawer { padding:0; } .nav-drawer,.nav-topbar,.nav-bottom,.nav-drawer-overlay { display:none !important; } }

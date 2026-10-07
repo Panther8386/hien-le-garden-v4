@@ -50,6 +50,7 @@ try {
         await page.locator(`#tab-${tab}`).click();
         assert.equal(await page.locator(`#panel-${tab}`).isVisible(),true);
         assert.equal(await page.locator('[role=tabpanel]:visible').count(),1);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true, `${role}/${width}/${tab}: horizontal overflow`);
         await page.screenshot({path:`test-results/admin-refresh/${role}-${width}-${tab}.png`,fullPage:true});
       }
       await page.reload();
