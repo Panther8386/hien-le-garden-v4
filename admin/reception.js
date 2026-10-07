@@ -674,6 +674,10 @@ function renderBookingCard(b) {
   const badge = document.createElement('span');
   badge.className = `status-badge status-${b.status}`;
   badge.textContent = statusLabel(b.status);
+  if (b.status === 'cancelled' && b.refundPercentApplied != null) {
+    const amount = Math.round((b.depositAmount || 0) * b.refundPercentApplied / 100);
+    badge.textContent += ` — hoàn ${b.refundPercentApplied}%: ${formatVnd(amount)}`;
+  }
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
 
@@ -834,7 +838,7 @@ async function loadPending() {
     const rejectBtn = document.createElement('button');
     rejectBtn.textContent = 'Từ chối';
     rejectBtn.className = 'btn-secondary';
-    rejectBtn.addEventListener('click', () => rejectBooking(b.id));
+    rejectBtn.addEventListener('click', () => openCancelDialog(b));
     actions.appendChild(rejectBtn);
   });
 }
@@ -916,23 +920,6 @@ async function doBookingAction(id, action) {
   await refreshAll();
 }
 
-async function rejectBooking(id) {
-  let response;
-  try {
-    response = await fetch(`/api/bookings/${id}/reject`, { method: 'POST' });
-  } catch (err) {
-    showOpsError('Có lỗi xảy ra');
-    return;
-  }
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    showOpsError(body.error || 'Có lỗi xảy ra');
-    return;
-  }
-  showOpsError('');
-  await loadPending();
-}
-
 function daysBeforeCheckin(checkIn) {
   const now = new Date();
   const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -942,17 +929,11 @@ function daysBeforeCheckin(checkIn) {
 }
 
 let cancellingBooking = null;
-let cachedCancellationTiers = null;
 
 async function loadCancellationTiers() {
-  if (cachedCancellationTiers) return cachedCancellationTiers;
-  try {
-    const response = await fetch('/api/cancellation-policy');
-    cachedCancellationTiers = response.ok ? await response.json() : [];
-  } catch (err) {
-    cachedCancellationTiers = [];
-  }
-  return cachedCancellationTiers;
+  const response = await fetch('/api/cancellation-policy');
+  if (!response.ok) throw new Error('Không tải được chính sách hoàn cọc. Vui lòng thử lại.');
+  return response.json();
 }
 
 function findRefundPercent(tiers, daysBefore) {
@@ -961,12 +942,15 @@ function findRefundPercent(tiers, daysBefore) {
 }
 
 async function openCancelDialog(booking) {
+  document.getElementById('bookingActionStatus').textContent = '';
   cancellingBooking = booking;
   document.getElementById('cancelError').textContent = '';
   document.getElementById('cancelCash').checked = false;
   document.getElementById('cancelTransfer').checked = false;
 
-  const tiers = await loadCancellationTiers();
+  let tiers;
+  try { tiers = await loadCancellationTiers(); }
+  catch { showOpsError('Không tải được chính sách hoàn cọc. Vui lòng thử lại.'); return; }
   const daysBefore = daysBeforeCheckin(booking.checkIn);
   const refundPercent = findRefundPercent(tiers, daysBefore);
   const refundAmount = Math.round((booking.depositAmount || 0) * refundPercent / 100);
@@ -992,6 +976,8 @@ function closeCancelDialog() {
 document.getElementById('cancelCancelBtn').addEventListener('click', closeCancelDialog);
 
 document.getElementById('cancelSubmitBtn').addEventListener('click', async () => {
+  const submitBtn = document.getElementById('cancelSubmitBtn');
+  if (submitBtn.disabled || !cancellingBooking) return;
   const errorEl = document.getElementById('cancelError');
   errorEl.textContent = '';
 
@@ -1006,8 +992,10 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
   }
 
   let response;
+  submitBtn.disabled = true;
   try {
-    response = await fetch(`/api/bookings/${cancellingBooking.id}/cancel`, {
+    const action = cancellingBooking.status === 'pending' ? 'reject' : 'cancel';
+    response = await fetch(`/api/bookings/${cancellingBooking.id}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paymentMethod }),
@@ -1015,19 +1003,23 @@ document.getElementById('cancelSubmitBtn').addEventListener('click', async () =>
   } catch (err) {
     errorEl.textContent = 'Có lỗi xảy ra';
     return;
+  } finally {
+    submitBtn.disabled = false;
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     errorEl.textContent = body.error || 'Có lỗi xảy ra';
     if (body.error === 'Vui lòng chọn hình thức thanh toán') {
-      // Server computed a nonzero refund from fresh tiers while our cached tiers said 0% (policy
-      // changed elsewhere while this dialog was open). Drop the stale cache so the next open
-      // re-fetches, and reveal the radios now so the operator can pick one without closing/reopening.
-      cachedCancellationTiers = null;
+      // Policy may have changed since opening the dialog. Require a payment method;
+      // opening again always fetches the latest policy instead of caching it.
       document.getElementById('cancelPaymentFields').classList.remove('hidden');
     }
     return;
   }
+  const result = await response.json();
+  document.getElementById('bookingActionStatus').textContent = result.refundAmount > 0
+    ? `Đã hủy và ghi khoản chi hoàn cọc ${formatVnd(result.refundAmount)} (${result.refundPercentApplied}%).`
+    : 'Đã hủy đặt phòng, không phát sinh khoản chi hoàn cọc.';
   closeCancelDialog();
   showOpsError('');
   await refreshAll();
