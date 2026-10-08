@@ -10,6 +10,35 @@ import { onRequestPatch as hideOrder } from '../functions/api/dine-in-orders/[id
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 
+describe('closed order payment display reconciles its linked receipt', () => {
+  it.each([
+    ['confirmed', 'income', 50000, 'paid'],
+    ['paid', 'income', 50000, 'paid'],
+    ['confirmed', 'income', 50000, 'needs_review', '2026-10-08T02:00:00Z'],
+    ['draft', 'income', 50000, 'needs_review'],
+    ['confirmed', 'income', 40000, 'needs_review'],
+    ['confirmed', 'expense', 50000, 'needs_review'],
+    [null, null, null, 'needs_review'],
+  ])('receipt %s/%s/%s produces %s on both list and detail', async (status, type, amount, expected, voidedAt = null) => {
+    let receiptId = null;
+    if (status) {
+      const tx = await env.DB.prepare(`INSERT INTO finance_transactions (type,category,amount,note,transaction_date,status,created_by,created_at,voided_at) VALUES (?,'khach_vang_lai',?,'Payment display test','2026-10-08',?,'seed','2026-10-08T00:00:00Z',?)`).bind(type,amount,status,voidedAt).run();
+      receiptId = tx.meta.last_row_id;
+    }
+    const inserted = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label,status,opened_by,opened_at,closed_by,closed_at,payment_method,total_amount,finance_transaction_id) VALUES ('Payment display','closed','seed','2026-10-08T00:00:00Z','seed','2026-10-08T01:00:00Z','cash',50000,?)`).bind(receiptId).run();
+    const id = inserted.meta.last_row_id;
+    const list = await listOrders({request:authedRequest('https://x/api/dine-in-orders?status=closed', receptionToken, 'GET'),env});
+    const summary = (await list.json()).find(o=>o.id===id);
+    const detail = await getOrder({request:authedRequest(`https://x/api/dine-in-orders/${id}`, receptionToken, 'GET'),env,params:{id:String(id)}});
+    for (const order of [summary,await detail.json()]) {
+      expect(order).toMatchObject({status:'closed',paymentStatus:expected,paymentMethod:'cash',totalAmount:50000});
+      expect(order).not.toHaveProperty('receiptAmount');
+      expect(order).not.toHaveProperty('receiptStatus');
+    }
+    expect((await env.DB.prepare('SELECT status,finance_transaction_id FROM dine_in_orders WHERE id=?').bind(id).first())).toEqual({status:'closed',finance_transaction_id:receiptId});
+  });
+});
+
 let managerToken, receptionToken, adminToken, observerToken, observerStaffId, receptionStaffId;
 
 beforeEach(async () => {

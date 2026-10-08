@@ -141,8 +141,12 @@ function render() {
   }
 
   if (o.status === 'closed') {
+    document.getElementById('orderStatus').textContent = o.paymentStatus === 'paid'
+      ? 'Đã thanh toán · Đã kết thúc'
+      : 'Đã kết thúc · Cần đối soát thanh toán';
     printBtn.classList.remove('hidden');
   } else {
+    document.getElementById('orderStatus').textContent = o.status === 'open' ? 'Đang mở · Chưa thanh toán' : 'Đã huỷ';
     printBtn.classList.add('hidden');
   }
 }
