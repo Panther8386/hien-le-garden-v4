@@ -183,7 +183,13 @@
 
   <div id="cancelOverlay" class="confirm-overlay hidden">
     <div class="confirm-box">
-      <h3>Huỷ đặt phòng</h3>
+      <h3 id="cancelTitle">Huỷ đặt phòng</h3>
+      <label>Lý do <textarea id="cancelReason" maxlength="1000" required></textarea></label>
+      <div id="cancelGuestFields">
+        <label>Nguồn yêu cầu <select id="cancelRequestSource"><option value="phone">Điện thoại</option><option value="zalo">Zalo</option><option value="in_person">Trực tiếp</option></select></label>
+        <label>Thời điểm tiếp nhận (giờ Việt Nam) <input id="cancelRequestedAt" type="datetime-local" step="0.001" required /></label>
+        <p>Tính mức hoàn theo ngày tiếp nhận yêu cầu, không phải ngày nhân viên xử lý.</p>
+      </div>
       <p id="cancelSummary"></p>
       <div id="cancelPaymentFields" class="hidden">
         <label class="checkbox-label"><input type="radio" id="cancelCash" name="cancelPaymentMethod" value="cash" /> 💵 Tiền mặt</label>

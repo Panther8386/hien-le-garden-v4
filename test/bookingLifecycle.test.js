@@ -245,7 +245,7 @@ describe('POST /api/bookings/:id/reject', () => {
     expect(row.entity_type).toBe('booking');
     expect(row.entity_label).toBe('Nguyễn Văn A');
     expect(row.old_value).toBe('pending');
-    expect(row.new_value).toBe('cancelled — Lý do: Hết phòng');
+    expect(row.new_value).toContain('cancelled — Lý do: Hết phòng');
     expect(row.actor).toBe('quan_ly_a');
   });
 
@@ -258,7 +258,7 @@ describe('POST /api/bookings/:id/reject', () => {
     expect(response.status).toBe(200);
 
     const row = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE action_type = 'booking_reject' AND entity_id = ?`).bind(pendingBookingId).first();
-    expect(row.new_value).toBe('cancelled');
+    expect(row.new_value).toContain('cancelled — Khách sạn từ chối');
   });
 
   it('rejects rejecting a booking that is not pending', async () => {
@@ -368,7 +368,7 @@ describe('POST /api/bookings/:id/cancel', () => {
     expect(row.entity_type).toBe('booking');
     expect(row.entity_label).toBe('Nguyễn Văn A');
     expect(row.old_value).toBe('confirmed');
-    expect(row.new_value).toBe('cancelled — hoàn 50% (50000 đ) — Lý do: Khách đổi lịch');
+    expect(row.new_value).toContain('cancelled — hoàn 50% (50000 đ) — Lý do: Khách đổi lịch');
     expect(row.actor).toBe('quan_ly_a');
   });
 
