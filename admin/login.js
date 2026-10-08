@@ -16,7 +16,8 @@ document.getElementById('loginForm').addEventListener('submit', async (event) =>
   });
 
   if (!response.ok) {
-    document.getElementById('loginError').textContent = 'Sai tài khoản hoặc mật khẩu';
+    const body = await response.json().catch(() => ({}));
+    document.getElementById('loginError').textContent = body.error || 'Không thể đăng nhập. Vui lòng thử lại.';
     return;
   }
 
