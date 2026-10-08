@@ -14,15 +14,15 @@ describe('closed order payment display reconciles its linked receipt', () => {
   it.each([
     ['confirmed', 'income', 50000, 'paid'],
     ['paid', 'income', 50000, 'paid'],
-    ['voided', 'income', 50000, 'needs_review'],
+    ['confirmed', 'income', 50000, 'needs_review', '2026-10-08T02:00:00Z'],
     ['draft', 'income', 50000, 'needs_review'],
     ['confirmed', 'income', 40000, 'needs_review'],
     ['confirmed', 'expense', 50000, 'needs_review'],
     [null, null, null, 'needs_review'],
-  ])('receipt %s/%s/%s produces %s on both list and detail', async (status, type, amount, expected) => {
+  ])('receipt %s/%s/%s produces %s on both list and detail', async (status, type, amount, expected, voidedAt = null) => {
     let receiptId = null;
     if (status) {
-      const tx = await env.DB.prepare(`INSERT INTO finance_transactions (type,category,amount,note,transaction_date,status,created_by,created_at) VALUES (?,'khach_vang_lai',?,'Payment display test','2026-10-08',?,'seed','2026-10-08T00:00:00Z')`).bind(type,amount,status).run();
+      const tx = await env.DB.prepare(`INSERT INTO finance_transactions (type,category,amount,note,transaction_date,status,created_by,created_at,voided_at) VALUES (?,'khach_vang_lai',?,'Payment display test','2026-10-08',?,'seed','2026-10-08T00:00:00Z',?)`).bind(type,amount,status,voidedAt).run();
       receiptId = tx.meta.last_row_id;
     }
     const inserted = await env.DB.prepare(`INSERT INTO dine_in_orders (table_label,status,opened_by,opened_at,closed_by,closed_at,payment_method,total_amount,finance_transaction_id) VALUES ('Payment display','closed','seed','2026-10-08T00:00:00Z','seed','2026-10-08T01:00:00Z','cash',50000,?)`).bind(receiptId).run();

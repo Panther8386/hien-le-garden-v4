@@ -20,7 +20,7 @@ export async function onRequestGet({ request, env }) {
   const { results } = await env.DB.prepare(
     `SELECT o.id, o.table_label AS tableLabel, o.note, o.status, o.opened_by AS openedBy, o.opened_at AS openedAt, o.is_hidden AS isHidden,
        o.closed_at AS closedAt, o.payment_method AS paymentMethod, o.total_amount AS totalAmount,
-       f.type AS receiptType, f.amount AS receiptAmount, f.status AS receiptStatus,
+       f.type AS receiptType, f.amount AS receiptAmount, f.status AS receiptStatus, f.voided_at AS receiptVoidedAt,
        COALESCE((SELECT SUM(amount) FROM dine_in_order_items WHERE order_id = o.id AND status = 'posted'), 0) AS currentTotal
      FROM dine_in_orders o LEFT JOIN finance_transactions f ON f.id = o.finance_transaction_id
      WHERE o.status = ?${includeHidden ? '' : ' AND o.is_hidden = 0'} ORDER BY o.opened_at ASC`
