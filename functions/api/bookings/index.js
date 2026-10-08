@@ -183,11 +183,13 @@ export async function onRequestGet({ request, env }) {
   });
   if (results.length > 0) {
     const { results: depositRows } = await env.DB.prepare(
-      `SELECT id, booking_id AS bookingId, amount, payment_method AS paymentMethod, note,
-              created_by AS createdBy, created_at AS createdAt
-       FROM booking_deposits
-       WHERE booking_id IN (SELECT id FROM bookings ${where}) AND voided_at IS NULL
-       ORDER BY created_at ASC, id ASC`
+      `SELECT d.id, d.booking_id AS bookingId, d.amount, d.payment_method AS paymentMethod, d.note,
+              d.created_by AS createdBy, d.created_at AS createdAt,
+              CASE WHEN f.type = 'income' AND f.voided_at IS NOT NULL THEN 1 ELSE 0 END AS financeVoided
+       FROM booking_deposits d
+       LEFT JOIN finance_transactions f ON f.id = d.finance_transaction_id
+       WHERE d.booking_id IN (SELECT id FROM bookings ${where}) AND d.voided_at IS NULL
+       ORDER BY d.created_at ASC, d.id ASC`
     ).bind(...params).all();
 
     const depositsByBooking = {};
