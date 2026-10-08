@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import { createSession } from '../lib/auth.js';
 import { onRequestPost as reject } from '../functions/api/bookings/[id]/reject.js';
+import { onRequestPost as cancel } from '../functions/api/bookings/[id]/cancel.js';
 import { envWithHookBefore } from './helpers/raceEnv.js';
 
 let token;
@@ -22,9 +23,39 @@ function call(id, body={}, context=env) {
 }
 const row = id => env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first();
 const refunds = () => env.DB.prepare("SELECT * FROM finance_transactions WHERE category='hoan_coc'").all();
+function guestCall(id, body, context=env) {
+  return cancel({request:new Request(`https://x/api/bookings/${id}/cancel`,{method:'POST',headers:{Cookie:`session=${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)}),env:context,params:{id:String(id)}});
+}
+async function guestFixture(days) {
+  const id=await booking(days);
+  await env.DB.prepare("UPDATE bookings SET created_at='2020-01-01T00:00:00Z' WHERE id=?").bind(id).run();
+  return id;
+}
+const guestBody = () => ({reason:'Khách thay đổi kế hoạch',requestSource:'zalo',requestedAt:new Date().toISOString(),paymentMethod:'cash'});
+
+describe('guest requested cancellation',()=>{
+  it.each([[8,100],[7,100],[6,50],[3,50],[2,0]])('pending guest cancellation %i days before arrival refunds %i percent',async(days,percent)=>{
+    const id=await guestFixture(days),body=guestBody();
+    const response=await guestCall(id,body);expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ok:true,refundPercentApplied:percent,refundAmount:50000*percent/100});
+    expect(await row(id)).toMatchObject({cancellation_origin:'guest',cancellation_request_source:'zalo',cancellation_requested_at:body.requestedAt,cancelled_by:'refund_staff',cancel_reason:body.reason});
+    expect((await env.DB.prepare("SELECT * FROM audit_log WHERE action_type='booking_cancel'").all()).results).toHaveLength(1);
+  });
+  it('uses the received date rather than the processing date',async()=>{
+    const id=await guestFixture(2),body=guestBody();body.requestedAt=new Date(Date.now()-6*86400000).toISOString();
+    const response=await guestCall(id,body);expect(response.status).toBe(200);expect((await response.json()).refundPercentApplied).toBe(100);
+  });
+  it.each([{requestedAt:'bad'},{requestedAt:'2099-01-01T00:00:00Z'},{requestedAt:'2019-01-01T00:00:00Z'},{requestSource:'email'},{reason:''}])('rejects invalid request metadata %j without writes',async patch=>{
+    const id=await guestFixture(8);expect((await guestCall(id,{...guestBody(),...patch})).status).toBe(400);
+    expect((await row(id)).status).toBe('pending');expect((await refunds()).results).toHaveLength(0);
+  });
+  it('repeated guest cancellation does not refund twice',async()=>{
+    const id=await guestFixture(8);expect((await guestCall(id,guestBody())).status).toBe(200);expect((await guestCall(id,guestBody())).status).toBe(400);expect((await refunds()).results).toHaveLength(1);
+  });
+});
 
 describe('pending booking with deposit',()=>{
-  it.each([[8,100],[7,100],[6,50],[3,50],[2,0]])('reject %i days before arrival refunds %i percent',async(days,percent)=>{
+  it.each([[8,100],[7,100],[6,100],[3,100],[2,100]])('reject %i days before arrival refunds %i percent',async(days,percent)=>{
     const id=await booking(days);const response=await call(id,{paymentMethod:'transfer'});
     expect(response.status).toBe(200);expect(await response.json()).toEqual({ok:true,refundPercentApplied:percent,refundAmount:50000*percent/100});
     const b=await row(id);expect(b.status).toBe('cancelled');expect(b.deposit_amount).toBe(50000);expect(b.refund_percent_applied).toBe(percent);

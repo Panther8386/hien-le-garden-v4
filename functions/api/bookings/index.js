@@ -142,7 +142,9 @@ export async function onRequestGet({ request, env }) {
             created_at AS createdAt, created_by AS createdBy, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt,
             cancel_reason AS cancelReason, refund_percent_applied AS refundPercentApplied,
             refund_finance_transaction_id AS refundFinanceTransactionId,
-            cancel_refund_payment_method AS cancelRefundPaymentMethod
+            cancel_refund_payment_method AS cancelRefundPaymentMethod,
+            cancellation_origin AS cancellationOrigin, cancellation_request_source AS cancellationRequestSource,
+            cancellation_requested_at AS cancellationRequestedAt, cancelled_at AS cancelledAt, cancelled_by AS cancelledBy
      FROM bookings ${where} ORDER BY check_in ASC`
   ).bind(...params).all();
 

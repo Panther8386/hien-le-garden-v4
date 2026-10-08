@@ -1,3 +1,3 @@
 import { cancelBooking } from '../../../../lib/cancelBooking.js';
 
-export const onRequestPost = context => cancelBooking(context, 'confirmed');
+export const onRequestPost = context => cancelBooking(context, 'guest');
