@@ -45,6 +45,12 @@ describe('guest requested cancellation',()=>{
     const id=await guestFixture(2),body=guestBody();body.requestedAt=new Date(Date.now()-6*86400000).toISOString();
     const response=await guestCall(id,body);expect(response.status).toBe(200);expect((await response.json()).refundPercentApplied).toBe(100);
   });
+  it('uses Vietnam calendar days at midnight rather than UTC days',async()=>{
+    const id=await guestFixture(8);
+    await env.DB.prepare("UPDATE bookings SET check_in='2026-09-08' WHERE id=?").bind(id).run();
+    const response=await guestCall(id,{...guestBody(),requestedAt:'2026-09-01T17:00:00.000Z'});
+    expect(response.status).toBe(200);expect((await response.json()).refundPercentApplied).toBe(50);
+  });
   it.each([{requestedAt:'bad'},{requestedAt:'2099-01-01T00:00:00Z'},{requestedAt:'2019-01-01T00:00:00Z'},{requestSource:'email'},{reason:''}])('rejects invalid request metadata %j without writes',async patch=>{
     const id=await guestFixture(8);expect((await guestCall(id,{...guestBody(),...patch})).status).toBe(400);
     expect((await row(id)).status).toBe('pending');expect((await refunds()).results).toHaveLength(0);

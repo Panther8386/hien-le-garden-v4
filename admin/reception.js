@@ -683,6 +683,15 @@ function renderBookingCard(b) {
   }
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
+  if (b.status === 'cancelled' && b.cancellationOrigin) {
+    const record = document.createElement('p');
+    const sourceLabels = {phone:'Điện thoại',zalo:'Zalo',in_person:'Trực tiếp',unknown:'Chưa ghi nhận'};
+    record.textContent = [b.cancelReason && `Lý do: ${b.cancelReason}`,
+      b.cancellationOrigin === 'guest' && `Nguồn: ${sourceLabels[b.cancellationRequestSource] || 'Chưa ghi nhận'}`,
+      b.cancellationRequestedAt && `Tiếp nhận: ${new Date(b.cancellationRequestedAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}`,
+      b.cancelledBy && `Xử lý: ${b.cancelledBy}`].filter(Boolean).join(' · ');
+    card.appendChild(record);
+  }
 
   // Deposit history is shown to anyone who can manage bookings or delete
   // deposits; the add-deposit form below still needs bookings.manage.
