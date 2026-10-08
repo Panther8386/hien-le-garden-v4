@@ -62,6 +62,9 @@ function renderInvoice(order) {
   const dl = document.createElement('dl');
   const rows = [
     ['Bàn', order.tableLabel],
+    ['Trạng thái', order.status === 'closed'
+      ? (order.paymentStatus === 'paid' ? 'Đã thanh toán · Đã kết thúc' : 'Đã kết thúc · Cần đối soát thanh toán')
+      : order.status === 'open' ? 'Đang mở · Chưa thanh toán' : 'Đã huỷ'],
     ['Giờ mở', formatDateTime(order.openedAt)],
     ['Giờ chốt', order.closedAt ? formatDateTime(order.closedAt) : ''],
     ['Hình thức thanh toán', order.paymentMethod === 'cash' ? 'Tiền mặt' : order.paymentMethod === 'transfer' ? 'Chuyển khoản' : ''],

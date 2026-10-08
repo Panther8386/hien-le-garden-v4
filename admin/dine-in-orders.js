@@ -152,13 +152,23 @@ function renderHistoryGrid(orders) {
     tableLabel.textContent = o.tableLabel;
 
     const statusLabel = document.createElement('div');
-    statusLabel.textContent = o.status === 'closed' ? 'Đã chốt' : 'Đã huỷ';
+    statusLabel.textContent = o.status === 'closed'
+      ? (o.paymentStatus === 'paid' ? 'Đã thanh toán · Đã kết thúc' : 'Đã kết thúc · Cần đối soát thanh toán')
+      : 'Đã huỷ';
 
     const total = document.createElement('div');
     total.className = 'order-total';
     total.textContent = `${o.currentTotal.toLocaleString('vi-VN')}đ`;
 
     card.append(tableLabel, statusLabel, total);
+    if (o.status === 'closed') {
+      const settlement = document.createElement('div');
+      settlement.textContent = [
+        o.paymentMethod === 'cash' ? 'Tiền mặt' : o.paymentMethod === 'transfer' ? 'Chuyển khoản' : '',
+        o.closedAt ? new Date(o.closedAt).toLocaleString('vi-VN') : '',
+      ].filter(Boolean).join(' · ');
+      card.appendChild(settlement);
+    }
 
     if (can('records.hide')) {
       const hideBtn = document.createElement('button');
