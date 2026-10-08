@@ -160,6 +160,7 @@ test('api: invalid trusted context throws TypeError at construction', () => {
     { ...base, ciSnapshots: {} },
     { ...base, resolver: {} },
     { ...base, resolver: { resolveCommit() {}, resolveRegularBlob() {} } },
+    { ...base, resolver: { resolveCommit() {}, resolveRegularBlob() {}, readBlob() {} } },
     { ...base, resolver: null },
   ];
   for (const ctx of bad) assert.throws(() => createEvidenceVerifier(ctx), TypeError, JSON.stringify(ctx));
@@ -186,10 +187,12 @@ test('dispatch: malformed refs and unknown kinds are INVALID; unsupported kinds 
   assert.deepEqual(pick(verifier.verify({ kind: 'schema_validation', artifact_type: 'task_spec', run_id: 'r', schema_version: 1, outcome: 'valid' })), ['UNVERIFIABLE', 'E_EVIDENCE_KIND_UNSUPPORTED']);
 });
 
-test('dispatch: an exception while reading the ref is ERROR, never VERIFIED', () => {
+test('dispatch: an accessor property is rejected without being called', () => {
+  let called = 0;
   const hostile = { kind: 'repo_file', path: 'same.txt' };
-  Object.defineProperty(hostile, 'commit', { enumerable: true, get() { throw new Error('boom'); } });
-  assert.deepEqual(verifier.verify(hostile), { status: 'ERROR', code: 'E_EVIDENCE_INTERNAL', kind: 'repo_file' });
+  Object.defineProperty(hostile, 'commit', { enumerable: true, get() { called++; throw new Error('boom'); } });
+  assert.deepEqual(verifier.verify(hostile), { status: 'INVALID', code: 'E_EVIDENCE_REF_NOT_DATA', kind: null });
+  assert.equal(called, 0);
 });
 
 test('results are frozen and carry null code only when VERIFIED', () => {
@@ -215,9 +218,11 @@ test('repo_file: a regular blob at the exact expected commit is VERIFIED with ob
 test('repo_file: SHA binding is exact and is checked before any Git call', () => {
   const { v, calls } = countingVerifier();
   assert.deepEqual(pick(v.verify(file('same.txt', C1))), ['INVALID', 'E_EVIDENCE_SHA_MISMATCH']);
-  for (const sha of [C2.slice(0, 7), C2.toUpperCase(), `${C2}0`, 'HEAD', 'main', undefined, 5]) {
+  for (const sha of [C2.slice(0, 7), C2.toUpperCase(), `${C2}0`, 'HEAD', 'main', null, 5]) {
     assert.deepEqual(pick(v.verify({ kind: 'repo_file', commit: sha, path: 'same.txt' })), ['INVALID', 'E_EVIDENCE_SHA_INVALID'], String(sha));
   }
+  // undefined is not a JSON value; the snapshot rejects it before any field check.
+  assert.deepEqual(pick(v.verify({ kind: 'repo_file', commit: undefined, path: 'same.txt' })), ['INVALID', 'E_EVIDENCE_REF_INVALID']);
   assert.equal(calls.length, 0);
 });
 
@@ -318,7 +323,15 @@ function spyResolver(overrides = {}) {
     calls.push([name, ...args]);
     return overrides[name] ? overrides[name](real, ...args) : real[name](...args);
   };
-  return { calls, resolver: { resolveCommit: wrap('resolveCommit'), resolveRegularBlob: wrap('resolveRegularBlob'), readBlob: wrap('readBlob') } };
+  return {
+    calls,
+    resolver: {
+      resolveCommit: wrap('resolveCommit'),
+      resolveRegularBlob: wrap('resolveRegularBlob'),
+      readBlob: wrap('readBlob'),
+      resolveCommitTree: wrap('resolveCommitTree'),
+    },
+  };
 }
 
 const spyVerifier = (overrides) => {
@@ -339,8 +352,8 @@ test('INFO-4: a resolver answer for another commit, path, mode or oid is ERROR',
   const lie = (patch) => ({ resolveRegularBlob: (real, c, p) => ({ ...real.resolveRegularBlob(c, p), ...patch }) });
   for (const patch of [{ commit: C1 }, { path: 'lf.txt' }, { mode: '120000' }, { mode: '040000' }, { oid: 'abc' }, { oid: undefined }]) {
     const { v } = spyVerifier(lie(patch));
-    assert.deepEqual(pick(v.verify(lines('lines3.txt', 1, 1))), ['ERROR', 'E_EVIDENCE_GIT_ERROR'], JSON.stringify(patch));
-    assert.deepEqual(pick(v.verify(file('lines3.txt'))), ['ERROR', 'E_EVIDENCE_GIT_ERROR'], JSON.stringify(patch));
+    assert.deepEqual(pick(v.verify(lines('lines3.txt', 1, 1))), ['ERROR', 'E_EVIDENCE_RESOLVER_MALFORMED'], JSON.stringify(patch));
+    assert.deepEqual(pick(v.verify(file('lines3.txt'))), ['ERROR', 'E_EVIDENCE_RESOLVER_MALFORMED'], JSON.stringify(patch));
   }
   const readLies = [
     (real, oid, max) => ({ ...real.readBlob(oid, max), oid: BLOB_SAME }),
@@ -351,10 +364,10 @@ test('INFO-4: a resolver answer for another commit, path, mode or oid is ERROR',
   ];
   for (const readBlob of readLies) {
     const { v } = spyVerifier({ readBlob });
-    assert.deepEqual(pick(v.verify(lines('lines3.txt', 1, 1))), ['ERROR', 'E_EVIDENCE_GIT_ERROR']);
+    assert.deepEqual(pick(v.verify(lines('lines3.txt', 1, 1))), ['ERROR', 'E_EVIDENCE_RESOLVER_MALFORMED']);
   }
   const { v } = spyVerifier({ resolveCommit: (real, c) => ({ ...real.resolveCommit(c), commit: C1 }) });
-  assert.deepEqual(pick(v.verify({ kind: 'git_commit', commit: C2 })), ['ERROR', 'E_EVIDENCE_GIT_ERROR']);
+  assert.deepEqual(pick(v.verify({ kind: 'git_commit', commit: C2 })), ['ERROR', 'E_EVIDENCE_RESOLVER_MALFORMED']);
 });
 
 // ---------------------------------------------------------------- INFO-3: resolver failures
@@ -378,14 +391,18 @@ test('INFO-3: thrown, malformed or unknown resolver results are ERROR, never VER
     () => ({ ok: false, code: 'toString' }),
   ];
   const refs = [file('same.txt'), lines('lines3.txt', 1, 1), { kind: 'git_commit', commit: C2 }, diff('mod.txt'), diff(null), { kind: 'test', commit: C2, file: 'test/x.node-test.mjs', name: 't' }];
-  for (const method of ['resolveCommit', 'resolveRegularBlob', 'readBlob']) {
+  // Which resolver methods each ref depends on (by index into refs).
+  const uses = {
+    resolveCommit: [2, 3],
+    resolveRegularBlob: [0, 1, 3, 5],
+    readBlob: [1],
+    resolveCommitTree: [4],
+  };
+  for (const [method, used] of Object.entries(uses)) {
     for (const answer of answers) {
       const { v } = spyVerifier({ [method]: answer });
-      for (const ref of refs) {
+      for (const ref of used.map((i) => refs[i])) {
         const r = v.verify(ref);
-        if (method === 'readBlob' && ref.kind !== 'repo_line') continue;
-        if (method === 'resolveRegularBlob' && (ref.kind === 'git_commit' || ref.path === null)) continue;
-        if (method === 'resolveCommit' && ref.kind !== 'git_commit' && ref.kind !== 'git_diff') continue;
         assert.equal(r.status, 'ERROR', `${method} ${answer} ${ref.kind}`);
         assert.notEqual(r.status, 'VERIFIED');
         // A resolver exception is contained by the verifier's call wrapper, not by the outer guard.
@@ -405,9 +422,14 @@ test('INFO-3: resolver failure codes map to the agreed statuses', () => {
     ['E_GIT_NOT_REGULAR_BLOB', 'INVALID', 'E_EVIDENCE_NOT_REGULAR_BLOB'],
     ['E_GIT_NOT_BLOB', 'INVALID', 'E_EVIDENCE_NOT_BLOB'],
     ['E_GIT_TOO_LARGE', 'UNVERIFIABLE', 'E_EVIDENCE_TOO_LARGE'],
-    ['E_GIT_PATH_MISMATCH', 'ERROR', 'E_EVIDENCE_GIT_ERROR'],
-    ['E_GIT_FAILED', 'ERROR', 'E_EVIDENCE_GIT_ERROR'],
-    ['E_GIT_OUTPUT_INVALID', 'ERROR', 'E_EVIDENCE_GIT_ERROR'],
+    ['E_GIT_PATH_MISMATCH', 'ERROR', 'E_EVIDENCE_PATH_MISMATCH'],
+    ['E_GIT_FAILED', 'ERROR', 'E_EVIDENCE_GIT_FAILED'],
+    ['E_GIT_OUTPUT_INVALID', 'ERROR', 'E_EVIDENCE_GIT_OUTPUT_INVALID'],
+    ['E_GIT_COMMIT_MALFORMED', 'ERROR', 'E_EVIDENCE_OBJECT_MALFORMED'],
+    ['E_GIT_NOT_TREE', 'ERROR', 'E_EVIDENCE_OBJECT_MALFORMED'],
+    ['E_GIT_SOMETHING_NEW', 'ERROR', 'E_EVIDENCE_RESOLVER_UNKNOWN_CODE'],
+    ['toString', 'ERROR', 'E_EVIDENCE_RESOLVER_UNKNOWN_CODE'],
+    [undefined, 'ERROR', 'E_EVIDENCE_RESOLVER_UNKNOWN_CODE'],
   ];
   for (const [code, status, evidence] of expectations) {
     const { v } = spyVerifier({ resolveRegularBlob: () => ({ ok: false, code }) });
@@ -458,10 +480,11 @@ test('git_diff: facts record both sides exactly', () => {
 
 test('git_diff: whole-commit diff (null path)', () => {
   assert.deepEqual(verifier.verify(diff(null)), {
-    status: 'VERIFIED', code: null, kind: 'git_diff', facts: { base_commit: C1, head_commit: C2, path: null },
+    status: 'VERIFIED', code: null, kind: 'git_diff',
+    facts: { base_commit: C1, head_commit: C2, path: null, base_tree: repo.git(['rev-parse', `${C1}^{tree}`]), head_tree: repo.git(['rev-parse', `${C2}^{tree}`]) },
   });
   const same = createEvidenceVerifier({ repoRoot: repo.dir, expectedCommit: C2, expectedBase: C2 });
-  assert.deepEqual(pick(same.verify(diff(null, C2, C2))), ['INVALID', 'E_EVIDENCE_DIFF_EMPTY']);
+  assert.deepEqual(pick(same.verify(diff(null, C2, C2))), ['INVALID', 'E_EVIDENCE_DIFF_UNCHANGED']);
 });
 
 test('git_diff: both SHAs bind to trusted context before any Git call', () => {
@@ -490,7 +513,7 @@ test('git_diff: a malformed blob on one side is INVALID; an error on either side
   const specialAndError = {
     resolveRegularBlob: (real, c) => (c === C1 ? { ok: false, code: 'E_GIT_NOT_REGULAR_BLOB', mode: '120000' } : { ok: false, code: 'E_GIT_FAILED' }),
   };
-  assert.deepEqual(pick(spyVerifier(specialAndError).v.verify(diff('mod.txt'))), ['ERROR', 'E_EVIDENCE_OBJECT_UNAVAILABLE']);
+  assert.deepEqual(pick(spyVerifier(specialAndError).v.verify(diff('mod.txt'))), ['ERROR', 'E_EVIDENCE_GIT_FAILED']);
 });
 
 // ---------------------------------------------------------------- test kind
@@ -740,8 +763,7 @@ test('verifyAll: precedence ERROR > INVALID > UNVERIFIABLE > VERIFIED, input ord
   const ok = file('same.txt');
   const unverifiable = { kind: 'http_probe' };
   const invalid = file('same.txt', C1);
-  const error = { kind: 'repo_file', path: 'same.txt' };
-  Object.defineProperty(error, 'commit', { get() { throw new Error('x'); } });
+  const error = new Proxy({}, { ownKeys() { throw new Error('x'); } });
 
   assert.equal(verifier.verifyAll([ok, ok]).status, 'VERIFIED');
   assert.equal(verifier.verifyAll([ok, unverifiable]).status, 'UNVERIFIABLE');
@@ -752,4 +774,345 @@ test('verifyAll: precedence ERROR > INVALID > UNVERIFIABLE > VERIFIED, input ord
   assert.deepEqual(all.results.map((r) => r.status), ['VERIFIED', 'ERROR', 'INVALID', 'UNVERIFIABLE']);
   assert.deepEqual({ ...all.counts }, { VERIFIED: 1, INVALID: 1, UNVERIFIABLE: 1, ERROR: 1 });
   assert.ok(Object.isFrozen(all) && Object.isFrozen(all.results) && Object.isFrozen(all.counts));
+});
+
+// ---------------------------------------------------------------- A3.5b.2R F1: stable EvidenceRef snapshot
+
+// Valid refs for every Git-backed kind, plus ci_check (verified against a trusted snapshot).
+function validRefs() {
+  return [
+    file('same.txt'),
+    lines('lines3.txt', 1, 3),
+    { kind: 'git_commit', commit: C2 },
+    diff('mod.txt'),
+    diff(null),
+    ci(),
+  ];
+}
+// Alternative values a hostile getter swaps in after the first read.
+const SWAP = {
+  kind: 'git_commit',
+  commit: C1,
+  path: 'lf.txt',
+  start_line: 99,
+  end_line: 99,
+  base_commit: C2,
+  head_commit: C1,
+  provider: 'other',
+  check_name: 'build',
+  workflow_run_id: '1',
+  run_attempt: 2,
+  conclusion: 'failure',
+};
+
+test('F1: the original getter exploit (trusted SHA first, another commit later) is never VERIFIED', () => {
+  let reads = 0;
+  const ref = { kind: 'repo_file', path: 'same.txt' };
+  Object.defineProperty(ref, 'commit', { enumerable: true, get: () => (reads++ === 0 ? C2 : C1) });
+  const r = verifier.verify(ref);
+  assert.notEqual(r.status, 'VERIFIED');
+  assert.deepEqual(pick(r), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']);
+  assert.equal(reads, 0, 'the producer accessor must never be invoked');
+});
+
+test('F1: a changing getter on any field of any kind is rejected and never invoked', () => {
+  const v = ciVerifier([snapshot()], { expectedBase: C1 }).v;
+  for (const base of validRefs()) {
+    assert.equal(v.verify(base).status, 'VERIFIED', `fixture ${base.kind}`);
+    for (const field of Object.keys(base)) {
+      let reads = 0;
+      const ref = { ...base };
+      const first = ref[field];
+      const second = Object.hasOwn(SWAP, field) && SWAP[field] !== first ? SWAP[field] : null;
+      Object.defineProperty(ref, field, { enumerable: true, configurable: true, get: () => (reads++ === 0 ? first : second) });
+      const r = v.verify(ref);
+      assert.deepEqual(pick(r), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA'], `${base.kind}.${field}`);
+      assert.equal(reads, 0, `${base.kind}.${field}`);
+    }
+  }
+});
+
+test('F1: setter-only, non-enumerable and symbol-keyed properties are not data', () => {
+  const withSetter = { kind: 'git_commit' };
+  Object.defineProperty(withSetter, 'commit', { enumerable: true, set() {} });
+  assert.deepEqual(pick(verifier.verify(withSetter)), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']);
+  const hidden = { kind: 'git_commit' };
+  Object.defineProperty(hidden, 'commit', { enumerable: false, value: C2 });
+  assert.deepEqual(pick(verifier.verify(hidden)), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']);
+  assert.deepEqual(pick(verifier.verify({ kind: 'git_commit', commit: C2, [Symbol('x')]: 1 })), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']);
+});
+
+test('F1: Proxy traps are read once through descriptors; throwing traps are ERROR', () => {
+  // A get trap is never consulted: values come from own property descriptors.
+  let gets = 0;
+  const viaGet = new Proxy({ kind: 'git_commit', commit: C2 }, {
+    get(t, k) {
+      gets++;
+      return k === 'commit' ? C1 : t[k];
+    },
+  });
+  const r1 = verifier.verify(viaGet);
+  assert.deepEqual(r1.facts, { commit: C2 });
+  assert.equal(gets, 0);
+
+  // A descriptor trap that changes its answer is consulted exactly once per key.
+  const seen = new Map();
+  const flipping = new Proxy({ kind: 'repo_file', commit: C2, path: 'same.txt' }, {
+    getOwnPropertyDescriptor(t, k) {
+      const n = (seen.get(k) ?? 0) + 1;
+      seen.set(k, n);
+      const d = Reflect.getOwnPropertyDescriptor(t, k);
+      if (k === 'commit' && n > 1) d.value = C1;
+      return d;
+    },
+  });
+  const r2 = verifier.verify(flipping);
+  assert.equal(r2.status, 'VERIFIED');
+  assert.equal(r2.facts.commit, C2);
+  assert.deepEqual([...seen.values()], [1, 1, 1]);
+
+  // Throwing or revoked proxies fail closed.
+  const target = { kind: 'git_commit', commit: C2 };
+  for (const trap of ['ownKeys', 'getPrototypeOf', 'getOwnPropertyDescriptor']) {
+    const p = new Proxy(target, {
+      [trap]() {
+        throw new Error('trap');
+      },
+    });
+    assert.deepEqual(verifier.verify(p), { status: 'ERROR', code: 'E_EVIDENCE_REF_UNREADABLE', kind: null }, trap);
+  }
+  const { proxy, revoke } = Proxy.revocable(target, {});
+  revoke();
+  assert.deepEqual(pick(verifier.verify(proxy)), ['ERROR', 'E_EVIDENCE_REF_UNREADABLE']);
+  const dupKeys = new Proxy(target, { ownKeys: () => ['kind', 'kind'] });
+  assert.deepEqual(pick(verifier.verify(dupKeys)), ['ERROR', 'E_EVIDENCE_REF_UNREADABLE']);
+});
+
+test('F1: prototype-inherited values are never trusted', () => {
+  const inherited = Object.create({ kind: 'git_commit', commit: C2 });
+  assert.deepEqual(pick(verifier.verify(inherited)), ['INVALID', 'E_EVIDENCE_REF_INVALID']);
+  class Ref {
+    constructor() {
+      this.kind = 'git_commit';
+      this.commit = C2;
+    }
+  }
+  assert.deepEqual(pick(verifier.verify(new Ref())), ['INVALID', 'E_EVIDENCE_REF_INVALID']);
+  // Prototype pollution cannot supply a missing field.
+  Object.prototype.commit = C2;
+  try {
+    assert.deepEqual(pick(verifier.verify({ kind: 'git_commit' })), ['INVALID', 'E_EVIDENCE_SHA_INVALID']);
+    assert.deepEqual(pick(verifier.verify({ kind: 'repo_file', path: 'same.txt' })), ['INVALID', 'E_EVIDENCE_SHA_INVALID']);
+  } finally {
+    delete Object.prototype.commit;
+  }
+});
+
+test('F1: only flat JSON primitives are accepted; ordinary JSON refs still verify', () => {
+  for (const value of [{ toString: () => C2 }, [C2], () => C2, 1n, undefined, Symbol('s')]) {
+    assert.deepEqual(pick(verifier.verify({ kind: 'git_commit', commit: value })), ['INVALID', 'E_EVIDENCE_REF_INVALID'], typeof value);
+  }
+  const many = { kind: 'git_commit', commit: C2 };
+  for (let i = 0; i < 40; i++) many[`x${i}`] = i;
+  assert.deepEqual(pick(verifier.verify(many)), ['INVALID', 'E_EVIDENCE_REF_INVALID']);
+
+  const parsed = JSON.parse(JSON.stringify(lines('lines3.txt', 2, 3)));
+  assert.equal(verifier.verify(parsed).status, 'VERIFIED');
+  const bare = Object.assign(Object.create(null), { kind: 'git_commit', commit: C2 });
+  assert.equal(verifier.verify(bare).status, 'VERIFIED');
+});
+
+test('F1: the caller-owned EvidenceRef is not modified', () => {
+  const ref = lines('lines3.txt', 1, 2);
+  const before = JSON.stringify(ref);
+  verifier.verify(ref);
+  verifier.verifyAll([ref, ref]);
+  assert.equal(JSON.stringify(ref), before);
+  assert.equal(Object.isFrozen(ref), false);
+  assert.equal(Object.isExtensible(ref), true);
+});
+
+// ---------------------------------------------------------------- A3.5b.2R F2: null-path diff by root tree
+
+test('F2: two different commits with an identical root tree are DIFF_UNCHANGED', () => {
+  const tree = repo.git(['rev-parse', `${C2}^{tree}`]);
+  const EMPTY = repo.git(['commit-tree', tree, '-p', C2, '-m', 'empty']);
+  assert.notEqual(EMPTY, C2);
+  const v = createEvidenceVerifier({ repoRoot: repo.dir, expectedCommit: EMPTY, expectedBase: C2 });
+  assert.deepEqual(pick(v.verify(diff(null, C2, EMPTY))), ['INVALID', 'E_EVIDENCE_DIFF_UNCHANGED']);
+  // Path-specific semantics are unchanged: every path is unchanged too.
+  assert.deepEqual(pick(v.verify(diff('mod.txt', C2, EMPTY))), ['INVALID', 'E_EVIDENCE_DIFF_UNCHANGED']);
+});
+
+test('F2: different root trees are VERIFIED with verified tree facts from both exact commits', () => {
+  const { v, calls } = spyVerifier();
+  const r = v.verify(diff(null));
+  assert.equal(r.status, 'VERIFIED');
+  assert.equal(r.facts.base_tree, repo.git(['rev-parse', `${C1}^{tree}`]));
+  assert.equal(r.facts.head_tree, repo.git(['rev-parse', `${C2}^{tree}`]));
+  assert.notEqual(r.facts.base_tree, r.facts.head_tree);
+  assert.deepEqual(calls, [['resolveCommitTree', C1], ['resolveCommitTree', C2]]);
+  calls.length = 0;
+  v.verify(diff('mod.txt'));
+  assert.ok(!calls.some((c) => c[0] === 'resolveCommitTree'), 'path-specific diffs do not use root trees');
+});
+
+test('F2: missing, malformed or non-commit objects on either side are not VERIFIED', () => {
+  const tree = repo.git(['rev-parse', `${C2}^{tree}`]);
+  const raw = (body) => repo.git(['hash-object', '-t', 'commit', '-w', '--literally', '--stdin'], { input: body });
+  const ident = 'hlg-test <hlg-test@example.invalid> 0 +0000';
+  const danglingTree = raw(`tree ${MISSING}\nauthor ${ident}\ncommitter ${ident}\n\nm\n`);
+  const duplicateTree = raw(`tree ${tree}\ntree ${tree}\nauthor ${ident}\ncommitter ${ident}\n\nm\n`);
+  const at = (base, head) => pick(createEvidenceVerifier({ repoRoot: repo.dir, expectedCommit: head, expectedBase: base }).verify(diff(null, base, head)));
+  assert.deepEqual(at(MISSING, C2), ['ERROR', 'E_EVIDENCE_OBJECT_UNAVAILABLE']);
+  assert.deepEqual(at(C1, MISSING), ['ERROR', 'E_EVIDENCE_OBJECT_UNAVAILABLE']);
+  assert.deepEqual(at(danglingTree, C2), ['ERROR', 'E_EVIDENCE_OBJECT_UNAVAILABLE']);
+  assert.deepEqual(at(C1, duplicateTree), ['ERROR', 'E_EVIDENCE_OBJECT_MALFORMED']);
+  assert.deepEqual(at(BLOB_SAME, C2), ['INVALID', 'E_EVIDENCE_NOT_COMMIT']);
+});
+
+test('F2: malformed, foreign or thrown resolveCommitTree answers are ERROR', () => {
+  const real = createGitObjectResolver({ repoRoot: repo.dir });
+  const lies = [
+    (c) => ({ ...real.resolveCommitTree(c), treeOid: real.resolveCommitTree(c).treeOid.toUpperCase() }),
+    (c) => ({ ...real.resolveCommitTree(c), treeOid: real.resolveCommitTree(c).treeOid.slice(0, 39) }),
+    (c) => ({ ...real.resolveCommitTree(c), treeOid: undefined }),
+    (c) => ({ ...real.resolveCommitTree(c), commit: c === C1 ? C2 : C1 }),
+    () => ({ ok: true }),
+    () => ({ ok: 1, treeOid: MISSING }),
+  ];
+  for (const lie of lies) {
+    const { v } = spyVerifier({ resolveCommitTree: (_, c) => lie(c) });
+    assert.deepEqual(pick(v.verify(diff(null))), ['ERROR', 'E_EVIDENCE_RESOLVER_MALFORMED'], String(lie));
+  }
+  const thrower = spyVerifier({
+    resolveCommitTree: () => {
+      throw new Error('boom');
+    },
+  }).v;
+  assert.deepEqual(pick(thrower.verify(diff(null))), ['ERROR', 'E_EVIDENCE_RESOLVER_THREW']);
+  // The same tree reported for both sides is caught as unchanged, never VERIFIED.
+  const sameTree = spyVerifier({ resolveCommitTree: (_, c) => ({ ok: true, commit: c, treeOid: MISSING }) }).v;
+  assert.deepEqual(pick(sameTree.verify(diff(null))), ['INVALID', 'E_EVIDENCE_DIFF_UNCHANGED']);
+});
+
+test('F2: without trusted expectedBase a null-path diff is UNVERIFIABLE with no Git call', () => {
+  const { v, calls } = countingVerifier({ expectedBase: undefined });
+  assert.deepEqual(pick(v.verify(diff(null))), ['UNVERIFIABLE', 'E_EVIDENCE_BASE_UNKNOWN']);
+  const bound = countingVerifier();
+  assert.deepEqual(pick(bound.v.verify(diff(null, C2, C1))), ['INVALID', 'E_EVIDENCE_SHA_MISMATCH']);
+  assert.equal(calls.length + bound.calls.length, 0);
+});
+
+// ---------------------------------------------------------------- A3.5b.2R F5: diagnostics
+
+test('F5: failures keep distinct diagnostic codes and never leak Git output', () => {
+  const secret = 'fatal: /home/secret/path token=abc';
+  const cases = [
+    [
+      () => {
+        throw new Error(secret);
+      },
+      'E_EVIDENCE_RESOLVER_THREW',
+    ],
+    [() => ({ ok: false, code: 'E_GIT_FAILED', stderr: secret }), 'E_EVIDENCE_GIT_FAILED'],
+    [() => ({ ok: false, code: 'E_GIT_OUTPUT_INVALID', message: secret }), 'E_EVIDENCE_GIT_OUTPUT_INVALID'],
+    [() => ({ ok: false, code: 'E_GIT_OBJECT_MISSING', detail: secret }), 'E_EVIDENCE_OBJECT_UNAVAILABLE'],
+    [() => ({ ok: false, code: 'E_GIT_PATH_MISMATCH' }), 'E_EVIDENCE_PATH_MISMATCH'],
+    [() => ({ ok: false, code: secret }), 'E_EVIDENCE_RESOLVER_UNKNOWN_CODE'],
+    [() => secret, 'E_EVIDENCE_RESOLVER_MALFORMED'],
+  ];
+  for (const [answer, code] of cases) {
+    const { v } = spyVerifier({ resolveRegularBlob: answer });
+    const r = v.verify(file('same.txt'));
+    assert.deepEqual(r, { status: 'ERROR', code, kind: 'repo_file' });
+    assert.ok(!JSON.stringify(r).includes('secret'));
+  }
+  // A Git error on one side of a path diff keeps its own diagnostic.
+  const oneSide = spyVerifier({
+    resolveRegularBlob: (real, c, p) => (c === C2 ? { ok: false, code: 'E_GIT_OUTPUT_INVALID' } : real.resolveRegularBlob(c, p)),
+  }).v;
+  assert.deepEqual(pick(oneSide.verify(diff('mod.txt'))), ['ERROR', 'E_EVIDENCE_GIT_OUTPUT_INVALID']);
+});
+
+// ---------------------------------------------------------------- A3.5b.2R F7: deeply immutable facts
+
+function assertDeepFrozen(value, where) {
+  if (value === null || typeof value !== 'object') return;
+  assert.ok(Object.isFrozen(value), where);
+  for (const [k, v] of Object.entries(value)) assertDeepFrozen(v, `${where}.${k}`);
+}
+
+test('F7: every VERIFIED result is deeply frozen, including nested git_diff sides', () => {
+  const v = ciVerifier([snapshot()], { expectedBase: C1 }).v;
+  const refs = [...validRefs(), diff('add.txt'), diff('del.txt'), diff('mode.sh')];
+  for (const ref of refs) {
+    const r = v.verify(ref);
+    assert.equal(r.status, 'VERIFIED', ref.kind);
+    assertDeepFrozen(r, ref.kind);
+  }
+  assertDeepFrozen(v.verifyAll(refs), 'verifyAll');
+});
+
+test('F7: attempts to rewrite nested facts throw and change nothing', () => {
+  const r = verifier.verify(diff('mode.sh'));
+  const before = JSON.stringify(r);
+  const attempts = [
+    () => { r.facts.head.oid = MISSING; },
+    () => { r.facts.head.mode = '100644'; },
+    () => { r.facts.base = null; },
+    () => { r.facts.change = 'unchanged'; },
+    () => { r.status = 'INVALID'; },
+    () => { delete r.facts.head; },
+    () => Object.defineProperty(r.facts.head, 'extra', { value: 1 }),
+  ];
+  for (const attempt of attempts) assert.throws(attempt, TypeError);
+  assert.equal(JSON.stringify(r), before);
+  // Results are independent: a later verify returns equal, separate objects.
+  const again = verifier.verify(diff('mode.sh'));
+  assert.deepEqual(again, r);
+  assert.notEqual(again.facts.head, r.facts.head);
+});
+
+// ---------------------------------------------------------------- A3.5b.2R post-review regressions
+
+test('verifyAll: refs are read by index, never through an overridden iterator', () => {
+  const evil = { kind: 'git_commit', commit: 'f'.repeat(40) };
+  const refs = [evil];
+  refs[Symbol.iterator] = function* iterate() {
+    yield { kind: 'git_commit', commit: C2 };
+  };
+  const all = verifier.verifyAll(refs);
+  assert.equal(all.status, 'INVALID');
+  assert.equal(all.results.length, 1);
+  assert.deepEqual(pick(all.results[0]), ['INVALID', 'E_EVIDENCE_SHA_MISMATCH']);
+});
+
+test('verifyAll: an unreadable element is a per-item ERROR and keeps its position', () => {
+  const refs = [file('same.txt'), null, file('same.txt')];
+  Object.defineProperty(refs, 1, {
+    get() {
+      throw new Error('element');
+    },
+  });
+  const all = verifier.verifyAll(refs);
+  assert.equal(all.status, 'ERROR');
+  assert.deepEqual(all.results.map((r) => [r.status, r.code]), [['VERIFIED', null], ['ERROR', 'E_EVIDENCE_REF_UNREADABLE'], ['VERIFIED', null]]);
+});
+
+test('last resort: a resolver result whose fields throw is ERROR E_EVIDENCE_INTERNAL, never VERIFIED', () => {
+  const throwing = () => ({
+    get ok() {
+      throw new Error('field');
+    },
+  });
+  for (const [method, ref] of [
+    ['resolveCommit', { kind: 'git_commit', commit: C2 }],
+    ['resolveRegularBlob', file('same.txt')],
+    ['readBlob', lines('lines3.txt', 1, 1)],
+    ['resolveCommitTree', diff(null)],
+  ]) {
+    const { v } = spyVerifier({ [method]: throwing });
+    assert.deepEqual(v.verify(ref), { status: 'ERROR', code: 'E_EVIDENCE_INTERNAL', kind: ref.kind }, method);
+  }
 });
