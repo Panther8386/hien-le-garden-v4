@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 import {
   GIT_TIMEOUT_MS,
   MAX_BLOB_BYTES,
+  MAX_COMMIT_BYTES,
   createGitObjectResolver,
   runGitProcess,
   sanitizedGitEnv,
@@ -112,12 +113,13 @@ function withEnv(vars, fn) {
 
 // ---------------------------------------------------------------- API
 
-test('api: resolver is frozen, requires an explicit repoRoot and exposes three operations', () => {
+test('api: resolver is frozen, requires an explicit repoRoot and exposes four operations', () => {
   assert.ok(Object.isFrozen(resolver));
-  assert.deepEqual(Object.keys(resolver), ['resolveCommit', 'resolveRegularBlob', 'readBlob']);
+  assert.deepEqual(Object.keys(resolver), ['resolveCommit', 'resolveRegularBlob', 'readBlob', 'resolveCommitTree']);
   for (const bad of [undefined, '', 7]) assert.throws(() => createGitObjectResolver({ repoRoot: bad }), TypeError);
   assert.throws(() => createGitObjectResolver({ repoRoot: main.dir, runner: 'git' }), TypeError);
   assert.equal(MAX_BLOB_BYTES, 2_097_152);
+  assert.equal(MAX_COMMIT_BYTES, 2_097_152);
   assert.ok(Number.isInteger(GIT_TIMEOUT_MS) && GIT_TIMEOUT_MS > 0);
 });
 
@@ -129,6 +131,7 @@ test('sha: abbreviated, uppercase, malformed and empty SHAs fail before Git runs
     assert.deepEqual(r.resolveCommit(bad), { ok: false, code: 'E_GIT_SHA_INVALID' }, String(bad));
     assert.deepEqual(r.resolveRegularBlob(bad, 'a.txt'), { ok: false, code: 'E_GIT_SHA_INVALID' }, String(bad));
     assert.deepEqual(r.readBlob(bad, 10), { ok: false, code: 'E_GIT_SHA_INVALID' }, String(bad));
+    assert.deepEqual(r.resolveCommitTree(bad), { ok: false, code: 'E_GIT_SHA_INVALID' }, String(bad));
   }
   assert.equal(calls.length, 0);
 });
@@ -428,7 +431,7 @@ test('failure: Git errors never become success and expose no stderr', () => {
       throw new Error('fatal: something with /secret/path');
     },
   });
-  for (const res of [broken.resolveCommit(C2), broken.resolveRegularBlob(C2, 'a.txt'), broken.readBlob(BLOB_A, 10)]) {
+  for (const res of [broken.resolveCommit(C2), broken.resolveRegularBlob(C2, 'a.txt'), broken.readBlob(BLOB_A, 10), broken.resolveCommitTree(C2)]) {
     assert.deepEqual(res, { ok: false, code: 'E_GIT_FAILED' });
   }
   const nowhere = createGitObjectResolver({ repoRoot: path.join(main.dir, 'does-not-exist') });
@@ -441,6 +444,216 @@ test('determinism: same objects and inputs give deep-equal results', () => {
     assert.deepEqual(resolver.resolveRegularBlob(c, p), other.resolveRegularBlob(c, p));
     assert.deepEqual(resolver.resolveRegularBlob(c, p), resolver.resolveRegularBlob(c, p));
   }
+});
+
+// ---------------------------------------------------------------- A3.5b.1T: commit root tree
+
+const IDENT = 'hlg-test <hlg-test@example.invalid> 0 +0000';
+// Writes an arbitrary (possibly malformed) commit object without any ref; returns its id.
+const rawCommit = (body) => main.git(['hash-object', '-t', 'commit', '-w', '--literally', '--stdin'], { input: body });
+const commitBody = (headers) => `${headers.join('\n')}\nauthor ${IDENT}\ncommitter ${IDENT}\n\nmessage\n`;
+
+test('tree: a commit resolves to its exact root tree; different trees differ', () => {
+  const TREE_C1 = main.git(['rev-parse', `${C1}^{tree}`]);
+  assert.deepEqual(resolver.resolveCommitTree(C2), { ok: true, commit: C2, treeOid: TREE });
+  assert.deepEqual(resolver.resolveCommitTree(C1), { ok: true, commit: C1, treeOid: TREE_C1 });
+  assert.notEqual(TREE_C1, TREE);
+});
+
+test('tree: an empty commit has the same root tree as its parent', () => {
+  const empty = main.git(['commit-tree', TREE, '-p', C2, '-m', 'empty']);
+  assert.notEqual(empty, C2);
+  assert.deepEqual(resolver.resolveCommitTree(empty), { ok: true, commit: empty, treeOid: TREE });
+});
+
+test('tree: missing, blob, tree and tag objects fail closed without reading content', () => {
+  const { r, calls } = countingResolver();
+  assert.deepEqual(r.resolveCommitTree(MISSING), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+  assert.deepEqual(r.resolveCommitTree(BLOB_A), { ok: false, code: 'E_GIT_NOT_COMMIT', type: 'blob' });
+  assert.deepEqual(r.resolveCommitTree(TREE), { ok: false, code: 'E_GIT_NOT_COMMIT', type: 'tree' });
+  assert.deepEqual(r.resolveCommitTree(TAG), { ok: false, code: 'E_GIT_NOT_COMMIT', type: 'tag' });
+  assert.ok(calls.every((c) => c.args[0] === 'cat-file' && c.args[1] === '--batch-check'), 'type is checked before the commit is read');
+});
+
+test('tree: the commit is read once by exact SHA and the tree is type-checked', () => {
+  const { r, calls } = countingResolver();
+  assert.equal(r.resolveCommitTree(C2).ok, true);
+  assert.deepEqual(calls.map((c) => c.args), [['cat-file', '--batch-check'], ['cat-file', 'commit', C2], ['cat-file', '--batch-check']]);
+});
+
+test('tree: a commit whose root tree object is missing fails closed', () => {
+  const dangling = rawCommit(commitBody([`tree ${MISSING}`]));
+  assert.deepEqual(resolver.resolveCommitTree(dangling), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+});
+
+test('tree: a tree header naming a non-tree object fails closed', () => {
+  assert.deepEqual(resolver.resolveCommitTree(rawCommit(commitBody([`tree ${BLOB_A}`]))), { ok: false, code: 'E_GIT_NOT_TREE', type: 'blob' });
+  assert.deepEqual(resolver.resolveCommitTree(rawCommit(commitBody([`tree ${C1}`]))), { ok: false, code: 'E_GIT_NOT_TREE', type: 'commit' });
+  assert.deepEqual(resolver.resolveCommitTree(rawCommit(commitBody([`tree ${TAG}`]))), { ok: false, code: 'E_GIT_NOT_TREE', type: 'tag' });
+});
+
+test('tree: missing, malformed, misplaced and duplicate tree headers are rejected', () => {
+  const TREE_C1 = main.git(['rev-parse', `${C1}^{tree}`]);
+  const malformed = [
+    commitBody([`parent ${C1}`]),
+    commitBody([`tree ${TREE.toUpperCase()}`]),
+    commitBody([`tree ${TREE.slice(0, 39)}`]),
+    commitBody([`tree ${TREE} `]),
+    commitBody([` tree ${TREE}`]),
+    commitBody([`tree  ${TREE}`]),
+    commitBody([`tree ${TREE}`, `tree ${TREE}`]),
+    commitBody([`tree ${TREE}`, `tree ${TREE_C1}`]),
+    commitBody([`tree ${TREE}`, `parent ${C1}`, `tree ${TREE_C1}`]),
+    commitBody([`parent ${C1}`, `tree ${TREE}`]),
+    `tree ${TREE}\nauthor ${IDENT}\ncommitter ${IDENT}\nno blank line before message\n`,
+    `tree ${TREE}\n`,
+    `\ntree ${TREE}\n\nmessage\n`,
+  ];
+  for (const body of malformed) {
+    const sha = rawCommit(body);
+    assert.deepEqual(resolver.resolveCommitTree(sha), { ok: false, code: 'E_GIT_COMMIT_MALFORMED' }, JSON.stringify(body));
+  }
+});
+
+test('tree: "tree" text in the message, or after a continuation line, does not count as a header', () => {
+  const TREE_C1 = main.git(['rev-parse', `${C1}^{tree}`]);
+  const inMessage = rawCommit(`tree ${TREE}\nauthor ${IDENT}\ncommitter ${IDENT}\n\ntree ${TREE_C1}\n`);
+  assert.deepEqual(resolver.resolveCommitTree(inMessage), { ok: true, commit: inMessage, treeOid: TREE });
+  const continuation = rawCommit(`tree ${TREE}\nauthor ${IDENT}\ncommitter ${IDENT}\nx-extra first\n tree ${TREE_C1}\n\nm\n`);
+  assert.deepEqual(resolver.resolveCommitTree(continuation), { ok: true, commit: continuation, treeOid: TREE });
+});
+
+test('tree: an oversized commit object is rejected before it is read', () => {
+  const big = rawCommit(`tree ${TREE}\nauthor ${IDENT}\ncommitter ${IDENT}\n\n${'m'.repeat(MAX_COMMIT_BYTES)}`);
+  const { r, calls } = countingResolver();
+  const res = r.resolveCommitTree(big);
+  assert.equal(res.code, 'E_GIT_TOO_LARGE');
+  assert.ok(res.size > MAX_COMMIT_BYTES);
+  assert.deepEqual(calls.map((c) => c.args.slice(0, 2)), [['cat-file', '--batch-check']]);
+});
+
+// Runner wrapper that substitutes the output of matching calls (args joined by spaces).
+function doctoredResolver(edit) {
+  return createGitObjectResolver({
+    repoRoot: main.dir,
+    runner: (root, args, options) => {
+      const out = runGitProcess(root, args, options);
+      return edit(args.join(' '), out, options);
+    },
+  });
+}
+
+test('tree: runner exceptions and malformed output fail closed', () => {
+  const failing = (match) =>
+    createGitObjectResolver({
+      repoRoot: main.dir,
+      runner: (root, args, options) => {
+        if (args.join(' ').startsWith(match)) throw new Error('fatal: /secret/path');
+        return runGitProcess(root, args, options);
+      },
+    });
+  assert.deepEqual(failing('cat-file commit').resolveCommitTree(C2), { ok: false, code: 'E_GIT_FAILED' });
+  assert.deepEqual(failing('cat-file --batch-check').resolveCommitTree(C2), { ok: false, code: 'E_GIT_FAILED' });
+
+  const cases = [
+    // Commit content shorter or longer than the size batch-check reported (framing).
+    [(a, out) => (a.startsWith('cat-file commit') ? out.subarray(0, out.length - 1) : out), 'E_GIT_OUTPUT_INVALID'],
+    [(a, out) => (a.startsWith('cat-file commit') ? Buffer.concat([out, Buffer.from('x')]) : out), 'E_GIT_OUTPUT_INVALID'],
+    [(a, out) => (a.startsWith('cat-file commit') ? Buffer.alloc(0) : out), 'E_GIT_OUTPUT_INVALID'],
+    // Garbage from batch-check.
+    [(a, out) => (a.startsWith('cat-file --batch-check') ? Buffer.from('garbage\n') : out), 'E_GIT_OUTPUT_INVALID'],
+  ];
+  for (const [edit, code] of cases) assert.deepEqual(doctoredResolver(edit).resolveCommitTree(C2), { ok: false, code });
+
+  // Batch-check answering for another object, or calling the root tree a blob.
+  let n = 0;
+  const lyingTreeType = doctoredResolver((a, out, options) => {
+    if (!a.startsWith('cat-file --batch-check')) return out;
+    n++;
+    return n === 2 ? Buffer.from(`${String(options.input).trim()} blob 10\n`) : out;
+  });
+  assert.deepEqual(lyingTreeType.resolveCommitTree(C2), { ok: false, code: 'E_GIT_NOT_TREE', type: 'blob' });
+  const otherObject = doctoredResolver((a, out) => (a.startsWith('cat-file --batch-check') ? Buffer.from(`${C1} commit 200\n`) : out));
+  assert.deepEqual(otherObject.resolveCommitTree(C2), { ok: false, code: 'E_GIT_OUTPUT_INVALID' });
+});
+
+test('tree: replace refs cannot substitute the commit', () => {
+  const rep = makeRepo('hlg-git-tree-replace-');
+  writeFileSync(path.join(rep.dir, 'x.txt'), 'one\n');
+  rep.git(['add', 'x.txt']);
+  rep.git(['commit', '-q', '-m', 'a']);
+  const A = rep.git(['rev-parse', 'HEAD']);
+  const TA = rep.git(['rev-parse', `${A}^{tree}`]);
+  writeFileSync(path.join(rep.dir, 'x.txt'), 'two\n');
+  rep.git(['add', 'x.txt']);
+  rep.git(['commit', '-q', '-m', 'b']);
+  const B = rep.git(['rev-parse', 'HEAD']);
+  rep.git(['replace', A, B]);
+  assert.notEqual(rep.git(['rev-parse', `${A}^{tree}`]), TA, 'fixture: plain Git follows the replace ref');
+  assert.deepEqual(createGitObjectResolver({ repoRoot: rep.dir }).resolveCommitTree(A), { ok: true, commit: A, treeOid: TA });
+});
+
+test('tree: a missing promisor tree in a tree:0 partial clone is reported missing and never fetched', () => {
+  const server = makeRepo('hlg-git-tree-promisor-src-');
+  writeFileSync(path.join(server.dir, 'lazy.txt'), 'lazy\n');
+  server.git(['add', 'lazy.txt']);
+  server.git(['commit', '-q', '-m', 'lazy']);
+  server.git(['config', 'uploadpack.allowFilter', 'true']);
+  server.git(['config', 'uploadpack.allowAnySHA1InWant', 'true']);
+  const head = server.git(['rev-parse', 'HEAD']);
+  const tree = server.git(['rev-parse', `${head}^{tree}`]);
+  const cloneDir = mkdtempSync(path.join(tmpdir(), 'hlg-git-tree-promisor-clone-'));
+  roots.push(cloneDir);
+  execFileSync('git', ['clone', '-q', '--no-local', '--filter=tree:0', '--no-checkout', pathToFileURL(server.dir).href, cloneDir], {
+    env: cleanEnv(),
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const inClone = (args, env) => execFileSync('git', args, { cwd: cloneDir, env, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const present = () => {
+    try {
+      inClone(['cat-file', '-e', tree], { ...cleanEnv(), GIT_NO_LAZY_FETCH: '1' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.equal(present(), false, 'fixture: the root tree must start out missing in the partial clone');
+
+  const clone = createGitObjectResolver({ repoRoot: cloneDir });
+  withEnv({ GIT_NO_LAZY_FETCH: '0' }, () => {
+    assert.deepEqual(clone.resolveCommit(head), { ok: true, commit: head });
+    assert.deepEqual(clone.resolveCommitTree(head), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+    assert.deepEqual(clone.resolveCommitTree(MISSING), { ok: false, code: 'E_GIT_OBJECT_MISSING' });
+  });
+  assert.equal(present(), false, 'the resolver must not have fetched the tree');
+
+  // Control: plain Git with lazy fetch allowed does fetch it, so the clone really is a promisor.
+  inClone(['cat-file', '-t', tree], cleanEnv());
+  assert.equal(present(), true);
+});
+
+test('tree: no working-tree dependency', () => {
+  const file = path.join(main.dir, 'a.txt');
+  rmSync(file);
+  try {
+    assert.deepEqual(resolver.resolveCommitTree(C2), { ok: true, commit: C2, treeOid: TREE });
+  } finally {
+    writeFileSync(file, 'line 1\nline 2\nline 3');
+  }
+});
+
+test('tree: existing operations are unchanged by the new method', () => {
+  const before = [resolver.resolveCommit(C2), resolver.resolveRegularBlob(C2, 'a.txt'), { ...resolver.readBlob(BLOB_A, 100), bytes: undefined }];
+  resolver.resolveCommitTree(C2);
+  resolver.resolveCommitTree(MISSING);
+  const after = [resolver.resolveCommit(C2), resolver.resolveRegularBlob(C2, 'a.txt'), { ...resolver.readBlob(BLOB_A, 100), bytes: undefined }];
+  assert.deepEqual(after, before);
+  assert.deepEqual(before[0], { ok: true, commit: C2 });
+  assert.deepEqual(before[1], { ok: true, commit: C2, path: 'a.txt', mode: '100644', oid: BLOB_A });
+  assert.ok(Object.isFrozen(resolver));
+  assert.throws(() => {
+    resolver.resolveCommit = () => ({ ok: true });
+  }, TypeError);
 });
 
 // ---------------------------------------------------------------- process boundary (static)

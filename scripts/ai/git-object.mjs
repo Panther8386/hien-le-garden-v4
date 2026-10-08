@@ -2,7 +2,8 @@
 //
 // Establishes LOCAL Git facts only, read from the Git object database of an explicit, trusted
 // repository root: that a full SHA names a commit object, that an exact path in that commit is a
-// regular blob (mode 100644 or 100755) with a given object id, and the immutable bytes of a blob.
+// regular blob (mode 100644 or 100755) with a given object id, the immutable bytes of a blob, and
+// the root tree object id recorded in a commit (A3.5b.1T).
 // It never claims that a commit belongs to a GitHub repository or PR, is trusted, was produced by
 // a given person, passed CI or is approved; those facts come from trusted context in later
 // layers. The working tree is never read.
@@ -29,6 +30,7 @@ import { repoPathViolations } from './repo-path.mjs';
 
 export const GIT_TIMEOUT_MS = 30_000;
 export const MAX_BLOB_BYTES = 2_097_152;
+export const MAX_COMMIT_BYTES = 2_097_152;
 const LS_TREE_MAX_BUFFER = 64 * 1024;
 const BATCH_CHECK_MAX_BUFFER = 4 * 1024;
 const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -102,6 +104,34 @@ export function createGitObjectResolver({ repoRoot, runner = runGitProcess } = {
     return { ok: true, commit: sha };
   }
 
+  // Root tree of an exact commit object. The commit is type-checked first (no ref, tag or
+  // peeling), read through the same runner, and must be byte-for-byte the size batch-check
+  // reported. Its header (up to the first blank line) must start with exactly one
+  // "tree <40 lowercase hex>" line and contain no other tree line. The tree object itself must
+  // exist locally and be of type tree.
+  function resolveCommitTree(sha) {
+    if (typeof sha !== 'string' || !FULL_SHA.test(sha)) return fail('E_GIT_SHA_INVALID');
+    const info = objectInfo(sha);
+    if (!info.ok) return info;
+    if (info.type !== 'commit') return fail('E_GIT_NOT_COMMIT', { type: info.type });
+    if (info.size > MAX_COMMIT_BYTES) return fail('E_GIT_TOO_LARGE', { size: info.size });
+    const r = git(['cat-file', 'commit', sha], { maxBuffer: Math.max(info.size, 1) + 1 });
+    if (!r.ok) return fail('E_GIT_FAILED');
+    const raw = Buffer.from(r.out);
+    if (raw.length !== info.size) return fail('E_GIT_OUTPUT_INVALID');
+    const text = raw.toString('latin1');
+    const end = text.indexOf('\n\n');
+    if (end === -1) return fail('E_GIT_COMMIT_MALFORMED');
+    const header = text.slice(0, end).split('\n');
+    const m = /^tree ([0-9a-f]{40})$/.exec(header[0]);
+    if (!m || header.slice(1).some((line) => line.startsWith('tree '))) return fail('E_GIT_COMMIT_MALFORMED');
+    const treeOid = m[1];
+    const tree = objectInfo(treeOid);
+    if (!tree.ok) return tree;
+    if (tree.type !== 'tree') return fail('E_GIT_NOT_TREE', { type: tree.type });
+    return { ok: true, commit: sha, treeOid };
+  }
+
   function resolveRegularBlob(commit, path) {
     if (typeof commit !== 'string' || !FULL_SHA.test(commit)) return fail('E_GIT_SHA_INVALID');
     if (typeof path !== 'string') return fail('E_GIT_PATH_UNSAFE', { violations: ['PATH-GRAMMAR'] });
@@ -149,5 +179,5 @@ export function createGitObjectResolver({ repoRoot, runner = runGitProcess } = {
     return { ok: true, oid, size: info.size, bytes };
   }
 
-  return Object.freeze({ resolveCommit, resolveRegularBlob, readBlob });
+  return Object.freeze({ resolveCommit, resolveRegularBlob, readBlob, resolveCommitTree });
 }
