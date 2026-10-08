@@ -693,6 +693,62 @@ function renderBookingCard(b) {
     card.appendChild(record);
   }
 
+  // Cancelled booking whose deposit income was already voided in Thu chi: let the operator
+  // remove the leftover deposit line so the booking matches the ledger (server re-checks).
+  if (b.status === 'cancelled' && (b.deposits || []).length > 0 && can('bookings.deposit_delete')) {
+    const reconcile = document.createElement('div');
+    reconcile.className = 'deposit-history';
+    const total = document.createElement('p');
+    const totalStrong = document.createElement('strong');
+    totalStrong.textContent = `Cọc còn ghi nhận: ${formatVnd(b.depositAmount || 0)}`;
+    total.appendChild(totalStrong);
+    reconcile.appendChild(total);
+    const methodLabels = { cash: 'Tiền mặt', transfer: 'Chuyển khoản' };
+    b.deposits.forEach((d) => {
+      const line = document.createElement('p');
+      const text = document.createElement('span');
+      text.textContent = `${formatVnd(d.amount)} · ${methodLabels[d.paymentMethod] || d.paymentMethod} · ${formatDate(d.createdAt)}`;
+      line.appendChild(text);
+      if (d.financeVoided && !b.refundFinanceTransactionId) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn-secondary';
+        deleteBtn.textContent = 'Xoá cọc đã huỷ thu';
+        deleteBtn.addEventListener('click', async () => {
+          if (!confirm('Khoản thu của dòng cọc này đã được huỷ trong Thu chi. Xoá dòng cọc khỏi đặt phòng đã huỷ?')) return;
+          if (deleteBtn.disabled) return;
+          deleteBtn.disabled = true;
+          let response;
+          try {
+            response = await fetch(`/api/bookings/${b.id}/deposits/${d.id}`, { method: 'DELETE' });
+          } catch (err) {
+            deleteBtn.disabled = false;
+            showOpsError('Có lỗi khi xoá cọc');
+            return;
+          }
+          if (!response.ok) {
+            deleteBtn.disabled = false;
+            const errBody = await response.json().catch(() => ({}));
+            showOpsError(errBody.error || 'Có lỗi khi xoá cọc');
+            return;
+          }
+          showOpsError('');
+          await refreshAll();
+        });
+        line.appendChild(deleteBtn);
+      } else {
+        const note = document.createElement('span');
+        note.className = 'muted';
+        note.textContent = b.refundFinanceTransactionId
+          ? ' · đã hoàn cọc, không xoá được'
+          : ' · huỷ khoản thu trong Thu chi trước khi xoá';
+        line.appendChild(note);
+      }
+      reconcile.appendChild(line);
+    });
+    card.appendChild(reconcile);
+  }
+
   // Deposit history is shown to anyone who can manage bookings or delete
   // deposits; the add-deposit form below still needs bookings.manage.
   if ((b.status === 'pending' || b.status === 'confirmed' || b.status === 'checked_in') && (can('bookings.manage') || can('bookings.deposit_delete'))) {

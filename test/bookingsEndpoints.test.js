@@ -7,6 +7,7 @@ import { onRequestPatch as hideBooking } from '../functions/api/bookings/[id]/hi
 import { onRequestGet as getBooking } from '../functions/api/bookings/[id]/index.js';
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
+import { envWithHookBefore } from './helpers/raceEnv.js';
 
 let managerToken;
 let observerToken;
@@ -826,6 +827,139 @@ describe('DELETE /api/bookings/:id/deposits/:depositId', () => {
       params: { id: String(id), depositId: String(created.depositId) },
     });
     expect(response.status).toBe(400);
+  });
+
+  // Ledger reconciliation: the income row was voided in Thu chi after the booking was cancelled.
+  async function cancelWithVoidedIncome({ refund = false, voidIncome = true } = {}) {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 50000, 'transfer');
+    if (voidIncome) {
+      await env.DB.prepare(`UPDATE finance_transactions SET voided_by = 'thu_chi', voided_at = '2026-10-08T06:46:39Z' WHERE id = ?`).bind(created.financeTransactionId).run();
+    }
+    let refundId = null;
+    if (refund) {
+      const r = await env.DB.prepare(
+        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+         VALUES ('expense', 'hoan_coc', 50000, 'refund', '2026-10-08', 'confirmed', 'le_tan_a', '2026-10-08T00:00:00Z')`
+      ).run();
+      refundId = r.meta.last_row_id;
+    }
+    await env.DB.prepare(`UPDATE bookings SET status = 'cancelled', refund_finance_transaction_id = ? WHERE id = ?`).bind(refundId, id).run();
+    return { id, created };
+  }
+  const del = (id, depositId, context = env) => deleteDeposit({
+    request: new Request(`https://x/api/bookings/${id}/deposits/${depositId}`, { method: 'DELETE', headers: { Cookie: `session=${receptionToken}` } }),
+    env: context,
+    params: { id: String(id), depositId: String(depositId) },
+  });
+
+  it('cancelled reconciliation rolls back the deposit and total when audit fails', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    await env.DB.exec("CREATE TRIGGER fail_delete_audit BEFORE INSERT ON audit_log WHEN NEW.action_type='deposit_delete' BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
+    try {
+      expect((await del(id, created.depositId)).status).toBe(500);
+      expect((await env.DB.prepare('SELECT voided_at FROM booking_deposits WHERE id=?').bind(created.depositId).first()).voided_at).toBeNull();
+      expect((await env.DB.prepare('SELECT deposit_amount FROM bookings WHERE id=?').bind(id).first()).deposit_amount).toBe(50000);
+      expect((await env.DB.prepare('SELECT voided_by FROM finance_transactions WHERE id=?').bind(created.financeTransactionId).first()).voided_by).toBe('thu_chi');
+    } finally { await env.DB.exec('DROP TRIGGER fail_delete_audit'); }
+  });
+
+  it('concurrent reconciliation decrements once and writes one audit', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    const responses=await Promise.all([del(id,created.depositId),del(id,created.depositId)]);
+    expect(responses.filter(r=>r.status===200)).toHaveLength(1);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM bookings WHERE id=?').bind(id).first()).deposit_amount).toBe(0);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action_type='deposit_delete'").first()).n).toBe(1);
+  });
+
+  it('rechecks no-refund condition when another write lands after the pre-check', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    const raced=envWithHookBefore(/UPDATE bookings SET deposit_amount/,()=>env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id=? WHERE id=?').bind(created.financeTransactionId,id).run());
+    expect((await del(id,created.depositId,raced)).status).toBe(409);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM bookings WHERE id=?').bind(id).first()).deposit_amount).toBe(50000);
+    expect((await env.DB.prepare('SELECT voided_at FROM booking_deposits WHERE id=?').bind(created.depositId).first()).voided_at).toBeNull();
+  });
+
+  it('blocks a normal deposit removal if booking checks out before the write', async () => {
+    await grantDeleteDeposit(3);const id=await seedBooking();const created=await addDepositAndReturn(id,50000);
+    const raced=envWithHookBefore(/UPDATE bookings SET deposit_amount/,()=>env.DB.prepare("UPDATE bookings SET status='checked_out' WHERE id=?").bind(id).run());
+    expect((await del(id,created.depositId,raced)).status).toBe(409);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM bookings WHERE id=?').bind(id).first()).deposit_amount).toBe(50000);
+  });
+
+  it('cancelled booking: removes a deposit whose income was already voided, keeps the original void', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    const response = await del(id, created.depositId);
+    expect(response.status).toBe(200);
+
+    const depositRow = await env.DB.prepare(`SELECT voided_by, voided_at FROM booking_deposits WHERE id = ?`).bind(created.depositId).first();
+    expect(depositRow.voided_by).toBe('le_tan_a');
+    expect(depositRow.voided_at).not.toBeNull();
+    const bookingRow = await env.DB.prepare(`SELECT status, deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow).toEqual({ status: 'cancelled', deposit_amount: 0 });
+    const txRow = await env.DB.prepare(`SELECT voided_by, voided_at FROM finance_transactions WHERE id = ?`).bind(created.financeTransactionId).first();
+    expect(txRow).toEqual({ voided_by: 'thu_chi', voided_at: '2026-10-08T06:46:39Z' });
+    const audit = await env.DB.prepare(`SELECT old_value, actor FROM audit_log WHERE action_type = 'deposit_delete' AND entity_id = ?`).bind(created.depositId).first();
+    expect(audit).toEqual({ old_value: '50000', actor: 'le_tan_a' });
+  });
+
+  it('cancelled booking: rejects while the income row is still live (400), touches nothing', async () => {
+    const { id, created } = await cancelWithVoidedIncome({ voidIncome: false });
+    const response = await del(id, created.depositId);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('Thu chi');
+    const depositRow = await env.DB.prepare(`SELECT voided_at FROM booking_deposits WHERE id = ?`).bind(created.depositId).first();
+    expect(depositRow.voided_at).toBeNull();
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(50000);
+  });
+
+  it('cancelled booking: rejects when a refund was recorded (400), touches nothing', async () => {
+    const { id, created } = await cancelWithVoidedIncome({ refund: true });
+    const response = await del(id, created.depositId);
+    expect(response.status).toBe(400);
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(50000);
+    const { n } = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'deposit_delete'`).first();
+    expect(n).toBe(0);
+  });
+
+  it('cancelled booking: rejects a legacy deposit with no linked income row (400)', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    await env.DB.prepare(`UPDATE booking_deposits SET finance_transaction_id = NULL WHERE id = ?`).bind(created.depositId).run();
+    const response = await del(id, created.depositId);
+    expect(response.status).toBe(400);
+    const depositRow = await env.DB.prepare(`SELECT voided_at FROM booking_deposits WHERE id = ?`).bind(created.depositId).first();
+    expect(depositRow.voided_at).toBeNull();
+  });
+
+  it('checked_out booking stays blocked even when the income row was voided (400)', async () => {
+    await grantDeleteDeposit(3);
+    const id = await seedBooking();
+    const created = await addDepositAndReturn(id, 50000);
+    await env.DB.prepare(`UPDATE finance_transactions SET voided_at = '2026-10-08T00:00:00Z' WHERE id = ?`).bind(created.financeTransactionId).run();
+    await env.DB.prepare(`UPDATE bookings SET status = 'checked_out' WHERE id = ?`).bind(id).run();
+    const response = await del(id, created.depositId);
+    expect(response.status).toBe(400);
+  });
+
+  it('second removal of the same reconciled deposit is rejected and decrements only once', async () => {
+    const { id, created } = await cancelWithVoidedIncome();
+    expect((await del(id, created.depositId)).status).toBe(200);
+    expect((await del(id, created.depositId)).status).toBe(400);
+    const bookingRow = await env.DB.prepare(`SELECT deposit_amount FROM bookings WHERE id = ?`).bind(id).first();
+    expect(bookingRow.deposit_amount).toBe(0);
+  });
+
+  it('GET /api/bookings exposes financeVoided on deposit lines', async () => {
+    const { created } = await cancelWithVoidedIncome();
+    const live = await addDepositAndReturn(await seedBooking('confirmed'), 70000);
+    const response = await listBookings({ request: authedRequest('https://x/api/bookings', adminToken, 'GET'), env });
+    const rows = await response.json();
+    const lines = rows.flatMap((b) => b.deposits);
+    expect(lines.find((d) => d.id === created.depositId).financeVoided).toBe(1);
+    expect(lines.find((d) => d.id === live.depositId).financeVoided).toBe(0);
   });
 
   it('allows deleting on a checked_in booking', async () => {
