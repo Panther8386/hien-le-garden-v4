@@ -1,0 +1,16 @@
+# Same text checkout on Windows/Linux, even with core.autocrlf=true.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.avif binary
+*.mp4 binary
+*.webm binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.zip binary
+*.DS_Store binary

@@ -14,6 +14,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  artifact-platform:
+    name: Artifact on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-static.mjs
+      - run: node scripts/check-dist.mjs
+      - run: node scripts/artifact-manifest.mjs write dist artifact.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{ matrix.os }}
+          path: artifact.json
+  artifact-equality:
+    name: Windows/Linux artifact equality (F3)
+    needs: artifact-platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifact-*
+          path: platform-artifacts
+      - run: node scripts/artifact-manifest.mjs compare platform-artifacts/artifact-ubuntu-latest/artifact.json platform-artifacts/artifact-windows-latest/artifact.json
   artifact:
     name: Release artifact boundary (R-1)
     runs-on: ubuntu-latest
