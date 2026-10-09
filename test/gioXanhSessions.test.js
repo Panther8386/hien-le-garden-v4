@@ -13,6 +13,40 @@ import { setOverride } from './helpers/permissions.js';
 let managerToken, receptionToken, adminToken, observerToken, observerStaffId, receptionStaffId;
 let roomId1, roomId2;
 
+describe('Giờ Xanh payment reconciliation on list and detail', () => {
+  it.each([
+    ['confirmed', 'income', 'gio_xanh_hien_le', 50000, 50000, 'cash', null, 'paid', ''],
+    ['paid', 'income', 'gio_xanh_hien_le', 50000, 50000, 'transfer', null, 'paid', ''],
+    ['confirmed', 'income', 'gio_xanh_hien_le', 50000, 50000, 'cash', '2026-10-09', 'needs_review', 'đã bị huỷ'],
+    ['draft', 'income', 'gio_xanh_hien_le', 50000, 50000, 'cash', null, 'needs_review', 'chưa được xác nhận'],
+    ['confirmed', 'expense', 'gio_xanh_hien_le', 50000, 50000, 'cash', null, 'needs_review', 'không phải khoản thu'],
+    ['confirmed', 'income', 'dich_vu', 50000, 50000, 'cash', null, 'needs_review', 'không thuộc Giờ Xanh'],
+    ['confirmed', 'income', 'gio_xanh_hien_le', 40000, 50000, 'cash', null, 'needs_review', 'Số tiền chứng từ khác'],
+    ['confirmed', 'income', 'gio_xanh_hien_le', 50000, 75000, 'cash', null, 'needs_review', 'Tổng dịch vụ hiện tại khác'],
+    ['confirmed', 'income', 'gio_xanh_hien_le', 50000, 50000, null, null, 'needs_review', 'Thiếu hình thức thanh toán'],
+    [null, null, null, null, 50000, 'cash', null, 'needs_review', 'Không tìm thấy chứng từ'],
+  ])('receipt %s/%s/%s/%s with posted total %s reconciles consistently', async (status, type, category, amount, postedTotal, method, voidedAt, expected, reason) => {
+    let receiptId = null;
+    if (status) receiptId = (await env.DB.prepare(`INSERT INTO finance_transactions(type,category,amount,status,transaction_date,created_by,created_at,voided_at)
+      VALUES(?,?,?,?, '2026-10-09','audit','2026-10-09',?)`).bind(type, category, amount, status, voidedAt).run()).meta.last_row_id;
+    const id = (await env.DB.prepare(`INSERT INTO gio_xanh_sessions(room_id,guest_name,status,opened_by,opened_at,payment_method,total_amount,finance_transaction_id)
+      VALUES(?,'Payment audit','closed','audit','2026-10-09',?,50000,?)`).bind(roomId1, method, receiptId).run()).meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO gio_xanh_session_items(session_id,source,source_id,name,unit_price,quantity,amount,status,created_by,created_at)
+      VALUES(?,'gio_combo',1,'Audit',?,1,?,'posted','audit','2026-10-09')`).bind(id, postedTotal, postedTotal).run();
+    const before = (await env.DB.prepare('SELECT * FROM finance_transactions ORDER BY id').all()).results;
+    const listResponse = await listSessions({request:authedRequest('https://x/api/gio-xanh-sessions?status=closed',receptionToken,'GET'),env});
+    const detailResponse = await getSession({request:authedRequest(`https://x/api/gio-xanh-sessions/${id}`,receptionToken,'GET'),env,params:{id:String(id)}});
+    expect(listResponse.status).toBe(200);expect(detailResponse.status).toBe(200);
+    const list = (await listResponse.json()).find(s=>s.id===id), detail = await detailResponse.json();
+    for (const s of [list,detail]) {
+      expect(s.paymentStatus).toBe(expected);expect(s.paymentReviewNote).toContain(reason);
+      expect(s.currentTotal).toBe(postedTotal);expect(s.totalAmount).toBe(50000);
+      expect(s).not.toHaveProperty('receiptType');expect(s).not.toHaveProperty('receiptAmount');expect(s).not.toHaveProperty('receiptVoidedAt');
+    }
+    expect((await env.DB.prepare('SELECT * FROM finance_transactions ORDER BY id').all()).results).toEqual(before);
+  });
+});
+
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
@@ -436,27 +470,15 @@ describe('POST /api/gio-xanh-sessions/:id/close', () => {
     expect(txCount.n).toBe(1);
   });
 
-  it('rolls back the finance_transactions row and returns 500 if the session UPDATE throws after the finance INSERT already succeeded', async () => {
-    const originalPrepare = env.DB.prepare.bind(env.DB);
-    const failingDB = {
-      prepare(sql) {
-        if (typeof sql === 'string' && sql.trim().startsWith(`UPDATE gio_xanh_sessions`)) {
-          return {
-            bind() {
-              return {
-                async run() {
-                  throw new Error('Simulated DB failure between finance INSERT and session UPDATE');
-                },
-              };
-            },
-          };
-        }
-        return originalPrepare(sql);
-      },
-    };
-    const failingEnv = { ...env, DB: failingDB };
-
-    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env: failingEnv, params: { id: String(sessionId) } });
+  it('rolls back the receipt when the session UPDATE fails inside the batch', async () => {
+    await env.DB.prepare(`CREATE TRIGGER fail_gx_close BEFORE UPDATE OF status ON gio_xanh_sessions
+      WHEN NEW.status = 'closed' BEGIN SELECT RAISE(ABORT, 'test close failure'); END`).run();
+    let response;
+    try {
+      response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    } finally {
+      await env.DB.prepare('DROP TRIGGER fail_gx_close').run();
+    }
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(typeof body.error).toBe('string');

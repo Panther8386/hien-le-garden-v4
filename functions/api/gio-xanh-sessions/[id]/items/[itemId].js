@@ -30,14 +30,17 @@ export async function onRequestPatch({ request, env, params }) {
   const now = new Date().toISOString();
   const entityLabel = `${item.name} ×${item.quantity} — ${item.guestName}`;
 
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE gio_xanh_session_items SET status = 'voided', voided_by = ?, voided_at = ? WHERE id = ?`)
-      .bind(auth.username, now, params.itemId),
-    env.DB.prepare(
-      `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
-       VALUES ('service_void', 'gio_xanh_session_item', ?, ?, 'posted', 'voided', ?, ?)`
-    ).bind(item.id, entityLabel, auth.username, now),
-  ]);
+  const stillVoidable = `EXISTS (SELECT 1 FROM gio_xanh_session_items si JOIN gio_xanh_sessions p ON p.id = si.session_id
+    WHERE si.id = ? AND si.status = 'posted' AND p.status IN ('open'))`;
+  const statements = [
+    env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
+      SELECT 'service_void', 'gio_xanh_session_item', ?, ?, 'posted', 'voided', ?, ? WHERE ${stillVoidable}`)
+      .bind(item.id, entityLabel, auth.username, now, params.itemId),
+    env.DB.prepare(`UPDATE gio_xanh_session_items SET status = 'voided', voided_by = ?, voided_at = ? WHERE id = ? AND ${stillVoidable}`)
+      .bind(auth.username, now, params.itemId, params.itemId)
+  ];
+  const results = await env.DB.batch(statements);
+  if (results[results.length - 1].meta.changes === 0) return jsonError('Dịch vụ hoặc trạng thái vừa thay đổi, vui lòng tải lại', 409);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

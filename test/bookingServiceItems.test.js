@@ -653,9 +653,18 @@ describe('services endpoints — hidden booking requires records.hide (F-3)', ()
   });
 
   it('PATCH /services/:itemId (void) works (200) for a user granted records.hide', async () => {
+    // Visibility permission permits access; only an active booking permits mutation.
+    await env.DB.prepare("UPDATE bookings SET status='confirmed' WHERE id=?").bind(hiddenBookingId).run();
     await setOverride(env.DB, receptionStaffId, 'records.hide');
     const response = await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenBookingId), itemId: String(postedItemId) } });
     expect(response.status).toBe(200);
+  });
+
+  it('records.hide does not permit voiding a service after checkout', async () => {
+    await setOverride(env.DB, receptionStaffId, 'records.hide');
+    const response = await voidServiceItem({ request: authedRequest(`https://x/api/bookings/${hiddenBookingId}/services/${postedItemId}`, receptionToken, 'PATCH'), env, params: { id: String(hiddenBookingId), itemId: String(postedItemId) } });
+    expect(response.status).toBe(400);
+    expect((await env.DB.prepare('SELECT status FROM booking_service_items WHERE id=?').bind(postedItemId).first()).status).toBe('posted');
   });
 
   it('does not affect a non-hidden booking for the same user (regression)', async () => {

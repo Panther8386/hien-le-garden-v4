@@ -148,6 +148,12 @@ function render() {
 
   const currentTotal = s.items.filter((i) => i.status === 'posted').reduce((sum, i) => sum + i.amount, 0);
   document.getElementById('sessionTotal').textContent = `Tổng: ${currentTotal.toLocaleString('vi-VN')}đ`;
+  document.getElementById('sessionStatus').textContent = s.status === 'closed'
+    ? (s.paymentStatus === 'paid' ? 'Đã thanh toán · Đã kết thúc' : 'Đã kết thúc · Cần đối soát thanh toán')
+    : (s.status === 'open' ? 'Đang mở · Chưa thanh toán' : 'Đã huỷ');
+  document.getElementById('sessionPaymentNote').textContent = s.paymentReviewNote || '';
+  document.getElementById('sessionSettlement').textContent = s.status === 'closed'
+    ? `Đã chốt: ${Number(s.totalAmount).toLocaleString('vi-VN')}đ${s.financeTransactionId ? ` · Chứng từ #${s.financeTransactionId}` : ''}` : '';
 
   const addComboForm = document.getElementById('addComboForm');
   const addMenuItemForm = document.getElementById('addMenuItemForm');
@@ -164,7 +170,7 @@ function render() {
     closeSection.classList.add('hidden');
   }
 
-  if (s.status === 'closed') {
+  if (s.status === 'closed' && s.paymentStatus === 'paid') {
     printBtn.classList.remove('hidden');
   } else {
     printBtn.classList.add('hidden');

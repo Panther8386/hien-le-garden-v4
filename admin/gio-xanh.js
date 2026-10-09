@@ -194,13 +194,20 @@ function renderHistoryGrid(sessions) {
     guestLabel.textContent = s.guestName;
 
     const statusLabel = document.createElement('div');
-    statusLabel.textContent = s.status === 'closed' ? 'Đã chốt' : 'Đã huỷ';
+    statusLabel.textContent = s.status === 'closed'
+      ? (s.paymentStatus === 'paid' ? 'Đã thanh toán · Đã kết thúc' : 'Đã kết thúc · Cần đối soát thanh toán') : 'Đã huỷ';
 
     const total = document.createElement('div');
     total.className = 'session-total';
-    total.textContent = `${s.currentTotal.toLocaleString('vi-VN')}đ`;
+    total.textContent = `${Number(s.status === 'closed' ? s.totalAmount : s.currentTotal).toLocaleString('vi-VN')}đ`;
 
     card.append(roomLabel, guestLabel, statusLabel, total);
+    if (s.paymentReviewNote) {
+      const note = document.createElement('p');
+      note.className = 'error';
+      note.textContent = s.paymentReviewNote;
+      card.appendChild(note);
+    }
 
     if (can('records.hide')) {
       const hideBtn = document.createElement('button');

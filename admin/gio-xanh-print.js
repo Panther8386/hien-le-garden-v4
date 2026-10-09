@@ -60,6 +60,13 @@ function renderInvoice(session) {
     el.appendChild(p);
     return;
   }
+  if (session.paymentStatus !== 'paid') {
+    document.getElementById('printBtn').classList.add('hidden');
+    const p = document.createElement('p');
+    p.textContent = `Phiên cần đối soát thanh toán, chưa thể in hoá đơn. ${session.paymentReviewNote || ''}`;
+    el.appendChild(p);
+    return;
+  }
 
   const h2 = document.createElement('h2');
   h2.textContent = 'HOÁ ĐƠN GIỜ XANH HIỀN LÊ';

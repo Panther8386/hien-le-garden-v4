@@ -39,7 +39,7 @@ export async function onRequestPost({ request, env, params }) {
   const { paymentMethod } = body;
 
   const { results: holidayRows } = await env.DB.prepare(
-    `SELECT start_date AS startDate, end_date AS endDate FROM holidays`
+    `SELECT start_date AS startDate, end_date AS endDate FROM holidays ORDER BY start_date, end_date`
   ).all();
   const roomTotal = computeRoomTotal(
     booking.check_in, booking.check_out,
@@ -47,9 +47,13 @@ export async function onRequestPost({ request, env, params }) {
     holidayRows
   );
 
+  // Capture both the amount and the exact service rows used for this settlement.
+  const serviceSnapshotSql = `SELECT json_group_array(json_array(id, amount, status, payment_status)) FROM
+    (SELECT id, amount, status, payment_status FROM booking_service_items WHERE booking_id = ? ORDER BY id)`;
   const unpaidRow = await env.DB.prepare(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM booking_service_items WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending'`
-  ).bind(params.id).first();
+    `SELECT COALESCE(SUM(CASE WHEN status = 'posted' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS total,
+      (${serviceSnapshotSql}) AS snapshot FROM booking_service_items WHERE booking_id = ?`
+  ).bind(params.id, params.id).first();
   const unpaidServicesTotal = unpaidRow.total;
 
   const deposit = booking.deposit_amount || 0;
@@ -70,68 +74,57 @@ export async function onRequestPost({ request, env, params }) {
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
-  const createdTransactionIds = [];
-
-  async function cleanupCreatedTransactions() {
-    for (const id of createdTransactionIds) {
-      try {
-        await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(id).run();
-      } catch (cleanupErr) {
-        // Bỏ qua lỗi dọn dẹp — không để nó che lấp lỗi gốc bên dưới.
-      }
-    }
-  }
-
   try {
-    if (roomDue > 0) {
-      const insert = await env.DB.prepare(
+    // A unique audit entry gates every write inside this atomic batch. If the
+    // snapshot has changed, none of the checkout side effects may run.
+    const settlement = JSON.stringify({ key: crypto.randomUUID(), roomDue, servicesDue, refundAmount });
+    const stillCheckedIn = `EXISTS (SELECT 1 FROM audit_log WHERE action_type = 'booking_checkout'
+      AND entity_type = 'booking' AND entity_id = ? AND new_value = ?)`;
+    const statements = [env.DB.prepare(
+      `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
+       SELECT 'booking_checkout', 'booking', ?, ?, 'checked_in', ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM bookings bk LEFT JOIN rooms r ON r.id = bk.room_id
+         WHERE bk.id = ? AND bk.status = 'checked_in' AND COALESCE(bk.deposit_amount, 0) = ?
+           AND bk.room_id IS ? AND bk.room_type = ? AND bk.check_in = ? AND bk.check_out = ?
+           AND r.price_weekday IS ? AND r.price_weekend IS ?)
+         AND (${serviceSnapshotSql}) = ?
+         AND (SELECT json_group_array(json_array(start_date, end_date)) FROM
+           (SELECT start_date, end_date FROM holidays ORDER BY start_date, end_date)) = ?`
+    ).bind(params.id, booking.guest_name, settlement, auth.username, now,
+      params.id, deposit, booking.room_id, booking.room_type, booking.check_in, booking.check_out,
+      booking.priceWeekday, booking.priceWeekend, params.id, unpaidRow.snapshot,
+      JSON.stringify(holidayRows.map(h => [h.startDate, h.endDate])))];
+    // Receipt creation belongs to the same transaction as the audit gate,
+    // service settlement and final booking transition. No compensating DELETEs.
+    for (const [type, category, amount, note] of [
+      ['income', 'dich_vu', roomDue, `Tiền phòng — ${booking.guest_name}`],
+      ['income', 'ban_hang', servicesDue, `Dịch vụ lưu trú — ${booking.guest_name}`],
+      ['expense', 'hoan_coc', refundAmount, `Hoàn cọc dư — ${booking.guest_name}`],
+    ]) {
+      if (amount > 0) statements.push(env.DB.prepare(
         `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
-         VALUES ('income', 'dich_vu', ?, ?, ?, 'confirmed', ?, ?)`
-      ).bind(roomDue, `Tiền phòng — ${booking.guest_name}`, today, auth.username, now).run();
-      createdTransactionIds.push(insert.meta.last_row_id);
+         SELECT ?, ?, ?, ?, ?, 'confirmed', ?, ? WHERE ${stillCheckedIn}`
+      ).bind(type, category, amount, note, today, auth.username, now, params.id, settlement));
     }
-
-    if (servicesDue > 0) {
-      const insert = await env.DB.prepare(
-        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
-         VALUES ('income', 'ban_hang', ?, ?, ?, 'confirmed', ?, ?)`
-      ).bind(servicesDue, `Dịch vụ lưu trú — ${booking.guest_name}`, today, auth.username, now).run();
-      createdTransactionIds.push(insert.meta.last_row_id);
-    }
-
-    if (refundAmount > 0) {
-      const insert = await env.DB.prepare(
-        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
-         VALUES ('expense', 'hoan_coc', ?, ?, ?, 'confirmed', ?, ?)`
-      ).bind(refundAmount, `Hoàn cọc dư — ${booking.guest_name}`, today, auth.username, now).run();
-      createdTransactionIds.push(insert.meta.last_row_id);
-    }
-
-    // One D1 batch = one transaction. The side effects (room cleaning flag, settling pending service
-    // items) run FIRST and only while the booking is still 'checked_in'; the guarded status UPDATE
-    // runs LAST. All statements see the same state, so a request that lost the race changes nothing.
-    const stillCheckedIn = `EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'checked_in')`;
-    const statements = [];
     if (booking.room_id) {
       statements.push(
         env.DB.prepare(`UPDATE rooms SET needs_cleaning = 1, needs_cleaning_since = ? WHERE id = ? AND ${stillCheckedIn}`)
-          .bind(now, booking.room_id, params.id)
+          .bind(now, booking.room_id, params.id, settlement)
       );
     }
     statements.push(
       env.DB.prepare(
         `UPDATE booking_service_items SET payment_status = 'paid', payment_method = ? WHERE booking_id = ? AND status = 'posted' AND payment_status = 'pending' AND ${stillCheckedIn}`
-      ).bind(resolvedPaymentMethod, params.id, params.id)
+      ).bind(resolvedPaymentMethod, params.id, params.id, settlement)
     );
     statements.push(
-      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in'`).bind(resolvedPaymentMethod, params.id)
+      env.DB.prepare(`UPDATE bookings SET status = 'checked_out', checkout_payment_method = ? WHERE id = ? AND status = 'checked_in' AND ${stillCheckedIn}`).bind(resolvedPaymentMethod, params.id, params.id, settlement)
     );
 
     const results = await env.DB.batch(statements);
     if (results[results.length - 1].meta.changes === 0) {
       // Thao tác khác vừa check-out đặt phòng này giữa lúc đọc và ghi (race condition).
-      await cleanupCreatedTransactions();
-      return jsonError('Đặt phòng này vừa được check-out bởi thao tác khác, vui lòng tải lại', 409);
+      return jsonError('Đặt phòng hoặc dịch vụ vừa thay đổi, vui lòng tải lại và kiểm tra số tiền trước khi check-out', 409);
     }
 
     return new Response(
@@ -139,8 +132,7 @@ export async function onRequestPost({ request, env, params }) {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
-    // Lỗi bất ngờ giữa lúc ghi các dòng thu/chi và cập nhật đặt phòng (vd: lỗi DB tạm thời).
-    await cleanupCreatedTransactions();
+    // D1 rolls back all receipts, audit, services and cleaning flags on failure.
     return jsonError('Có lỗi khi check-out, vui lòng thử lại', 500);
   }
 }

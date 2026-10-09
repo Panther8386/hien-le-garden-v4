@@ -129,9 +129,9 @@ export async function onRequestPost({ request, env, params }) {
     try {
       result = await env.DB.prepare(
         `INSERT INTO booking_service_items (booking_id, dine_in_menu_item_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, finance_transaction_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)`
+         SELECT ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status IN ('confirmed', 'checked_in'))`
       )
-        .bind(params.id, menuItem.id, menuItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod, financeTransactionId)
+        .bind(params.id, menuItem.id, menuItem.name, unitPrice, quantity, amount, auth.username, now, paymentStatus, resolvedPaymentMethod, financeTransactionId, params.id)
         .run();
     } catch (err) {
       if (financeTransactionId) {
@@ -144,6 +144,10 @@ export async function onRequestPost({ request, env, params }) {
       return jsonError('Có lỗi khi thêm dịch vụ, vui lòng thử lại', 500);
     }
 
+    if (result.meta.changes === 0) {
+      if (financeTransactionId) await env.DB.prepare('DELETE FROM finance_transactions WHERE id = ?').bind(financeTransactionId).run();
+      return jsonError('Đặt phòng vừa thay đổi trạng thái, vui lòng tải lại', 409);
+    }
     return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   }
 
@@ -213,7 +217,7 @@ export async function onRequestPost({ request, env, params }) {
   try {
     result = await env.DB.prepare(
       `INSERT INTO booking_service_items (booking_id, service_catalog_id, name, unit_price, quantity, amount, status, created_by, created_at, payment_status, payment_method, experience_date, slot_template_id, experience_slot_label, experience_start_time, terms_accepted_at, finance_transaction_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status IN ('confirmed', 'checked_in'))`
     )
       .bind(
         params.id,
@@ -231,7 +235,8 @@ export async function onRequestPost({ request, env, params }) {
         template ? template.label : null,
         template ? template.start_time : null,
         resolvedTermsAcceptedAt,
-        financeTransactionId
+        financeTransactionId,
+        params.id
       )
       .run();
   } catch (err) {
@@ -245,5 +250,9 @@ export async function onRequestPost({ request, env, params }) {
     return jsonError('Có lỗi khi thêm dịch vụ, vui lòng thử lại', 500);
   }
 
+  if (result.meta.changes === 0) {
+    if (financeTransactionId) await env.DB.prepare('DELETE FROM finance_transactions WHERE id = ?').bind(financeTransactionId).run();
+    return jsonError('Đặt phòng vừa thay đổi trạng thái, vui lòng tải lại', 409);
+  }
   return new Response(JSON.stringify({ id: result.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

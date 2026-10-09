@@ -176,7 +176,7 @@ describe('FA-4 check-out', () => {
     const loser = await call(checkOutBooking, id, 'check-out', { paymentMethod: 'transfer' }, racedEnv);
     expect(winner.status).toBe(200);
     expect(loser.status).toBe(409);
-    expect((await loser.json()).error).toBe('Đặt phòng này vừa được check-out bởi thao tác khác, vui lòng tải lại');
+    expect((await loser.json()).error).toBe('Đặt phòng hoặc dịch vụ vừa thay đổi, vui lòng tải lại và kiểm tra số tiền trước khi check-out');
     const b = await env.DB.prepare(`SELECT status, checkout_payment_method FROM bookings WHERE id = ?`).bind(id).first();
     expect(b).toEqual({ status: 'checked_out', checkout_payment_method: 'cash' });
     expect(await count(`SELECT COUNT(*) AS n FROM finance_transactions WHERE category = 'dich_vu'`)).toBe(1);
