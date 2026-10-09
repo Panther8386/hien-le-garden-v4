@@ -1,5 +1,6 @@
 import { verifyPassword, createSession, createPending2FAToken } from '../../../lib/auth.js';
 import { readJsonBody } from '../../../lib/readJsonBody.js';
+import { consumeLoginBudget, loginThrottleResponse } from '../../../lib/loginRateLimit.js';
 
 const MAX_BODY_BYTES = 4096;
 
@@ -16,6 +17,14 @@ export async function onRequestPost({ request, env }) {
   const { username, password } = parsed.body;
   if (typeof username !== 'string' || typeof password !== 'string') {
     return jsonError('Dữ liệu không hợp lệ', 400);
+  }
+
+  try {
+    const budget = await consumeLoginBudget(env.DB, request, username);
+    if (!budget.allowed) return loginThrottleResponse(429, budget.retryAfter);
+  } catch {
+    // A missing migration or DB error must not silently disable protection.
+    return loginThrottleResponse(503, 60);
   }
 
   const account = await env.DB.prepare(
