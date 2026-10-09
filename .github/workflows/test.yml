@@ -65,14 +65,38 @@ jobs:
       - name: Staging binding guard on wrangler.toml (blocking)
         run: node scripts/check-staging-bindings.mjs
 
-      # Pure Node contract tooling (no workerd): schemas, validator, CLI and TaskSpec
-      # extractor/business tests. One file per node --test call with an explicit existence check:
-      # node --test silently skips a path that matches nothing when another path resolves.
-      # Add new files here.
+      # The Git L1 resolver and its tests rely on GIT_NO_LAZY_FETCH (Git 2.44+), so a partial clone
+      # never fetches a missing object. Record the runner's Git and fail closed below 2.44.0. The
+      # version is compared numerically (base 10), never as a string.
+      - name: Git version (Git L1 requires >= 2.44.0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="$(git --version)"
+          echo "$raw"
+          re='^git version ([0-9]+)\.([0-9]+)\.([0-9]+)'
+          if [[ ! "$raw" =~ $re ]]; then
+            echo "::error::Unrecognized Git version output"
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          if (( 10#$major > 2 || (10#$major == 2 && 10#$minor >= 44) )); then
+            echo "Git $major.$minor.$patch meets the 2.44.0 minimum"
+          else
+            echo "::error::Git $major.$minor.$patch is below the required 2.44.0"
+            exit 1
+          fi
+
+      # Pure Node contract tooling (no workerd): schemas, validator, CLI, TaskSpec extractor/business
+      # tests, the Git L1 resolver and the EvidenceRef verifier. One file per node --test call with
+      # an explicit existence check: node --test silently skips a path that matches nothing when
+      # another path resolves. Add new files here.
       - name: AI contract tests (node:test)
         run: |
           set -e
-          for f in test/ai/contract-schemas.node-test.mjs test/ai/contract-validator.node-test.mjs test/ai/taskspec-extractor.node-test.mjs test/ai/taskspec-business.node-test.mjs test/ai/taskspec-policy.node-test.mjs test/ai/secret-detector.node-test.mjs test/ai/validate-taskspec.node-test.mjs; do
+          for f in test/ai/contract-schemas.node-test.mjs test/ai/contract-validator.node-test.mjs test/ai/taskspec-extractor.node-test.mjs test/ai/taskspec-business.node-test.mjs test/ai/taskspec-policy.node-test.mjs test/ai/secret-detector.node-test.mjs test/ai/validate-taskspec.node-test.mjs test/ai/git-object.node-test.mjs test/ai/verify-evidence.node-test.mjs; do
             test -f "$f"
             node --test "$f"
           done
