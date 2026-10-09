@@ -50,8 +50,10 @@ export async function onRequestPost({ request, env, params }) {
   const now = new Date().toISOString();
   const insert = await env.DB.prepare(
     `INSERT INTO gio_xanh_session_items (session_id, source, source_id, name, unit_price, quantity, amount, status, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)`
-  ).bind(params.id, source, sourceId, name, unitPrice, quantity, amount, auth.username, now).run();
+     SELECT ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?
+     WHERE EXISTS (SELECT 1 FROM gio_xanh_sessions WHERE id = ? AND status = 'open')`
+  ).bind(params.id, source, sourceId, name, unitPrice, quantity, amount, auth.username, now, params.id).run();
+  if (insert.meta.changes === 0) return jsonError('Phiên vừa được chốt hoặc huỷ, vui lòng tải lại', 409);
 
   return new Response(JSON.stringify({ id: insert.meta.last_row_id, ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

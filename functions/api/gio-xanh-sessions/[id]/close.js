@@ -48,14 +48,15 @@ export async function onRequestPost({ request, env, params }) {
     financeTransactionId = txInsert.meta.last_row_id;
 
     const sessionUpdate = await env.DB.prepare(
-      `UPDATE gio_xanh_sessions SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'`
-    ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id).run();
+      `UPDATE gio_xanh_sessions SET status = 'closed', closed_by = ?, closed_at = ?, payment_method = ?, total_amount = ?, finance_transaction_id = ? WHERE id = ? AND status = 'open'
+       AND (SELECT COALESCE(SUM(amount), 0) FROM gio_xanh_session_items WHERE session_id = ? AND status = 'posted') = ?`
+    ).bind(auth.username, now, paymentMethod, totals.total, financeTransactionId, params.id, params.id, totals.total).run();
 
     if (sessionUpdate.meta.changes === 0) {
       // Thao tác khác vừa đóng/huỷ phiên này giữa lúc đọc và ghi (race condition).
       // Xoá dòng finance_transactions vừa tạo để tránh trùng doanh thu.
       await env.DB.prepare(`DELETE FROM finance_transactions WHERE id = ?`).bind(financeTransactionId).run();
-      return jsonError('Phiên này vừa được chốt hoặc huỷ bởi thao tác khác, vui lòng tải lại', 409);
+      return jsonError('Phiên hoặc dịch vụ vừa thay đổi, vui lòng tải lại và kiểm tra số tiền trước khi chốt', 409);
     }
 
     return new Response(JSON.stringify({ ok: true, totalAmount: totals.total, financeTransactionId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
