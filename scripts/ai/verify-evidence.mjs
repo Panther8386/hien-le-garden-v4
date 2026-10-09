@@ -23,6 +23,11 @@
 // resolveRegularBlob returned for the same commit and path. Git access goes through the
 // git-object.mjs resolver only (object database, no working tree, no replace objects, no lazy
 // fetch). No network access.
+//
+// Threat model (A3.5b.2R.1): T0, the EvidenceRefs and other producer-controlled data, is untrusted
+// and must fail closed. T1, this verifier, the Git resolver and runner, the Node.js runtime and
+// the trusted CI snapshot provider, is trusted. T2, arbitrary JavaScript running in the same
+// process (able to alter globals, builtins or module bindings), is out of scope.
 
 import { MAX_BLOB_BYTES, createGitObjectResolver } from './git-object.mjs';
 import { repoPathViolations } from './repo-path.mjs';
@@ -34,11 +39,13 @@ export const EVIDENCE_KINDS = Object.freeze([
 ]);
 
 const SHA = /^[0-9a-f]{40}$/;
-const RANK = { VERIFIED: 0, UNVERIFIABLE: 1, INVALID: 2, ERROR: 3 };
 const REGULAR_MODES = new Set(['100644', '100755']);
 const CI_CONCLUSIONS = new Set(['success', 'failure', 'cancelled', 'skipped', 'timed_out', 'neutral', 'action_required']);
 const RESOLVER_METHODS = ['resolveCommit', 'resolveRegularBlob', 'readBlob', 'resolveCommitTree'];
 const MAX_REF_KEYS = 32;
+// Upper bound on one verifyAll collection, checked before any element is read. Callers verify
+// evidence per finding or criterion (schema: at most 10 each) and aggregate at the gate layer.
+export const MAX_REFS = 1024;
 
 if (REPO_LINE_MAX_BYTES > MAX_BLOB_BYTES) throw new Error('verify-evidence: line cap exceeds resolver cap');
 
@@ -416,33 +423,64 @@ export function createEvidenceVerifier({
     }
   }
 
+  // Never throws. A collection must be a real Array (or a Proxy of one) whose length, read exactly
+  // once, is a safe integer from 0 to MAX_REFS; anything else is a frozen ERROR aggregate with no
+  // results. Elements are read once each, by own numeric index (no iterator, no inherited value),
+  // so results[i] always corresponds to refs[i].
   function verifyAll(refs) {
-    if (!Array.isArray(refs)) throw new TypeError('verifyAll: refs must be an array');
-    // Read length once and each element once, by index: never through an iterator the producer
-    // could override, so results[i] always corresponds to refs[i].
-    const length = refs.length;
-    const counts = { VERIFIED: 0, INVALID: 0, UNVERIFIABLE: 0, ERROR: 0 };
-    if (length === 0) {
-      return Object.freeze({ status: 'UNVERIFIABLE', code: 'E_EVIDENCE_NONE', results: Object.freeze([]), counts: Object.freeze(counts) });
+    let length;
+    try {
+      if (!Array.isArray(refs)) return rejectCollection('E_EVIDENCE_COLLECTION_INVALID');
+      length = refs.length;
+    } catch {
+      return rejectCollection('E_EVIDENCE_COLLECTION_UNREADABLE');
     }
+    if (!Number.isSafeInteger(length) || length < 0) return rejectCollection('E_EVIDENCE_COLLECTION_INVALID');
+    if (length > MAX_REFS) return rejectCollection('E_EVIDENCE_COLLECTION_TOO_LARGE');
     const results = [];
     for (let i = 0; i < length; i++) {
-      let item;
+      let r;
       try {
-        item = refs[i];
+        // One descriptor read per index (a single trap for a Proxy); an accessor runs once.
+        const d = Reflect.getOwnPropertyDescriptor(refs, i);
+        if (d === undefined) r = result('INVALID', 'E_EVIDENCE_REF_MISSING', null);
+        else if (Object.hasOwn(d, 'value')) r = verify(d.value);
+        else r = verify(d.get === undefined ? undefined : Reflect.apply(d.get, refs, []));
       } catch {
-        results.push(result('ERROR', 'E_EVIDENCE_REF_UNREADABLE', null));
-        continue;
+        r = result('ERROR', 'E_EVIDENCE_REF_UNREADABLE', null);
       }
-      results.push(verify(item));
+      results[i] = r;
     }
-    let status = 'VERIFIED';
-    for (const r of results) {
-      counts[r.status]++;
-      if (RANK[r.status] > RANK[status]) status = r.status;
-    }
-    return Object.freeze({ status, code: null, results: Object.freeze(results), counts: Object.freeze(counts) });
+    return aggregate(results);
   }
 
   return Object.freeze({ verify, verifyAll });
+}
+
+const emptyCounts = () => ({ VERIFIED: 0, INVALID: 0, UNVERIFIABLE: 0, ERROR: 0 });
+
+function rejectCollection(code) {
+  return Object.freeze({ status: 'ERROR', code, results: Object.freeze([]), counts: Object.freeze(emptyCounts()) });
+}
+
+// Explicit fail-closed aggregation with no default status: VERIFIED only when there is at least
+// one result and every result is VERIFIED; an unexpected status counts as ERROR.
+function aggregate(results) {
+  const counts = emptyCounts();
+  for (let i = 0; i < results.length; i++) {
+    const status = results[i].status;
+    if (status === 'VERIFIED' || status === 'INVALID' || status === 'UNVERIFIABLE') counts[status]++;
+    else counts.ERROR++;
+  }
+  let status;
+  let code = null;
+  if (results.length === 0) {
+    status = 'UNVERIFIABLE';
+    code = 'E_EVIDENCE_NONE';
+  } else if (counts.ERROR > 0) status = 'ERROR';
+  else if (counts.INVALID > 0) status = 'INVALID';
+  else if (counts.UNVERIFIABLE > 0) status = 'UNVERIFIABLE';
+  else if (counts.VERIFIED === results.length) status = 'VERIFIED';
+  else status = 'ERROR';
+  return Object.freeze({ status, code, results: Object.freeze(results), counts: Object.freeze(counts) });
 }

@@ -18,6 +18,7 @@ import { createGitObjectResolver, runGitProcess } from '../../scripts/ai/git-obj
 import {
   CI_SNAPSHOT_ENVELOPE,
   EVIDENCE_KINDS,
+  MAX_REFS,
   REPO_LINE_MAX_BYTES,
   createEvidenceVerifier,
 } from '../../scripts/ai/verify-evidence.mjs';
@@ -756,7 +757,12 @@ test('verifyAll: an empty evidence list is never VERIFIED', () => {
   assert.equal(r.code, 'E_EVIDENCE_NONE');
   assert.deepEqual(r.results, []);
   assert.ok(Object.isFrozen(r));
-  for (const bad of [undefined, null, {}, 'refs', { length: 0 }]) assert.throws(() => verifier.verifyAll(bad), TypeError);
+  // Non-arrays (including array-likes) are a frozen ERROR aggregate, never an empty success.
+  for (const bad of [undefined, null, {}, 'refs', { length: 0 }, { length: 1, 0: file('same.txt') }]) {
+    const r = verifier.verifyAll(bad);
+    assert.deepEqual([r.status, r.code, r.results.length], ['ERROR', 'E_EVIDENCE_COLLECTION_INVALID', 0]);
+    assert.ok(Object.isFrozen(r) && Object.isFrozen(r.results) && Object.isFrozen(r.counts));
+  }
 });
 
 test('verifyAll: precedence ERROR > INVALID > UNVERIFIABLE > VERIFIED, input order and counts kept', () => {
@@ -1115,4 +1121,286 @@ test('last resort: a resolver result whose fields throw is ERROR E_EVIDENCE_INTE
     const { v } = spyVerifier({ [method]: throwing });
     assert.deepEqual(v.verify(ref), { status: 'ERROR', code: 'E_EVIDENCE_INTERNAL', kind: ref.kind }, method);
   }
+});
+
+// ---------------------------------------------------------------- A3.5b.2R.1: evidence collections
+
+const INVALID_REF = () => ({ kind: 'git_commit', commit: C1 }); // SHA mismatch: INVALID
+const UNVERIFIABLE_REF = () => ({ kind: 'http_probe' });
+const ERROR_REF = () => {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  return proxy; // unreadable: ERROR
+};
+// Verifier whose Git answers are instant, for large collections (git_commit refs are VERIFIED).
+function fastVerifier() {
+  return createEvidenceVerifier({
+    repoRoot: repo.dir,
+    expectedCommit: C2,
+    expectedBase: C1,
+    resolver: {
+      resolveCommit: (c) => ({ ok: true, commit: c }),
+      resolveRegularBlob: () => ({ ok: false, code: 'E_GIT_FAILED' }),
+      readBlob: () => ({ ok: false, code: 'E_GIT_FAILED' }),
+      resolveCommitTree: () => ({ ok: false, code: 'E_GIT_FAILED' }),
+    },
+  });
+}
+const VERIFIED_REF = () => ({ kind: 'git_commit', commit: C2 });
+// Proxy over a real array that reports `length` as given and counts reads.
+function lengthProxy(items, length) {
+  const reads = { length: 0, index: 0 };
+  const proxy = new Proxy(items, {
+    get(t, k) {
+      if (k === 'length') {
+        reads.length++;
+        return typeof length === 'function' ? length(reads.length) : length;
+      }
+      if (typeof k === 'string' && /^[0-9]+$/.test(k)) reads.index++;
+      return t[k];
+    },
+  });
+  return { proxy, reads };
+}
+const rejected = (r, code) => {
+  assert.equal(r.status, 'ERROR');
+  assert.equal(r.code, code);
+  assert.equal(r.results.length, 0);
+  assert.ok(Object.isFrozen(r) && Object.isFrozen(r.results) && Object.isFrozen(r.counts));
+};
+
+test('M-1: a Proxy with one INVALID ref and a malformed length is never VERIFIED', () => {
+  assert.equal(verifier.verifyAll([INVALID_REF()]).status, 'INVALID', 'fixture');
+  for (const length of [-1, NaN, undefined, null, 'abc', '1', 1.5, -0.5, true, {}, 1n]) {
+    const { proxy, reads } = lengthProxy([INVALID_REF()], length);
+    const r = verifier.verifyAll(proxy);
+    assert.notEqual(r.status, 'VERIFIED', String(length));
+    rejected(r, 'E_EVIDENCE_COLLECTION_INVALID');
+    assert.equal(reads.length, 1);
+    assert.equal(reads.index, 0, 'no element is read for a rejected collection');
+  }
+});
+
+test('L-1: oversized lengths are rejected before any element is read or allocated', () => {
+  for (const length of [MAX_REFS + 1, 2 ** 32 - 1, Number.MAX_SAFE_INTEGER]) {
+    const { proxy, reads } = lengthProxy([VERIFIED_REF()], length);
+    rejected(verifier.verifyAll(proxy), 'E_EVIDENCE_COLLECTION_TOO_LARGE');
+    assert.equal(reads.index, 0);
+  }
+  for (const length of [Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, 2 ** 53]) {
+    const { proxy, reads } = lengthProxy([VERIFIED_REF()], length);
+    rejected(verifier.verifyAll(proxy), 'E_EVIDENCE_COLLECTION_INVALID');
+    assert.equal(reads.index, 0);
+  }
+  // A real, sparse array of the maximum array length is also rejected without iteration.
+  rejected(verifier.verifyAll(new Array(2 ** 32 - 1)), 'E_EVIDENCE_COLLECTION_TOO_LARGE');
+  const over = [];
+  over.length = MAX_REFS + 1;
+  rejected(verifier.verifyAll(over), 'E_EVIDENCE_COLLECTION_TOO_LARGE');
+});
+
+test('L-1: huge lengths stay bounded in a memory-limited child process', () => {
+  const moduleUrl = pathToFileURL(fileURLToPath(new URL('../../scripts/ai/verify-evidence.mjs', import.meta.url))).href;
+  const script = `
+    const { createEvidenceVerifier } = await import(${JSON.stringify(moduleUrl)});
+    const v = createEvidenceVerifier({ repoRoot: '.', expectedCommit: '${C2}' });
+    const out = [];
+    for (const n of [2 ** 32 - 1, 1e9, Number.MAX_SAFE_INTEGER, Infinity]) {
+      const p = new Proxy([], { get: (t, k) => (k === 'length' ? n : t[k]) });
+      const r = v.verifyAll(p);
+      out.push(r.status + ':' + r.code + ':' + r.results.length);
+    }
+    const real = v.verifyAll(new Array(2 ** 32 - 1));
+    out.push(real.status + ':' + real.code + ':' + real.results.length);
+    console.log(out.join(','));
+  `;
+  const started = Date.now();
+  const child = execFileSync(process.execPath, ['--max-old-space-size=32', '--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  assert.equal(
+    child.trim(),
+    [
+      'ERROR:E_EVIDENCE_COLLECTION_TOO_LARGE:0',
+      'ERROR:E_EVIDENCE_COLLECTION_TOO_LARGE:0',
+      'ERROR:E_EVIDENCE_COLLECTION_TOO_LARGE:0',
+      'ERROR:E_EVIDENCE_COLLECTION_INVALID:0',
+      'ERROR:E_EVIDENCE_COLLECTION_TOO_LARGE:0',
+    ].join(','),
+  );
+  assert.ok(Date.now() - started < 30_000);
+});
+
+test('MAX_REFS: exactly MAX_REFS refs are verified; one more is rejected', () => {
+  assert.equal(MAX_REFS, 1024);
+  const v = fastVerifier();
+  const full = Array.from({ length: MAX_REFS }, VERIFIED_REF);
+  const ok = v.verifyAll(full);
+  assert.equal(ok.status, 'VERIFIED');
+  assert.equal(ok.results.length, MAX_REFS);
+  assert.equal(ok.counts.VERIFIED, MAX_REFS);
+  full.push(VERIFIED_REF());
+  rejected(v.verifyAll(full), 'E_EVIDENCE_COLLECTION_TOO_LARGE');
+});
+
+test('aggregate: empty, single and mixed collections', () => {
+  const v = fastVerifier();
+  const empty = v.verifyAll([]);
+  assert.deepEqual([empty.status, empty.code, empty.results.length], ['UNVERIFIABLE', 'E_EVIDENCE_NONE', 0]);
+  assert.deepEqual([v.verifyAll([VERIFIED_REF()]).status, v.verifyAll([VERIFIED_REF()]).code], ['VERIFIED', null]);
+  assert.equal(v.verifyAll([INVALID_REF()]).status, 'INVALID');
+  assert.equal(v.verifyAll([UNVERIFIABLE_REF()]).status, 'UNVERIFIABLE');
+  assert.equal(v.verifyAll([ERROR_REF()]).status, 'ERROR');
+  const mixed = v.verifyAll([VERIFIED_REF(), UNVERIFIABLE_REF(), INVALID_REF(), ERROR_REF()]);
+  assert.equal(mixed.status, 'ERROR');
+  assert.deepEqual({ ...mixed.counts }, { VERIFIED: 1, INVALID: 1, UNVERIFIABLE: 1, ERROR: 1 });
+});
+
+test('aggregate invariant: VERIFIED iff non-empty and every result is VERIFIED (randomized)', () => {
+  const v = fastVerifier();
+  const makers = [VERIFIED_REF, INVALID_REF, UNVERIFIABLE_REF, ERROR_REF, null];
+  let seed = 0x5eed;
+  const rand = (n) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  for (let round = 0; round < 300; round++) {
+    const length = rand(7);
+    const refs = [];
+    refs.length = length;
+    for (let i = 0; i < length; i++) {
+      const make = makers[rand(makers.length)];
+      if (make) refs[i] = make(); // null maker leaves a hole
+    }
+    const r = v.verifyAll(refs);
+    assert.equal(r.results.length, length);
+    const statuses = r.results.map((x) => x.status);
+    const expected =
+      length === 0 ? 'UNVERIFIABLE'
+        : statuses.includes('ERROR') ? 'ERROR'
+          : statuses.includes('INVALID') ? 'INVALID'
+            : statuses.includes('UNVERIFIABLE') ? 'UNVERIFIABLE'
+              : 'VERIFIED';
+    assert.equal(r.status, expected, JSON.stringify(statuses));
+    if (r.status === 'VERIFIED') assert.ok(length > 0 && statuses.every((s) => s === 'VERIFIED'));
+  }
+});
+
+test('L-2: holes are INVALID per index and inherited index values are ignored', () => {
+  const v = fastVerifier();
+  const sparse = [VERIFIED_REF(), , VERIFIED_REF()]; // eslint-disable-line no-sparse-arrays
+  const r = v.verifyAll(sparse);
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(r.results.map((x) => [x.status, x.code]), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_MISSING'], ['VERIFIED', null]]);
+  assert.equal(v.verifyAll(new Array(3)).status, 'INVALID');
+
+  let polluted;
+  let pollutedLengthOnly;
+  Object.defineProperty(Array.prototype, '1', { value: VERIFIED_REF(), configurable: true, writable: true });
+  Object.defineProperty(Array.prototype, '0', { value: VERIFIED_REF(), configurable: true, writable: true });
+  try {
+    polluted = v.verifyAll([VERIFIED_REF(), , VERIFIED_REF()]); // eslint-disable-line no-sparse-arrays
+    const onlyLength = [];
+    onlyLength.length = 2;
+    pollutedLengthOnly = v.verifyAll(onlyLength);
+  } finally {
+    delete Array.prototype[0];
+    delete Array.prototype[1];
+    // Array.prototype is an Array: defining indexes grew its length, which delete does not undo.
+    Array.prototype.length = 0;
+  }
+  assert.equal(polluted.status, 'INVALID');
+  assert.deepEqual(pick(polluted.results[1]), ['INVALID', 'E_EVIDENCE_REF_MISSING']);
+  assert.equal(pollutedLengthOnly.status, 'INVALID');
+  assert.equal(pollutedLengthOnly.counts.INVALID, 2);
+});
+
+test('collections: throwing traps are per-index ERROR; unreadable collections are ERROR', () => {
+  const v = fastVerifier();
+  const target = [VERIFIED_REF(), VERIFIED_REF()];
+  const throwOnIndex = new Proxy(target, {
+    get(t, k) {
+      if (k === '1') throw new Error('index');
+      return t[k];
+    },
+  });
+  // Elements are read through own descriptors, so a throwing get trap is never reached.
+  const a = v.verifyAll(throwOnIndex);
+  assert.equal(a.status, 'VERIFIED');
+  assert.equal(a.results.length, 2);
+  const throwOnOwn = new Proxy(target, {
+    getOwnPropertyDescriptor(t, k) {
+      if (k === '0') throw new Error('own');
+      return Reflect.getOwnPropertyDescriptor(t, k);
+    },
+  });
+  const b = v.verifyAll(throwOnOwn);
+  assert.deepEqual(b.results.map((x) => x.status), ['ERROR', 'VERIFIED']);
+  assert.equal(b.status, 'ERROR');
+
+  const { proxy, revoke } = Proxy.revocable([VERIFIED_REF()], {});
+  revoke();
+  rejected(v.verifyAll(proxy), 'E_EVIDENCE_COLLECTION_UNREADABLE');
+  const lengthThrows = new Proxy([VERIFIED_REF()], {
+    get(t, k) {
+      if (k === 'length') throw new Error('length');
+      return t[k];
+    },
+  });
+  rejected(v.verifyAll(lengthThrows), 'E_EVIDENCE_COLLECTION_UNREADABLE');
+});
+
+test('collections: length is read once even when a Proxy changes it between reads', () => {
+  const v = fastVerifier();
+  const { proxy, reads } = lengthProxy([VERIFIED_REF()], (n) => (n === 1 ? 1 : 1e9));
+  const r = v.verifyAll(proxy);
+  assert.equal(reads.length, 1);
+  assert.equal(r.status, 'VERIFIED');
+  assert.equal(r.results.length, 1);
+  const shrinking = lengthProxy([VERIFIED_REF()], (n) => (n === 1 ? 2 : 0));
+  const s = v.verifyAll(shrinking.proxy);
+  assert.equal(shrinking.reads.length, 1);
+  assert.equal(s.status, 'INVALID', 'the reported second element does not exist');
+  assert.deepEqual(pick(s.results[1]), ['INVALID', 'E_EVIDENCE_REF_MISSING']);
+});
+
+test('collections: frozen arrays and frozen refs verify normally and are not modified', () => {
+  const v = fastVerifier();
+  const refs = Object.freeze([Object.freeze(VERIFIED_REF()), Object.freeze(VERIFIED_REF())]);
+  const r = v.verifyAll(refs);
+  assert.equal(r.status, 'VERIFIED');
+  assert.equal(r.results.length, 2);
+  assert.notEqual(r.results, refs);
+  assertDeepFrozen(r, 'verifyAll');
+  const bad = Object.freeze([Object.freeze(INVALID_REF())]);
+  assert.equal(v.verifyAll(bad).status, 'INVALID');
+});
+
+test('collections: each element is read once, through a single own-descriptor read', () => {
+  const v = fastVerifier();
+  const traps = [];
+  // A Proxy whose descriptor and get traps disagree: only the descriptor is consulted.
+  const disagreeing = new Proxy([, ], { // eslint-disable-line no-sparse-arrays
+    getOwnPropertyDescriptor(t, k) {
+      traps.push(`gopd:${String(k)}`);
+      return k === '0' ? { value: INVALID_REF(), writable: true, enumerable: true, configurable: true } : Reflect.getOwnPropertyDescriptor(t, k);
+    },
+    get(t, k) {
+      traps.push(`get:${String(k)}`);
+      return k === '0' ? VERIFIED_REF() : t[k];
+    },
+  });
+  const r = v.verifyAll(disagreeing);
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(traps, ['get:length', 'gopd:0']);
+  // An own accessor element runs exactly once; a setter-only element is not a ref.
+  let gets = 0;
+  const refs = [];
+  Object.defineProperty(refs, 0, { enumerable: true, get: () => { gets++; return VERIFIED_REF(); } });
+  Object.defineProperty(refs, 1, { enumerable: true, set() {} });
+  const a = v.verifyAll(refs);
+  assert.equal(gets, 1);
+  assert.deepEqual(a.results.map((x) => [x.status, x.code]), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_INVALID']]);
 });
