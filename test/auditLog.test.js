@@ -55,7 +55,7 @@ describe('GET /api/audit-log', () => {
   });
 
   it('accepts each of the newer action types as a valid filter', async () => {
-    for (const type of ['booking_reject', 'account_password_reset', 'account_delete', 'deposit_delete']) {
+    for (const type of ['booking_reject', 'account_password_reset', 'account_delete', 'deposit_delete', 'booking_checkout', 'sale_close']) {
       const response = await getAuditLog({ request: authedRequest(`https://x/api/audit-log?type=${type}`, managerToken), env });
       expect(response.status).toBe(200);
     }

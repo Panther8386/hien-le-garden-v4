@@ -3,6 +3,8 @@ const ACTION_TYPE_LABELS = {
   deposit_change: 'Đổi tiền cọc',
   booking_cancel: 'Huỷ đặt phòng',
   booking_reject: 'Từ chối đặt phòng',
+  booking_checkout: 'Trả phòng và thanh toán',
+  sale_close: 'Chốt và thanh toán order / Giờ Xanh',
   service_void: 'Huỷ dịch vụ',
   account_role_change: 'Đổi vai trò tài khoản',
   account_permission_change: 'Đổi quyền sắp xếp phòng',
@@ -54,6 +56,15 @@ function formatVnd(n) {
 
 function formatValue(actionType, value) {
   if (value == null) return '';
+  if (actionType === 'booking_checkout' || actionType === 'sale_close') {
+    if (value === 'checked_in') return 'Đang lưu trú';
+    if (value === 'open') return 'Đang mở';
+    try {
+      const settlement = JSON.parse(value);
+      if (actionType === 'booking_checkout') return `Đã trả phòng · Thu phòng ${formatVnd(settlement.roomDue)} · Thu dịch vụ ${formatVnd(settlement.servicesDue)} · Hoàn cọc ${formatVnd(settlement.refundAmount)}`;
+      return `Đã thanh toán ${formatVnd(settlement.total)} · ${settlement.paymentMethod === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}`;
+    } catch { return value; }
+  }
   if ((actionType === 'deposit_change' || actionType === 'deposit_delete') && /^\d+$/.test(value)) return formatVnd(value);
   return value;
 }

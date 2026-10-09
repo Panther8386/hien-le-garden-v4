@@ -436,27 +436,15 @@ describe('POST /api/gio-xanh-sessions/:id/close', () => {
     expect(txCount.n).toBe(1);
   });
 
-  it('rolls back the finance_transactions row and returns 500 if the session UPDATE throws after the finance INSERT already succeeded', async () => {
-    const originalPrepare = env.DB.prepare.bind(env.DB);
-    const failingDB = {
-      prepare(sql) {
-        if (typeof sql === 'string' && sql.trim().startsWith(`UPDATE gio_xanh_sessions`)) {
-          return {
-            bind() {
-              return {
-                async run() {
-                  throw new Error('Simulated DB failure between finance INSERT and session UPDATE');
-                },
-              };
-            },
-          };
-        }
-        return originalPrepare(sql);
-      },
-    };
-    const failingEnv = { ...env, DB: failingDB };
-
-    const response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env: failingEnv, params: { id: String(sessionId) } });
+  it('rolls back the receipt when the session UPDATE fails inside the batch', async () => {
+    await env.DB.prepare(`CREATE TRIGGER fail_gx_close BEFORE UPDATE OF status ON gio_xanh_sessions
+      WHEN NEW.status = 'closed' BEGIN SELECT RAISE(ABORT, 'test close failure'); END`).run();
+    let response;
+    try {
+      response = await closeSession({ request: authedRequest(`https://x/api/gio-xanh-sessions/${sessionId}/close`, receptionToken, 'POST', { paymentMethod: 'cash' }), env, params: { id: String(sessionId) } });
+    } finally {
+      await env.DB.prepare('DROP TRIGGER fail_gx_close').run();
+    }
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(typeof body.error).toBe('string');

@@ -51,17 +51,7 @@ for (const kind of ['gx', 'booking']) {
   }
 }
 function request() { return new Request('https://audit.invalid', {method:'POST',headers:{Cookie:`session=${token}`,'Content-Type':'application/json'},body:JSON.stringify({paymentMethod:'cash'})}); }
-function interleave(callback) {
-  let fired = false;
-  return {...env, DB:{
-    prepare(sql) {
-      const statement=env.DB.prepare(sql);
-      if (!/INSERT INTO finance_transactions/.test(sql)) return statement;
-      return {bind(...args) { const bound=statement.bind(...args); return {async run() { if(!fired){fired=true;await callback();} return bound.run(); }}; }};
-    },
-    batch(statements) {return env.DB.batch(statements);}
-  }};
-}
+function interleave(callback) { return envWithHookBefore(/INSERT INTO finance_transactions/, callback); }
 it.each(['add', 'void'])('Giờ Xanh rejects a stale total after concurrent %s, then retries correctly', async mutation => {
   const session=await env.DB.prepare("INSERT INTO gio_xanh_sessions(room_id,guest_name,status,opened_by,opened_at) VALUES(1,'Audit','open','audit','2026-10-09')").run();
   const id=session.meta.last_row_id;
