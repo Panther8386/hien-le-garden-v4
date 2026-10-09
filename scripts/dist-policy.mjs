@@ -8,7 +8,7 @@ const RASTER_POSTERS = ['.png', '.jpg', '.jpeg', '.webp'];
 const VIDEO = ['.mp4', '.webm'];
 const FONTS = ['.woff', '.woff2'];
 
-// Public top-level FILES, copied as-is (exact, case-sensitive names).
+// Public top-level FILES (exact, case-sensitive names).
 export const PUBLIC_FILES = new Set([
   'index.html',
   '_redirects', // Pages reads it from the upload directory as routing config
@@ -52,6 +52,7 @@ export const PRIVATE_ENTRIES = new Set([
   'package-lock.json',
   'vitest.config.js',
   '.gitignore',
+  '.gitattributes',
   '.assetsignore',
   '.env.example',
 ]);

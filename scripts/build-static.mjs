@@ -25,7 +25,7 @@
 // Usage: node scripts/build-static.mjs      (Node >= 18, no dependencies)
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PUBLIC_FILES, PUBLIC_DIRS, PRIVATE_ENTRIES, allowlistReason } from './dist-policy.mjs';
@@ -34,6 +34,19 @@ import { PUBLIC_FILES, PUBLIC_DIRS, PRIVATE_ENTRIES, allowlistReason } from './d
 export { PUBLIC_FILES, PUBLIC_DIRS, PRIVATE_ENTRIES } from './dist-policy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const TEXT_EXTENSIONS = new Set(['.html', '.css', '.js', '.svg', '.json', '.txt', '.xml']);
+
+// Editor-created CRLF must not change a public artifact. Work byte-wise so
+// content/encoding are preserved; binary assets never pass through this path.
+export function normalizeTextLines(bytes) {
+  const normalized = Buffer.allocUnsafe(bytes.length);
+  let length = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 13 && bytes[i + 1] === 10) continue;
+    normalized[length++] = bytes[i];
+  }
+  return normalized.subarray(0, length);
+}
 
 function repoRoot() {
   const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: scriptDir, encoding: 'utf8' }).trim();
@@ -107,11 +120,18 @@ export function build({ quiet = false } = {}) {
     const st = lstatSync(src);
     if (!st.isFile()) throw new Error(`not a regular file: ${rel}`);
     mkdirSync(path.dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-    totalBytes += st.size;
+    let size = st.size;
+    if (rel === '_redirects' || TEXT_EXTENSIONS.has(path.extname(rel).toLowerCase())) {
+      const bytes = normalizeTextLines(readFileSync(src));
+      writeFileSync(dest, bytes);
+      size = bytes.length;
+    } else {
+      copyFileSync(src, dest);
+    }
+    totalBytes += size;
     const key = rel.includes('/') ? `${rel.split('/')[0]}/` : '(top-level files)';
     const agg = perTop.get(key) || { files: 0, bytes: 0 };
-    agg.files++; agg.bytes += st.size;
+    agg.files++; agg.bytes += size;
     perTop.set(key, agg);
   }
 
