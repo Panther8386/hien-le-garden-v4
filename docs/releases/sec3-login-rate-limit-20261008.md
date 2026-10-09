@@ -22,3 +22,7 @@ Bộ đếm dùng D1 chung, đặt chỗ nguyên tử trước truy vấn tài k
 Sau staging đạt mới xem xét phát hành production. Production cũng phải áp dụng migration trước code; workflow deploy hiện tại không tự áp dụng migration. Migration chỉ thêm bảng/index, tương thích code cũ; rollback code cũ giữ bảng nhưng bỏ giới hạn ứng dụng, phải ghi rõ trạng thái bảo vệ. Không xoá bảng trong rollback thông thường.
 
 Tham chiếu chính thức: [D1 batch transactions](https://developers.cloudflare.com/d1/worker-api/d1-database/), [CF-Connecting-IP và giới hạn với Worker subrequests](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Trust boundary là Cloudflare ingress và các Worker cùng zone do chủ hệ thống kiểm soát.
+
+## CI và test hết hạn — cập nhật 09/10/2026
+
+Draft PR #12, nguồn ban đầu `6ef3cbb`: R-1 PASS; Tests trượt đúng test cũ `auth.test.js` “returns null once the token has expired” (1.600/1.601 isolated đạt). Đã sửa fixture test dùng thời điểm hết hạn quá khứ rõ ràng thay vì TTL 10ms/chờ 30ms. Không sửa logic token hoặc thời hạn vận hành. Kiểm tra local liên quan sau sửa: 5 file / **66/66 PASS**. Cần CI lại trên head mới; staging vẫn chờ quyền Wrangler.

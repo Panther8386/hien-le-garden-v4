@@ -90,8 +90,7 @@ describe('createPending2FAToken / getPendingStaffId / deletePendingToken', () =>
 
   it('returns null once the token has expired', async () => {
     await insertStaff();
-    const token = await createPending2FAToken(env.DB, 10, 10);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    const token = await createPending2FAToken(env.DB, 10, { expiresAt: '2000-01-01T00:00:00.000Z' });
     expect(await getPendingStaffId(env.DB, token)).toBeNull();
   });
 
