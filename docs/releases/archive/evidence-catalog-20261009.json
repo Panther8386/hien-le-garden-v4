@@ -1,0 +1,91 @@
+{
+  "packages": [
+    {
+      "path": "test-results/admin-refresh/HLG-ADMIN-SPEC2-20261007-c3b4a67-acceptance.zip",
+      "bytes": 4820283,
+      "sha256": "809eb544e17e059f5b6cf8ce6130d4c10730447272f25dcfa3b375f2ee79ea95"
+    },
+    {
+      "path": "test-results/admin-refresh/HLG-ADMIN-SPEC2-20261007-c3b4a67-handoff.zip",
+      "bytes": 3188182,
+      "sha256": "a8f5d9812f5ffaedeecbcfc253dabaa1554cceaaedfd913254bf9e2b4a37743e"
+    },
+    {
+      "path": "test-results/admin-refresh/HLG-ADMIN-SPEC2-20261007-handoff.zip",
+      "bytes": 2998938,
+      "sha256": "5af3aa89250057079b610b3b13e69b45ff82ccd8fc50ef993c630397c4ac270b"
+    },
+    {
+      "path": "test-results/admin-refresh/verified-621234c/HLG-ADMIN-SPEC2-20261007-handoff.zip",
+      "bytes": 2998938,
+      "sha256": "5af3aa89250057079b610b3b13e69b45ff82ccd8fc50ef993c630397c4ac270b"
+    },
+    {
+      "path": "test-results/atomic-checkout/HLG-atomic-checkout-5fa987c-staging.zip",
+      "bytes": 652742,
+      "sha256": "2649183f588c1c9b118ca56ab650ba0d0fbee8bd73c0240dc6b12d1ed3621e37"
+    },
+    {
+      "path": "test-results/checkout-audit/HLG-checkout-dbf9d3e-staging.zip",
+      "bytes": 334219,
+      "sha256": "fdabab9bccde285379b90e3b89bf57ae3d42807fd77c7e35ec84604521cecdaf"
+    },
+    {
+      "path": "test-results/combined-release/HLG-production-73048e8.zip",
+      "bytes": 356365,
+      "sha256": "431342e4e137f2a42d508053cd6f7edfb5e2507771affbaa3af4b11c80c8ab97"
+    },
+    {
+      "path": "test-results/deposit-reconcile/HLG-production-5a359f4.zip",
+      "bytes": 347532,
+      "sha256": "3d55cdf076a00d7a66723c326f56b97b08242acd57e16d31d1dc4214d7c74b25"
+    },
+    {
+      "path": "test-results/gio-xanh-reconcile/HLG-checkout-gio-xanh-087bfee-staging.zip",
+      "bytes": 797683,
+      "sha256": "d7090b95836d09d929cd52b762e7a6b2164a1fece0dd0809e03a66f985b87fd7"
+    },
+    {
+      "path": "test-results/gio-xanh-reconcile/HLG-checkout-production-809511c.zip",
+      "bytes": 17691,
+      "sha256": "3bdd8c5d8ed369c23b0a42220bdee79d8a79efe11a142e646ac0960a880c6c7a"
+    },
+    {
+      "path": "test-results/gio-xanh-reconcile/HLG-staging-acceptance-087bfee.zip",
+      "bytes": 207340,
+      "sha256": "fd2b239be4214032f6c6c49408dbd81372b1167f3c3d2b776181dde3b025dc77"
+    },
+    {
+      "path": "test-results/refund-fix/HLG-production-babe39d.zip",
+      "bytes": 33485,
+      "sha256": "6bf7910850d54af2d123e00c2c52fc1d1ad4000aee34fc2dcaa971e8b695c1b3"
+    },
+    {
+      "path": "test-results/refund-fix/HLG-refund-fix-c988c81.zip",
+      "bytes": 324056,
+      "sha256": "92c2eb363d18c035e62f5af3ee2227c8c0c89e9245627576d3ac5d4e6ad00c91"
+    },
+    {
+      "path": "test-results/sec3/HLG-production-49ef1da.zip",
+      "bytes": 52933,
+      "sha256": "89b44942ea37a1a3957e83f6a8683515e854347789092763fe6c202bf0f4d95b"
+    },
+    {
+      "path": "test-results/sec3/HLG-SEC3-19561f0-review.zip",
+      "bytes": 32956,
+      "sha256": "cd9ee7568386ff7982b65951572157d512e0e3fba26f194ee7a1e2ac6526cc91"
+    },
+    {
+      "path": "test-results/sec3/HLG-SEC3-19561f0-staging.zip",
+      "bytes": 39685,
+      "sha256": "61213a572bd7600e8ba0997c5c33ec076e7d38892289650553acc96e1a256a54"
+    },
+    {
+      "path": "test-results/staging-cleanup/HLG-staging-cleanup-20261009.zip",
+      "bytes": 7510,
+      "sha256": "643f0543dd833b25be2779fda8ac5321ca5de918caf26aeb076f0324fda8c035"
+    }
+  ],
+  "createdAt": "2026-10-09T07:36:31.3846408Z",
+  "storage": "Reports/catalog in Git; binary evidence retained locally"
+}
