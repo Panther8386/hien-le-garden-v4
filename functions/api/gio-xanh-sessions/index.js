@@ -1,6 +1,7 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hasPermission } from '../../../lib/permissions.js';
 import { redactContact } from '../../../lib/redactContact.js';
+import { withGioXanhPaymentStatus } from '../../../lib/gioXanhPaymentStatus.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -20,12 +21,15 @@ export async function onRequestGet({ request, env }) {
   const { results } = await env.DB.prepare(
     `SELECT s.id, s.room_id AS roomId, r.name AS roomName, s.guest_name AS guestName, s.phone, s.status,
        s.opened_by AS openedBy, s.opened_at AS openedAt, s.is_hidden AS isHidden,
+       s.closed_at AS closedAt, s.payment_method AS paymentMethod, s.total_amount AS totalAmount,
+       s.finance_transaction_id AS financeTransactionId, f.id AS receiptId, f.type AS receiptType,
+       f.category AS receiptCategory, f.amount AS receiptAmount, f.status AS receiptStatus, f.voided_at AS receiptVoidedAt,
        COALESCE((SELECT SUM(amount) FROM gio_xanh_session_items WHERE session_id = s.id AND status = 'posted'), 0) AS currentTotal
-     FROM gio_xanh_sessions s JOIN rooms r ON r.id = s.room_id
+     FROM gio_xanh_sessions s JOIN rooms r ON r.id = s.room_id LEFT JOIN finance_transactions f ON f.id = s.finance_transaction_id
      WHERE s.status = ?${includeHidden ? '' : ' AND s.is_hidden = 0'} ORDER BY s.opened_at ASC`
   ).bind(status).all();
 
-  const rows = redactContact(auth, results.map((r) => ({ ...r, isHidden: !!r.isHidden })));
+  const rows = redactContact(auth, results.map((r) => withGioXanhPaymentStatus({ ...r, isHidden: !!r.isHidden })));
   return new Response(JSON.stringify(rows), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
