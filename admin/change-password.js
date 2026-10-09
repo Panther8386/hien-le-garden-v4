@@ -3,9 +3,9 @@ function mountChangePasswordWidget() {
   const container = document.createElement('div');
   container.innerHTML = `
     <form id="changePasswordForm">
-      <label>Mật khẩu hiện tại <input type="password" name="currentPassword" required /></label>
-      <label>Mật khẩu mới <input type="password" name="newPassword" minlength="8" required /></label>
-      <label>Gõ lại mật khẩu mới <input type="password" name="confirmNewPassword" minlength="8" required /></label>
+      <label>Mật khẩu hiện tại <input type="password" name="currentPassword" maxlength="256" autocomplete="current-password" required /></label>
+      <label>Mật khẩu mới <input type="password" name="newPassword" minlength="8" maxlength="256" autocomplete="new-password" required /></label>
+      <label>Gõ lại mật khẩu mới <input type="password" name="confirmNewPassword" minlength="8" maxlength="256" autocomplete="new-password" required /></label>
       <button type="submit">Đổi mật khẩu</button>
       <p id="changePasswordError" class="error"></p>
       <p id="changePasswordSuccess" class="error" style="color:#7FD99A;"></p>
@@ -26,7 +26,10 @@ function mountChangePasswordWidget() {
       errorEl.textContent = 'Mật khẩu mới nhập lại không khớp';
       return;
     }
-
+    const submit = event.target.querySelector('button[type=submit]');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    try {
     const response = await fetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,7 +43,17 @@ function mountChangePasswordWidget() {
     }
 
     event.target.reset();
-    successEl.textContent = 'Đổi mật khẩu thành công.';
+    event.target.querySelectorAll('input').forEach(input => { input.disabled = true; });
+    successEl.textContent = 'Đã đổi mật khẩu và đăng xuất mọi phiên. ';
+    const login = document.createElement('a');
+    login.href = '/admin';
+    login.textContent = 'Đăng nhập lại';
+    successEl.appendChild(login);
+    } catch {
+      errorEl.textContent = 'Không nhận được phản hồi. Vui lòng đăng nhập lại để kiểm tra trước khi thử lại.';
+    } finally {
+      submit.disabled = !!event.target.querySelector('input:disabled');
+    }
   });
 }
 

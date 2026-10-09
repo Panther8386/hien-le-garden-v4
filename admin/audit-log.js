@@ -9,6 +9,7 @@ const ACTION_TYPE_LABELS = {
   account_role_change: 'Đổi vai trò tài khoản',
   account_permission_change: 'Đổi quyền sắp xếp phòng',
   account_password_reset: 'Đặt lại mật khẩu',
+  account_password_change: 'Tự đổi mật khẩu và đăng xuất mọi phiên',
   account_delete: 'Xoá tài khoản',
   finance_transaction_create: 'Tạo giao dịch thu chi',
   finance_transaction_update: 'Sửa giao dịch thu chi',
