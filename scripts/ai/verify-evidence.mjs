@@ -449,9 +449,16 @@ export function createEvidenceVerifier({
       } catch {
         r = result('ERROR', 'E_EVIDENCE_REF_UNREADABLE', null);
       }
-      results[i] = r;
+      // Own data property, so an inherited index setter cannot intercept the write (I-1).
+      let stored = false;
+      try {
+        stored = Reflect.defineProperty(results, i, { __proto__: null, value: r, writable: false, enumerable: true, configurable: false });
+      } catch {
+        stored = false;
+      }
+      if (!stored) return rejectCollection('E_EVIDENCE_INTERNAL');
     }
-    return aggregate(results);
+    return aggregate(results, length);
   }
 
   return Object.freeze({ verify, verifyAll });
@@ -464,23 +471,28 @@ function rejectCollection(code) {
 }
 
 // Explicit fail-closed aggregation with no default status: VERIFIED only when there is at least
-// one result and every result is VERIFIED; an unexpected status counts as ERROR.
-function aggregate(results) {
+// one result and every result is VERIFIED; an unexpected status counts as ERROR. `length` is the
+// validated input length; the stored results must match it exactly.
+function aggregate(results, length) {
   const counts = emptyCounts();
-  for (let i = 0; i < results.length; i++) {
-    const status = results[i].status;
+  if (results.length !== length) {
+    return Object.freeze({ status: 'ERROR', code: 'E_EVIDENCE_INTERNAL', results: Object.freeze(results), counts: Object.freeze(counts) });
+  }
+  for (let i = 0; i < length; i++) {
+    const status = Object.hasOwn(results, i) ? results[i].status : undefined;
     if (status === 'VERIFIED' || status === 'INVALID' || status === 'UNVERIFIABLE') counts[status]++;
     else counts.ERROR++;
   }
   let status;
   let code = null;
-  if (results.length === 0) {
+  if (length === 0) {
     status = 'UNVERIFIABLE';
     code = 'E_EVIDENCE_NONE';
   } else if (counts.ERROR > 0) status = 'ERROR';
   else if (counts.INVALID > 0) status = 'INVALID';
   else if (counts.UNVERIFIABLE > 0) status = 'UNVERIFIABLE';
-  else if (counts.VERIFIED === results.length) status = 'VERIFIED';
-  else status = 'ERROR';
+  else if (length > 0 && counts.VERIFIED === length && counts.VERIFIED + counts.INVALID + counts.UNVERIFIABLE + counts.ERROR === length) {
+    status = 'VERIFIED';
+  } else status = 'ERROR';
   return Object.freeze({ status, code, results: Object.freeze(results), counts: Object.freeze(counts) });
 }

@@ -1404,3 +1404,55 @@ test('collections: each element is read once, through a single own-descriptor re
   assert.equal(gets, 1);
   assert.deepEqual(a.results.map((x) => [x.status, x.code]), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_INVALID']]);
 });
+
+// ---------------------------------------------------------------- A3.5b.2R.2: result array integrity (I-1)
+
+test('I-1: an inherited Array.prototype setter cannot drop a result (child process)', () => {
+  const moduleUrl = pathToFileURL(fileURLToPath(new URL('../../scripts/ai/verify-evidence.mjs', import.meta.url))).href;
+  // The setter-only accessor is installed in a separate process, which exits afterwards.
+  const script = `
+    const { createEvidenceVerifier } = await import(${JSON.stringify(moduleUrl)});
+    const v = createEvidenceVerifier({ repoRoot: '.', expectedCommit: '${C2}', resolver: {
+      resolveCommit: (c) => ({ ok: true, commit: c }), resolveRegularBlob: () => ({ ok: false, code: 'E_GIT_FAILED' }),
+      readBlob: () => ({ ok: false, code: 'E_GIT_FAILED' }), resolveCommitTree: () => ({ ok: false, code: 'E_GIT_FAILED' }) } });
+    let intercepted = 0;
+    Object.defineProperty(Array.prototype, '1', { configurable: true, set() { intercepted++; } });
+    const r = v.verifyAll([{ kind: 'git_commit', commit: '${C2}' }, { kind: 'git_commit', commit: '${C1}' }]);
+    console.log(JSON.stringify({
+      status: r.status, n: r.results.length, own1: Object.hasOwn(r.results, 1),
+      r1: r.results[1] && [r.results[1].status, r.results[1].code], counts: r.counts, frozen: Object.isFrozen(r.results), intercepted,
+    }));
+  `;
+  const out = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert.notEqual(out.status, 'VERIFIED');
+  assert.deepEqual(out, {
+    status: 'INVALID',
+    n: 2,
+    own1: true,
+    r1: ['INVALID', 'E_EVIDENCE_SHA_MISMATCH'],
+    counts: { VERIFIED: 1, INVALID: 1, UNVERIFIABLE: 0, ERROR: 0 },
+    frozen: true,
+    intercepted: 0,
+  });
+});
+
+test('I-1: results are own, frozen data properties matching the input length', () => {
+  const v = fastVerifier();
+  const two = v.verifyAll([VERIFIED_REF(), VERIFIED_REF()]);
+  assert.equal(two.status, 'VERIFIED');
+  assert.equal(two.results.length, 2);
+  for (let i = 0; i < 2; i++) {
+    const d = Object.getOwnPropertyDescriptor(two.results, i);
+    assert.deepEqual([d.writable, d.configurable, d.enumerable], [false, false, true]);
+  }
+  assert.ok(Object.isFrozen(two) && Object.isFrozen(two.results) && Object.isFrozen(two.counts));
+  assert.deepEqual({ ...two.counts }, { VERIFIED: 2, INVALID: 0, UNVERIFIABLE: 0, ERROR: 0 });
+  const sparse = v.verifyAll([VERIFIED_REF(), , VERIFIED_REF()]); // eslint-disable-line no-sparse-arrays
+  assert.equal(sparse.status, 'INVALID');
+  assert.equal(sparse.results.length, 3);
+  assert.deepEqual(pick(sparse.results[1]), ['INVALID', 'E_EVIDENCE_REF_MISSING']);
+  // Precedence is unchanged.
+  assert.equal(v.verifyAll([VERIFIED_REF(), UNVERIFIABLE_REF()]).status, 'UNVERIFIABLE');
+  assert.equal(v.verifyAll([UNVERIFIABLE_REF(), INVALID_REF()]).status, 'INVALID');
+  assert.equal(v.verifyAll([INVALID_REF(), ERROR_REF(), VERIFIED_REF()]).status, 'ERROR');
+});
