@@ -1,6 +1,7 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hasRoomConflict } from '../../../lib/bookingAvailability.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
+import { insertWithCreationAudit } from '../../../lib/creationAudit.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -77,12 +78,16 @@ export async function onRequestPost({ request, env }) {
   }
 
   const now = new Date().toISOString();
-  const result = await env.DB.prepare(
+  const insert = env.DB.prepare(
     `INSERT INTO bookings (guest_name, phone, email, room_type, room_id, check_in, check_out, guests_count, notes, status, source, created_at, created_by, confirmed_by, confirmed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?) RETURNING id`
   )
-    .bind(guestName.trim(), phone.trim(), email || null, roomType, roomId, checkIn, checkOut, guestsCount || null, notes || null, source, now, auth.username, auth.username, now)
-    .run();
+    .bind(guestName.trim(), phone.trim(), email || null, roomType, roomId, checkIn, checkOut, guestsCount || null, notes || null, source, now, auth.username, auth.username, now);
+  let id;
+  try {
+    id = await insertWithCreationAudit(env.DB, insert, 'booking', auth.username, now,
+      { source, status: 'confirmed', roomType, roomId, checkIn, checkOut });
+  } catch { return jsonError('Không thể tạo đặt phòng lúc này. Vui lòng thử lại sau.', 503); }
 
-  return new Response(JSON.stringify({ id: result.meta.last_row_id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }
