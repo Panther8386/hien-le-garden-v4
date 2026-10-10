@@ -1,5 +1,6 @@
 import { requireAuth } from '../../../lib/requireAuth.js';
 import { hashPassword } from '../../../lib/auth.js';
+import { insertWithCreationAudit } from '../../../lib/creationAudit.js';
 import { missingRolePermissions, outranks, HIERARCHY_ERROR } from '../../../lib/staffGuards.js';
 
 function jsonError(message, status) {
@@ -61,11 +62,18 @@ export async function onRequestPost({ request, env }) {
   }
 
   const passwordHash = await hashPassword(password);
-  const result = await env.DB.prepare(
-    `INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)`
+  const now = new Date().toISOString();
+  const insert = env.DB.prepare(
+    `INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES (?, ?, ?, ?) RETURNING id`
   )
-    .bind(username, passwordHash, role, new Date().toISOString())
-    .run();
+    .bind(username, passwordHash, role, now);
+  let id;
+  try {
+    id = await insertWithCreationAudit(env.DB, insert, 'staff_account', auth.username, now, { role });
+  } catch (error) {
+    if (/UNIQUE constraint failed: staff_accounts\.username/.test(String(error?.message))) return jsonError('Tên đăng nhập đã tồn tại', 409);
+    return jsonError('Không thể tạo tài khoản lúc này. Vui lòng thử lại sau.', 503);
+  }
 
-  return new Response(JSON.stringify({ id: result.meta.last_row_id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }

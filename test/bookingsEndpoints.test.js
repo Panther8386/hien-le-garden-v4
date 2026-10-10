@@ -9,12 +9,17 @@ import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
 import { envWithHookBefore } from './helpers/raceEnv.js';
 
+// These cases exercise booking fields/business behavior; real protection is
+// covered without this mock in publicBookingProtection.test.js.
+vi.mock('../lib/turnstile.js', async (original) => ({ ...await original(), verifyTurnstile: vi.fn(async () => true) }));
+
 let managerToken;
 let observerToken;
 let receptionToken;
 let adminToken;
 
 beforeEach(async () => {
+  await env.DB.exec('DELETE FROM login_rate_limits');
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
   await env.DB.exec('DELETE FROM bookings');
@@ -34,7 +39,7 @@ beforeEach(async () => {
 });
 
 function postReq(url, body) {
-  return new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return new Request(url.replace('https://x/api/bookings', 'https://hienlegarden.vn/api/bookings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
 
 function authedRequest(url, token, method = 'GET') {
@@ -128,13 +133,13 @@ describe('POST /api/bookings', () => {
   });
 
   it('rejects a malformed JSON body with 400 instead of crashing', async () => {
-    const request = new Request('https://x/api/bookings', { method: 'POST', body: 'not json' });
+    const request = new Request('https://hienlegarden.vn/api/bookings', { method: 'POST', body: 'not json' });
     const response = await createBooking({ request, env });
     expect(response.status).toBe(400);
   });
 
   it('rejects a null JSON body with 400 instead of crashing', async () => {
-    const request = new Request('https://x/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'null' });
+    const request = new Request('https://hienlegarden.vn/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'null' });
     const response = await createBooking({ request, env });
     expect(response.status).toBe(400);
   });
@@ -169,7 +174,7 @@ describe('POST /api/bookings — FA-3 body and field size limits', () => {
   function rawReq(text, { contentLength } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (contentLength !== undefined) headers['Content-Length'] = String(contentLength);
-    return new Request('https://x/api/bookings', { method: 'POST', headers, body: text });
+    return new Request('https://hienlegarden.vn/api/bookings', { method: 'POST', headers, body: text });
   }
 
   function streamReq(text, chunkSize = 1024) {
@@ -182,7 +187,7 @@ describe('POST /api/bookings — FA-3 body and field size limits', () => {
         offset += chunkSize;
       },
     });
-    return new Request('https://x/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: stream, duplex: 'half' });
+    return new Request('https://hienlegarden.vn/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: stream, duplex: 'half' });
   }
 
   function paddedBody(totalBytes) {
@@ -235,6 +240,8 @@ describe('POST /api/bookings — FA-3 body and field size limits', () => {
 
   it('rejects malformed emails with 400 Email không hợp lệ', async () => {
     for (const email of ['a@b', 'a@@b.c', '@b.c', 'a@.c', 'a@b.', 'a b@c.d', 'a@b c.d', 'a\t@b.c', 42, {}, ['a@b.c']]) {
+      // Independent field-validation examples, not a burst test.
+      await env.DB.exec('DELETE FROM login_rate_limits');
       const response = await expectRejected(postReq('https://x/api/bookings', { ...validBody, email }), 400);
       expect(await response.json(), JSON.stringify(email)).toEqual({ error: 'Email không hợp lệ' });
     }
