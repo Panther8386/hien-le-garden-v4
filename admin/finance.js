@@ -155,8 +155,17 @@ document.getElementById('financeVoidCancelBtn').addEventListener('click', closeV
 
 document.getElementById('financeVoidConfirmBtn').addEventListener('click', async () => {
   if (!pendingVoidId) return;
-  const ok = await voidTransaction(pendingVoidId);
-  if (ok) closeVoidConfirm();
+  const button = document.getElementById('financeVoidConfirmBtn');
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const ok = await voidTransaction(pendingVoidId);
+    if (ok) closeVoidConfirm();
+  } catch {
+    document.getElementById('financeVoidError').textContent = 'Không kết nối được máy chủ. Vui lòng tải lại để kiểm tra giao dịch.';
+  } finally {
+    button.disabled = false;
+  }
 });
 
 let currentPage = 1;
@@ -471,12 +480,18 @@ async function loadTransactions(filters) {
   renderChart();
 }
 
-async function voidTransaction(id) {
+async function voidTransaction(id, confirmCancelledDeposit = false) {
   const errorEl = document.getElementById('financeVoidError');
   errorEl.textContent = '';
-  const response = await fetch(`/api/finance/transactions/${id}/void`, { method: 'PATCH' });
+  const response = await fetch(`/api/finance/transactions/${id}/void`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmCancelledDeposit }),
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    if (body.code === 'CONFIRM_CANCELLED_DEPOSIT' && !confirmCancelledDeposit && window.confirm(body.error)) {
+      return voidTransaction(id, true);
+    }
     errorEl.textContent = body.error || 'Có lỗi khi huỷ giao dịch';
     return false;
   }

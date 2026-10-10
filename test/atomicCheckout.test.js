@@ -82,6 +82,7 @@ for (const kind of ['booking', 'order', 'gx']) {
     const state = await snapshot(f);
     expect(state.parent.status).toBe(f.closed);
     expect(state.finance).toHaveLength(kind === 'booking' ? 2 : 1);
+    if (kind === 'booking') expect(state.finance.every(row => row.checkout_booking_id === f.id)).toBe(true);
     expect(state.audit).toHaveLength(1);
     if (kind !== 'booking') {
       expect(state.parent.finance_transaction_id).toBe(state.finance[0].id);

@@ -6,6 +6,7 @@ import { onRequestPatch as voidTransaction } from '../functions/api/finance/tran
 import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
 import { setOverride } from './helpers/permissions.js';
+import { envWithHookBefore } from './helpers/raceEnv.js';
 
 let managerToken, receptionToken, adminToken, observerToken;
 let managerStaffId;
@@ -666,6 +667,98 @@ describe('PATCH /api/finance/transactions/:id/void', () => {
   it('rejects reception (403)', async () => {
     const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, receptionToken, 'PATCH', {}), env, params: { id: String(txId) } });
     expect(response.status).toBe(403);
+  });
+
+  async function booking(status = 'cancelled') {
+    const row = await env.DB.prepare(`INSERT INTO bookings
+      (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+      VALUES ('Fixture', '000', 'circle', '2099-01-01', '2099-01-02', ?, 'website', '2026-08-01')`).bind(status).run();
+    return row.meta.last_row_id;
+  }
+
+  async function attempt(body = {}) {
+    return voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, adminToken, 'PATCH', body), env, params: { id: String(txId) } });
+  }
+
+  async function expectUnchanged() {
+    expect((await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE id = ?').bind(txId).first()).voided_at).toBeNull();
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'finance_transaction_void'").first()).n).toBe(0);
+  }
+
+  it('blocks checkout receipts even with a confirmation flag, without an audit or money change', async () => {
+    const id = await booking('checked_out');
+    await env.DB.prepare('UPDATE finance_transactions SET checkout_booking_id = ? WHERE id = ?').bind(id, txId).run();
+    expect((await attempt({ confirmCancelledDeposit: true })).status).toBe(409);
+    await expectUnchanged();
+  });
+
+  it('protects legacy atomic checkout receipts using exact audit provenance without linking manual income', async () => {
+    const row = await env.DB.prepare('SELECT created_at, created_by FROM finance_transactions WHERE id = ?').bind(txId).first();
+    await env.DB.prepare(`UPDATE finance_transactions SET category = 'dich_vu', note = 'Tiền phòng — Fixture' WHERE id = ?`).bind(txId).run();
+    await env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, new_value, actor, created_at)
+      VALUES ('booking_checkout', 'booking', 123, 'Fixture', ?, ?, ?)`).bind(JSON.stringify({ roomDue: 400000 }), row.created_by, row.created_at).run();
+    expect((await attempt()).status).toBe(409);
+    await expectUnchanged();
+    await env.DB.prepare(`UPDATE finance_transactions SET created_at = '2026-08-06T00:00:00Z' WHERE id = ?`).bind(txId).run();
+    expect((await attempt()).status).toBe(200);
+  });
+
+  it('requires explicit confirmation for a cancelled unrefunded deposit and preserves the deposit until reconciliation', async () => {
+    const id = await booking();
+    await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+      VALUES (?, 400000, 'cash', ?, 'fixture', '2026-08-01')`).bind(id, txId).run();
+    const denied = await attempt();
+    expect(denied.status).toBe(409);
+    expect((await denied.json()).code).toBe('CONFIRM_CANCELLED_DEPOSIT');
+    await expectUnchanged();
+    expect((await attempt({ confirmCancelledDeposit: true })).status).toBe(200);
+    expect((await env.DB.prepare('SELECT voided_at FROM booking_deposits WHERE booking_id = ?').bind(id).first()).voided_at).toBeNull();
+  });
+
+  it('blocks a deposit after the booking changes to a live state despite stale confirmation', async () => {
+    const id = await booking('confirmed');
+    await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+      VALUES (?, 400000, 'cash', ?, 'fixture', '2026-08-01')`).bind(id, txId).run();
+    expect((await attempt({ confirmCancelledDeposit: true })).status).toBe(409);
+    await expectUnchanged();
+  });
+
+  it('blocks linked order receipts', async () => {
+    await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+      VALUES ('fixture', 'closed', 'fixture', '2026-08-01', ?)`).bind(txId).run();
+    expect((await attempt()).status).toBe(409);
+    await expectUnchanged();
+  });
+
+  it('rejects a new order link inserted after preflight without writing a void audit', async () => {
+    const raced = envWithHookBefore(/UPDATE finance_transactions SET voided_by/, async () => {
+      await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+        VALUES ('race', 'closed', 'fixture', '2026-08-01', ?)`).bind(txId).run();
+    });
+    const response = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${txId}/void`, adminToken, 'PATCH', {}), env: raced, params: { id: String(txId) } });
+    expect(response.status).toBe(409);
+    await expectUnchanged();
+  });
+
+  it('blocks Giờ Xanh receipts', async () => {
+    const room = await env.DB.prepare('SELECT id FROM rooms LIMIT 1').first();
+    await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, finance_transaction_id)
+      VALUES (?, 'fixture', 'closed', 'fixture', '2026-08-01', ?)`).bind(room.id, txId).run();
+    expect((await attempt()).status).toBe(409);
+    await expectUnchanged();
+  });
+
+  it('blocks service and refund receipts even after their parent is cancelled', async () => {
+    const id = await booking();
+    await env.DB.prepare(`INSERT INTO booking_service_items
+      (booking_id, name, unit_price, quantity, amount, created_at, finance_transaction_id)
+      VALUES (?, 'fixture', 400000, 1, 400000, '2026-08-01', ?)`).bind(id, txId).run();
+    expect((await attempt()).status).toBe(409);
+    await expectUnchanged();
+    await env.DB.prepare('UPDATE booking_service_items SET finance_transaction_id = NULL WHERE booking_id = ?').bind(id).run();
+    await env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id = ? WHERE id = ?').bind(txId, id).run();
+    expect((await attempt()).status).toBe(409);
+    await expectUnchanged();
   });
 
   it('404s for a non-existent id', async () => {
