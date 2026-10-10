@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestPost as webhook } from '../functions/api/telegram/webhook.js';
 import { onRequestPost as createBooking } from '../functions/api/bookings/index.js';
+vi.mock('../lib/turnstile.js', async (original) => ({ ...await original(), verifyTurnstile: vi.fn(async () => true) }));
 
 const WEBHOOK_URL = 'https://crm.hienlegarden.vn/api/telegram/webhook';
 const SECRET = 'test-secret';
@@ -104,7 +105,7 @@ describe('POST /api/telegram/webhook — authentication', () => {
 
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    const bookingReq = new Request('https://x/api/bookings', {
+    const bookingReq = new Request('https://hienlegarden.vn/api/bookings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ guestName: 'Khách Thử', phone: '0900000009', roomType: 'circle', checkIn: '2099-01-01', checkOut: '2099-01-03' }),

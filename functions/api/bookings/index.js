@@ -4,6 +4,8 @@ import { redactContact } from '../../../lib/redactContact.js';
 import { ROOM_TYPES } from '../../../lib/roomTypes.js';
 import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
 import { readJsonBody } from '../../../lib/readJsonBody.js';
+import { verifyTurnstile } from '../../../lib/turnstile.js';
+import { protectPublicBooking, bookingError } from '../../../lib/publicBookingProtection.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -29,7 +31,9 @@ function isValidEmail(email) {
 }
 
 export async function onRequestPost({ request, env }) {
-  // Thứ tự: giới hạn body → parse JSON → kiểm tra trường → ghi DB → Telegram.
+  const denied = await protectPublicBooking(request, env);
+  if (denied) return denied;
+  // Host + shared budget → bounded body → fields → human check → DB → notification.
   const parsed = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;
@@ -74,6 +78,11 @@ export async function onRequestPost({ request, env }) {
   if (checkIn < today) {
     return jsonError('Ngày nhận phòng không thể ở quá khứ', 400);
   }
+
+  const human = await verifyTurnstile(env, body.turnstileToken, request.headers.get('CF-Connecting-IP'), {
+    expectedHostname: new URL(request.url).hostname, expectedAction: 'booking',
+  });
+  if (!human) return bookingError('Không thể xác minh yêu cầu. Vui lòng xác minh lại và thử lại.', 403);
 
   const now = new Date().toISOString();
   const result = await env.DB.prepare(

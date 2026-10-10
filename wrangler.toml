@@ -3,6 +3,9 @@ compatibility_date = "2024-09-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
+[vars]
+PUBLIC_BOOKING_ALLOWED_HOSTNAMES = "hienlegarden.vn,www.hienlegarden.vn"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "hien_le_garden_crm"
@@ -17,6 +20,9 @@ bucket_name = "hien-le-garden-finance-receipts"
 # Non-inheritable: these fully replace the top-level (production) D1/R2 bindings.
 # Gate: `npm run check:staging` must exit 0 before any remote command with --env preview.
 [env.preview]
+
+[env.preview.vars]
+PUBLIC_BOOKING_ALLOWED_HOSTNAMES = "staging.hien-le-garden-v4.pages.dev"
 
 [[env.preview.d1_databases]]
 binding = "DB"

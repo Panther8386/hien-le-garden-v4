@@ -3928,9 +3928,43 @@
     }
 
     /* ---- Booking Modal ---- */
+    let bmChallengeId = null, bmChallengeReady = false, bmSending = false, bmChallengeLoading = null;
+    async function loadBookingChallenge() {
+      if (bmChallengeId !== null) return;
+      if (bmChallengeLoading) return bmChallengeLoading;
+      bmChallengeLoading = (async () => {
+        const response = await fetch('/api/public-config');
+        if (!response.ok) throw new Error('config');
+        const config = await response.json();
+        if (!config.turnstileSiteKey) throw new Error('config');
+        if (!window.turnstile) await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+          script.onload = resolve; script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        bmChallengeId = window.turnstile.render('#bmChallenge', {
+          sitekey: config.turnstileSiteKey, action: 'booking', theme: 'auto', language: 'vi', size: 'flexible',
+          callback: () => { bmChallengeReady = true; },
+          'expired-callback': () => { bmChallengeReady = false; window.turnstile.reset(bmChallengeId); },
+          'error-callback': () => {
+            bmChallengeReady = false;
+            document.getElementById('bmSubmitError').textContent = 'Không thể xác minh. Vui lòng thử lại hoặc liên hệ qua điện thoại/Zalo.';
+          },
+        });
+      })().catch(() => {
+        document.getElementById('bmSubmitError').textContent = 'Không tải được xác minh. Vui lòng mở lại biểu mẫu hoặc liên hệ qua điện thoại/Zalo.';
+      }).finally(() => { bmChallengeLoading = null; });
+      return bmChallengeLoading;
+    }
+    function resetBookingChallenge() {
+      bmChallengeReady = false;
+      if (bmChallengeId !== null && window.turnstile) window.turnstile.reset(bmChallengeId);
+    }
     function openBookingModal() {
       const overlay = document.getElementById('bmOverlay');
       overlay.classList.add('open');
+      loadBookingChallenge();
       document.body.style.overflow = 'hidden';
       // Set default check-in/out dates
       const today = new Date();
@@ -3961,6 +3995,7 @@
     function bmBackToForm() {
       document.getElementById('bmFormState').classList.remove('hide');
       document.getElementById('bmConfirmState').classList.remove('show');
+      resetBookingChallenge();
     }
 
     const BM_ROOM_TYPE_NAMES = {
@@ -4008,6 +4043,7 @@
     });
 
     async function submitBooking() {
+      if (bmSending) return;
       const guestName = document.getElementById('bmGuestName').value.trim();
       const phone = document.getElementById('bmPhone').value.trim();
       const checkIn = document.getElementById('bmCheckIn').value;
@@ -4023,24 +4059,36 @@
       if (!checkIn || !checkOut) { errorEl.textContent = 'Vui lòng chọn ngày đến và ngày đi.'; return; }
       if (new Date(checkOut) <= new Date(checkIn)) { errorEl.textContent = 'Ngày đi phải sau ngày đến.'; return; }
       if (!room) { errorEl.textContent = 'Vui lòng chọn loại phòng.'; return; }
+      const turnstileToken = bmChallengeId !== null && window.turnstile ? window.turnstile.getResponse(bmChallengeId) : '';
+      if (!bmChallengeReady || !turnstileToken) {
+        errorEl.textContent = 'Vui lòng hoàn tất xác minh trước khi gửi yêu cầu.';
+        loadBookingChallenge();
+        return;
+      }
 
       const guestsCount = guests === '6+' ? 6 : Number(guests);
 
       let response;
+      bmSending = true;
+      const submit = document.querySelector('#bmFormState .bm-submit');
+      submit.disabled = true;
       try {
         response = await fetch('/api/bookings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guestName, phone, roomType: room, checkIn, checkOut, guestsCount, notes: notes || undefined }),
+          body: JSON.stringify({ guestName, phone, roomType: room, checkIn, checkOut, guestsCount, notes: notes || undefined, turnstileToken }),
+          signal: AbortSignal.timeout(20000),
         });
       } catch (err) {
-        errorEl.textContent = 'Không thể kết nối — vui lòng thử lại.';
+        errorEl.textContent = 'Chưa nhận được xác nhận. Vui lòng liên hệ điện thoại/Zalo trước khi gửi lại để tránh trùng yêu cầu.';
+        bmSending = false; submit.disabled = false; resetBookingChallenge();
         return;
       }
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         errorEl.textContent = body.error || 'Có lỗi khi gửi yêu cầu, vui lòng thử lại.';
+        bmSending = false; submit.disabled = false; resetBookingChallenge();
         return;
       }
 
@@ -4065,6 +4113,7 @@
 
       document.getElementById('bmFormState').classList.add('hide');
       document.getElementById('bmConfirmState').classList.add('show');
+      bmSending = false; submit.disabled = false; resetBookingChallenge();
     }
 
     document.addEventListener('keydown', e => {
@@ -4593,6 +4642,7 @@
           </div>
         </div>
         <p class="bm-availability" id="bmAvailability"></p>
+        <div id="bmChallenge" style="min-height:65px;margin-bottom:16px;"></div>
         <button class="bm-submit" onclick="submitBooking()">Gửi Yêu Cầu Kiểm Tra Phòng →</button>
         <p class="bm-error" id="bmSubmitError"></p>
         <p class="bm-note">Hỗ trợ đặt phòng qua <a href="tel:0968987311">Điện thoại</a> hoặc <a href="https://zalo.me/0968987311" target="_blank" rel="noopener">Zalo</a></p>
