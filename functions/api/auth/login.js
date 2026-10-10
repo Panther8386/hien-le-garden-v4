@@ -42,14 +42,16 @@ export async function onRequestPost({ request, env }) {
   }
 
   if (account.totpEnabled) {
-    const pendingToken = await createPending2FAToken(env.DB, account.id);
+    const pendingToken = await createPending2FAToken(env.DB, account.id, { passwordHash: account.password_hash });
+    if (!pendingToken) return jsonError('Thông tin đăng nhập đã thay đổi. Vui lòng đăng nhập lại.', 401);
     return new Response(JSON.stringify({ requires2fa: true, pendingToken }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const token = await createSession(env.DB, account.id);
+  const token = await createSession(env.DB, account.id, { passwordHash: account.password_hash });
+  if (!token) return jsonError('Thông tin đăng nhập đã thay đổi. Vui lòng đăng nhập lại.', 401);
 
   return new Response(JSON.stringify({ username, role: account.role }), {
     status: 200,
