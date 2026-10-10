@@ -6,6 +6,7 @@ import { sendTelegramMessage, escapeMarkdown } from '../../../lib/telegram.js';
 import { readJsonBody } from '../../../lib/readJsonBody.js';
 import { verifyTurnstile } from '../../../lib/turnstile.js';
 import { protectPublicBooking, bookingError } from '../../../lib/publicBookingProtection.js';
+import { insertWithCreationAudit } from '../../../lib/creationAudit.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -85,12 +86,16 @@ export async function onRequestPost({ request, env }) {
   if (!human) return bookingError('Không thể xác minh yêu cầu. Vui lòng xác minh lại và thử lại.', 403);
 
   const now = new Date().toISOString();
-  const result = await env.DB.prepare(
+  const insert = env.DB.prepare(
     `INSERT INTO bookings (guest_name, phone, email, room_type, check_in, check_out, guests_count, notes, status, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'website', ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'website', ?) RETURNING id`
   )
-    .bind(guestName.trim(), phone.trim(), cleanEmail, roomType, checkIn, checkOut, guestsCount || null, notes || null, now)
-    .run();
+    .bind(guestName.trim(), phone.trim(), cleanEmail, roomType, checkIn, checkOut, guestsCount || null, notes || null, now);
+  let id;
+  try {
+    id = await insertWithCreationAudit(env.DB, insert, 'booking', 'website:anonymous', now,
+      { source: 'website', status: 'pending', roomType, checkIn, checkOut });
+  } catch { return bookingError('Không thể ghi nhận yêu cầu lúc này. Vui lòng thử lại sau.', 503); }
 
   const notifySetting = await env.DB.prepare(`SELECT booking_notify_chat_id FROM notification_settings ORDER BY id DESC LIMIT 1`).first();
   if (notifySetting) {
@@ -108,7 +113,7 @@ export async function onRequestPost({ request, env }) {
     await sendTelegramMessage(env, { chatId: notifySetting.booking_notify_chat_id, text: lines.join('\n') });
   }
 
-  return new Response(JSON.stringify({ id: result.meta.last_row_id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ id }), { status: 201, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function onRequestGet({ request, env }) {

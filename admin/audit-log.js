@@ -1,5 +1,7 @@
 // v4/admin/audit-log.js
 const ACTION_TYPE_LABELS = {
+  booking_create: 'Tạo đặt phòng',
+  account_create: 'Tạo tài khoản',
   deposit_change: 'Đổi tiền cọc',
   booking_cancel: 'Huỷ đặt phòng',
   booking_reject: 'Từ chối đặt phòng',
