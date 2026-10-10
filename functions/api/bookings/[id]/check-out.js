@@ -102,9 +102,9 @@ export async function onRequestPost({ request, env, params }) {
       ['expense', 'hoan_coc', refundAmount, `Hoàn cọc dư — ${booking.guest_name}`],
     ]) {
       if (amount > 0) statements.push(env.DB.prepare(
-        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
-         SELECT ?, ?, ?, ?, ?, 'confirmed', ?, ? WHERE ${stillCheckedIn}`
-      ).bind(type, category, amount, note, today, auth.username, now, params.id, settlement));
+        `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at, checkout_booking_id)
+         SELECT ?, ?, ?, ?, ?, 'confirmed', ?, ?, ? WHERE ${stillCheckedIn}`
+      ).bind(type, category, amount, note, today, auth.username, now, params.id, params.id, settlement));
     }
     if (booking.room_id) {
       statements.push(
