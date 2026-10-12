@@ -4,7 +4,7 @@
 >
 > Detailed executable recovery procedures are maintained separately in the private operator runbook.
 
-Trạng thái: bản thiết kế đã review (SEC-1, 2026-10-06). **Chưa diễn tập** — quy trình chưa được chứng minh vận hành cho tới khi buổi diễn tập ngoài production (mục 12) đạt.
+Trạng thái: bản thiết kế đã review (SEC-1, 2026-10-06). **Diễn tập D1 local cô lập đạt ngày 2026-10-08**: 4 kịch bản khôi phục và 119 kiểm tra liên quan đạt (123/123). Xem [biên bản local](sec1-local-recovery-drill-20261008.md). **SEC-1R remote đạt ngày 10/10/2026**: 4 kịch bản staging, đăng nhập qua giao diện, dữ liệu giữ nguyên và cleanup; Time Travel restore đạt trên D1 tạm riêng. Xem [biên bản remote](sec1r-remote-recovery-drill-20261010.md). Không diễn tập trên production; chưa diễn tập mất quyền tài khoản Cloudflare hoặc thao tác dashboard UI.
 
 ## 1. Mục đích
 
@@ -133,3 +133,5 @@ Vì vậy:
 | Ngày | Phiên bản | Loại (soạn / sửa / diễn tập) | Môi trường | Người thực hiện | Kết quả | Ghi chú |
 |---|---|---|---|---|---|---|
 | 2026-10-06 | 1.0 | soạn | — | — | Đã review thiết kế (SEC-1); chưa diễn tập | Chi tiết thực thi ở runbook riêng tư |
+| 2026-10-08 | 1.1 | diễn tập | D1 local cô lập | Codex, theo yêu cầu chủ sở hữu | PASS 123/123 | Mở khoá, mật khẩu, TOTP, batch rollback; chi tiết ngoài repo. Không thao tác production. |
+| 2026-10-10 | 1.2 | diễn tập | Staging + D1 tạm riêng | Codex, chủ sở hữu duyệt SEC-1R | PASS 9/9 remote + Time Travel | 4 kịch bản, UI login, 36 bảng giữ nguyên; tài khoản thử khoá/thu hồi; D1 tạm đã xoá. Không thao tác production. |

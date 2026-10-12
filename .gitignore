@@ -9,3 +9,6 @@ node_modules/
 !.env.example
 *.local
 dist/
+
+# Internal roadmap tool: kept private (VDX-Vault), never in the public repo
+docs/roadmap/
