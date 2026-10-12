@@ -123,6 +123,19 @@ blob SHA, or a merge event). It carries no authority; verification code decides 
 Agent-written fields such as `human_approved` or `approved_by` are never approval evidence.
 Current limitation: no strong human/agent identity separation (ADR-AI-006).
 
+Verification rules are proposed in [ADR-AI-011](../adr/ADR-AI-011-approval-verification.md)
+(not implemented yet):
+
+- An ApprovalRef is a reference, not an authorization. A verified ApprovalRef is not
+  permission to merge or deploy, and GateDecision PASS is not either.
+- Verification is snapshot-bound: it matches trusted source data and the immutable object; it
+  does not prove the approval is still valid now, and it does not prove which human acted.
+- The approver allowlist must come from trusted infrastructure or a trusted base ref, never
+  from the PR head being evaluated. A tracked allowlist file is not trusted by itself; the
+  default allowlist is empty.
+- Production approval has no trusted source in V1 and stays out of scope; `merge` approval is
+  post-merge audit only.
+
 ## SHA and staleness
 
 - Git SHA is the freshness authority; timestamps are audit metadata.
@@ -136,7 +149,8 @@ Current limitation: no strong human/agent identity separation (ADR-AI-006).
 
 | Artifact | Location |
 |---|---|
-| Schemas, gate policy, approver allowlist | Tracked repository |
+| Schemas, gate policy | Tracked repository |
+| Approver allowlist | Trusted infrastructure, or a tracked file read only from a trusted base ref — never from the evaluated PR head (ADR-AI-011) |
 | TaskSpec | Tracked `docs/ai/specs/SPEC-AI-NNN-slug.md` + approval comment on the PR |
 | ImplementationReport | PR body summary; full JSON as a GitHub Actions artifact or local transient file |
 | Review reports, EvalReport | Actions artifact + self-contained PR/Check summary (not committed) |

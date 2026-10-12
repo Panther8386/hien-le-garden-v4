@@ -59,6 +59,7 @@ Backend setup/deploy facts live in [BACKEND.md](BACKEND.md) and [docs/releases/]
 - Least privilege: request and use only the access a task needs.
 - Bounded retries/loops: no unbounded retry, fix-loop or agent recursion; stop and report after the agreed limit.
 - Human authority is required for irreversible, customer-facing or production actions ([ADR-AI-003](docs/ai/adr/ADR-AI-003-human-production-authority.md)).
+- Approval commands are human-only ([ADR-AI-006](docs/ai/adr/ADR-AI-006-human-approval-evidence.md), [ADR-AI-011](docs/ai/adr/ADR-AI-011-approval-verification.md)): an agent never creates, posts, edits or deletes an approval command (`HLG-APPROVE …`) or any other approval source, never impersonates a human approval, and never treats a verified ApprovalRef as authorization to merge or deploy.
 
 ## H. System of record
 
