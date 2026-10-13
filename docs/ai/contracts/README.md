@@ -123,7 +123,7 @@ blob SHA, or a merge event). It carries no authority; verification code decides 
 Agent-written fields such as `human_approved` or `approved_by` are never approval evidence.
 Current limitation: no strong human/agent identity separation (ADR-AI-006).
 
-Verification rules are proposed in [ADR-AI-011](../adr/ADR-AI-011-approval-verification.md)
+Verification rules are decided in [ADR-AI-011](../adr/ADR-AI-011-approval-verification.md)
 (not implemented yet):
 
 - An ApprovalRef is a reference, not an authorization. A verified ApprovalRef is not

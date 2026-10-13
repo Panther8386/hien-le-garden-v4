@@ -1,6 +1,6 @@
 # ADR-AI-011: ApprovalRef Verification Governance
 
-- Status: Proposed (pending owner acceptance)
+- Status: Accepted
 - Date: 2026-10-12
 - Deciders: Vĩnh (owner)
 
@@ -151,7 +151,8 @@ trusted infrastructure (A3.7). Proposed envelope `hlg.approval-snapshot.v1`:
 - A snapshot describes the source at fetch time only. It never proves current GitHub state.
 - The exact freshness fields are defined with the A3.7 adapter. Until a snapshot carries
   adapter-established proof of completeness and freshness, the verifier cannot return
-  `VERIFIED` for any source (it returns `UNVERIFIABLE`).
+  `VERIFIED` for any source (it returns `UNVERIFIABLE`); see the freshness clarification under
+  "Snapshot freshness and revocation" for how A3.5c tests supply such snapshots.
 - `created_at` / `updated_at` are used only to detect edits, never as freshness authority
   (ADR-AI-005: timestamps are audit metadata).
 
@@ -238,6 +239,20 @@ from `VERIFIED` alone.
 
 There is no revocation command in V1. An approval stops being verifiable when its comment is
 edited, when it is removed from a complete and fresh snapshot, or when the bound object changes.
+
+**Freshness clarification.** A snapshot whose `pull_request.head_sha` equals the expected commit
+is necessary but not sufficient evidence of source freshness. Completeness, provenance and
+freshness count only when established by the trusted infrastructure (T1) that assembled the
+snapshot; a `freshness` field, boolean or timestamp that a producer (T0) supplies or can
+influence — in an ApprovalRef, a producer report or a snapshot not assembled by trusted
+infrastructure — establishes nothing. When these properties are unavailable or unproven, the
+verifier returns `UNVERIFIABLE`, never `VERIFIED`. The verifier is pure and cannot itself check
+where a snapshot came from: provenance is an obligation on its trusted caller. The trusted
+adapter contract that establishes these properties belongs to A3.7 and is not implemented here.
+A3.5c tests supply fixture snapshots through the trusted-context interface to exercise both the
+`UNVERIFIABLE` and the `VERIFIED` paths; no production caller may supply a snapshot that was not
+assembled by the A3.7 adapter, so no production `VERIFIED` result is possible until A3.7 exists.
+`VERIFIED` remains snapshot-bound and never authorizes a merge, a migration or a deployment.
 
 Obligations of the future A3.7 adapter:
 
