@@ -1,6 +1,9 @@
 # ADR-AI-011: ApprovalRef Verification Governance
 
-- Status: Accepted
+- Status: Accepted. Result semantics, "Relation to ADR-AI-005" partially superseded by
+  [ADR-AI-012](ADR-AI-012-gate-decision-v1-aggregation.md), only for the GateDecision aggregation
+  classification of unavailable trusted approval context; the ApprovalRef verifier, its outcome
+  contract and all other decisions are unchanged, and the text below is unchanged history.
 - Date: 2026-10-12
 - Deciders: Vĩnh (owner)
 

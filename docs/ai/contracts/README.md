@@ -183,5 +183,5 @@ different trust domain. Only conventions are shared with engineering contracts.
 | A3.4c | TaskSpec security / capability policy and tests (ADR-AI-008) | Done (Linux CI verified on Draft PR #5 at `8144004`, run 37435892253) |
 | A3.4d | End-to-end TaskSpec composition | Done (Linux CI verified on Draft PR #6 at `0a7b6c2`, run 37474931828); F2, F3, F4 closed |
 | A3.5 | SHA, evidence and ApprovalRef verification | Common path safety for ImplementationReport / EvidenceRef / Finding paths before repository paths are trusted |
-| A3.6 | Deterministic gate aggregator and policy table | Deferred findings F6 (protect deterministic-check configuration), F8 (governance-specific gate), F9 (producer/verifier separation) |
+| A3.6 | Deterministic gate aggregator and policy table | Deferred findings F6 (protect deterministic-check configuration), F8 (governance-specific gate), F9 (producer/verifier separation); design decision [ADR-AI-012](../adr/ADR-AI-012-gate-decision-v1-aggregation.md) (Accepted 2026-10-14, design only; implementation not authorized) |
 | A3.7 | GitHub integration (checks, artifacts) | Workflow permissions approval; identity separation (ADR-AI-006); F6/F8/F9 as for A3.6 |

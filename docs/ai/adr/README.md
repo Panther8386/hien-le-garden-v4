@@ -41,4 +41,5 @@ For bounded project/release decisions use [decisions/](../decisions/README.md) i
 | [ADR-AI-008](ADR-AI-008-taskspec-scope-classes-and-authority.md) | TaskSpec protected scope policy and authority boundary | Accepted |
 | [ADR-AI-009](ADR-AI-009-taskspec-composition-and-secret-scan.md) | TaskSpec composition and secret-scan trust boundary | Accepted |
 | [ADR-AI-010](ADR-AI-010-evidence-approval-verification-and-path-safety.md) | Evidence and approval verification, and common repository path safety | Accepted |
-| [ADR-AI-011](ADR-AI-011-approval-verification.md) | ApprovalRef verification governance | Accepted |
+| [ADR-AI-011](ADR-AI-011-approval-verification.md) | ApprovalRef verification governance | Accepted ("Relation to ADR-AI-005" partially superseded by ADR-AI-012 for GateDecision aggregation only) |
+| [ADR-AI-012](ADR-AI-012-gate-decision-v1-aggregation.md) | GateDecision V1 aggregation and trust boundaries | Accepted |
