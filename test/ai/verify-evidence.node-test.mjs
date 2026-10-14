@@ -1094,16 +1094,19 @@ test('verifyAll: refs are read by index, never through an overridden iterator', 
   assert.deepEqual(pick(all.results[0]), ['INVALID', 'E_EVIDENCE_SHA_MISMATCH']);
 });
 
-test('verifyAll: an unreadable element is a per-item ERROR and keeps its position', () => {
+test('verifyAll: a throwing accessor element is never invoked; it is INVALID and keeps its position', () => {
+  let calls = 0;
   const refs = [file('same.txt'), null, file('same.txt')];
   Object.defineProperty(refs, 1, {
     get() {
+      calls++;
       throw new Error('element');
     },
   });
   const all = verifier.verifyAll(refs);
-  assert.equal(all.status, 'ERROR');
-  assert.deepEqual(all.results.map((r) => [r.status, r.code]), [['VERIFIED', null], ['ERROR', 'E_EVIDENCE_REF_UNREADABLE'], ['VERIFIED', null]]);
+  assert.equal(calls, 0, 'the element getter must never be invoked');
+  assert.equal(all.status, 'INVALID');
+  assert.deepEqual(all.results.map((r) => [r.status, r.code]), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_NOT_DATA'], ['VERIFIED', null]]);
 });
 
 test('last resort: a resolver result whose fields throw is ERROR E_EVIDENCE_INTERNAL, never VERIFIED', () => {
@@ -1395,14 +1398,17 @@ test('collections: each element is read once, through a single own-descriptor re
   const r = v.verifyAll(disagreeing);
   assert.equal(r.status, 'INVALID');
   assert.deepEqual(traps, ['get:length', 'gopd:0']);
-  // An own accessor element runs exactly once; a setter-only element is not a ref.
+  // An own accessor element (getter or setter-only) is never invoked and is not data.
   let gets = 0;
+  let sets = 0;
   const refs = [];
   Object.defineProperty(refs, 0, { enumerable: true, get: () => { gets++; return VERIFIED_REF(); } });
-  Object.defineProperty(refs, 1, { enumerable: true, set() {} });
+  Object.defineProperty(refs, 1, { enumerable: true, set() { sets++; } });
   const a = v.verifyAll(refs);
-  assert.equal(gets, 1);
-  assert.deepEqual(a.results.map((x) => [x.status, x.code]), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_INVALID']]);
+  assert.equal(gets, 0);
+  assert.equal(sets, 0);
+  assert.equal(a.status, 'INVALID');
+  assert.deepEqual(a.results.map((x) => [x.status, x.code]), [['INVALID', 'E_EVIDENCE_REF_NOT_DATA'], ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']]);
 });
 
 // ---------------------------------------------------------------- A3.5b.2R.2: result array integrity (I-1)
@@ -1455,4 +1461,113 @@ test('I-1: results are own, frozen data properties matching the input length', (
   assert.equal(v.verifyAll([VERIFIED_REF(), UNVERIFIABLE_REF()]).status, 'UNVERIFIABLE');
   assert.equal(v.verifyAll([UNVERIFIABLE_REF(), INVALID_REF()]).status, 'INVALID');
   assert.equal(v.verifyAll([INVALID_REF(), ERROR_REF(), VERIFIED_REF()]).status, 'ERROR');
+});
+
+// ---------------------------------------------------------------- A3.5b.3: collection-element accessors
+
+test('A3.5b.3: a getter element is rejected as not data and is never invoked', () => {
+  const v = fastVerifier();
+  let calls = 0;
+  const refs = [];
+  Object.defineProperty(refs, 0, { enumerable: true, configurable: true, get: () => { calls++; return VERIFIED_REF(); } });
+  const r = v.verifyAll(refs);
+  assert.equal(calls, 0, 'the element getter must never be invoked');
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual({ ...r.results[0] }, { status: 'INVALID', code: 'E_EVIDENCE_REF_NOT_DATA', kind: null });
+  assert.deepEqual({ ...r.counts }, { VERIFIED: 0, INVALID: 1, UNVERIFIABLE: 0, ERROR: 0 });
+});
+
+test('A3.5b.3: a setter-only element is rejected and its setter is never invoked', () => {
+  const v = fastVerifier();
+  let calls = 0;
+  const refs = [VERIFIED_REF(), null];
+  Object.defineProperty(refs, 1, { enumerable: true, configurable: true, set() { calls++; } });
+  const r = v.verifyAll(refs);
+  assert.equal(calls, 0, 'the element setter must never be invoked');
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(r.results.map(pick), [['VERIFIED', null], ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']]);
+});
+
+test('A3.5b.3: a throwing getter is never invoked and nothing escapes', () => {
+  const v = fastVerifier();
+  let calls = 0;
+  const refs = [null];
+  Object.defineProperty(refs, 0, { enumerable: true, configurable: true, get() { calls++; throw new Error('hostile'); } });
+  let r;
+  assert.doesNotThrow(() => { r = v.verifyAll(refs); });
+  assert.equal(calls, 0);
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(pick(r.results[0]), ['INVALID', 'E_EVIDENCE_REF_NOT_DATA']);
+});
+
+test('A3.5b.3: holes keep the missing-element result', () => {
+  const v = fastVerifier();
+  const r = v.verifyAll([, VERIFIED_REF()]); // eslint-disable-line no-sparse-arrays
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(r.results.map(pick), [['INVALID', 'E_EVIDENCE_REF_MISSING'], ['VERIFIED', null]]);
+});
+
+test('A3.5b.3: a mixed collection verifies data elements, rejects accessors, and is never VERIFIED', () => {
+  const v = fastVerifier();
+  let calls = 0;
+  const refs = [VERIFIED_REF(), null, VERIFIED_REF(), , INVALID_REF()]; // eslint-disable-line no-sparse-arrays
+  Object.defineProperty(refs, 1, { enumerable: true, configurable: true, get: () => { calls++; return VERIFIED_REF(); } });
+  const r = v.verifyAll(refs);
+  assert.equal(calls, 0);
+  assert.equal(r.status, 'INVALID');
+  assert.deepEqual(r.results.map(pick), [
+    ['VERIFIED', null],
+    ['INVALID', 'E_EVIDENCE_REF_NOT_DATA'],
+    ['VERIFIED', null],
+    ['INVALID', 'E_EVIDENCE_REF_MISSING'],
+    ['INVALID', 'E_EVIDENCE_SHA_MISMATCH'],
+  ]);
+  assert.deepEqual({ ...r.counts }, { VERIFIED: 2, INVALID: 3, UNVERIFIABLE: 0, ERROR: 0 });
+  // Plain-data elements alone still verify.
+  assert.equal(v.verifyAll([VERIFIED_REF(), VERIFIED_REF()]).status, 'VERIFIED');
+  // A collection made only of accessors that would return valid refs is never VERIFIED.
+  const allAccessors = [];
+  for (let i = 0; i < 3; i++) {
+    Object.defineProperty(allAccessors, i, { enumerable: true, configurable: true, get: () => { calls++; return VERIFIED_REF(); } });
+  }
+  assert.equal(v.verifyAll(allAccessors).status, 'INVALID');
+  assert.equal(calls, 0);
+});
+
+test('A3.5b.3: deterministic ordering and no observable side effect on the input collection', () => {
+  const v = fastVerifier();
+  const getter = () => VERIFIED_REF();
+  const build = () => {
+    const refs = [INVALID_REF(), null, VERIFIED_REF()];
+    Object.defineProperty(refs, 1, { enumerable: true, configurable: true, get: getter });
+    return refs;
+  };
+  const refs = build();
+  const before = Object.getOwnPropertyDescriptors(refs);
+  const first = v.verifyAll(refs);
+  const second = v.verifyAll(refs);
+  assert.deepEqual(first, second);
+  assert.deepEqual(first, v.verifyAll(build()));
+  assert.deepEqual(first.results.map(pick), [['INVALID', 'E_EVIDENCE_SHA_MISMATCH'], ['INVALID', 'E_EVIDENCE_REF_NOT_DATA'], ['VERIFIED', null]]);
+  const after = Object.getOwnPropertyDescriptors(refs);
+  assert.deepEqual(Object.keys(after), Object.keys(before));
+  assert.equal(after[1].get, getter, 'the accessor element is left as it was');
+  assert.equal(after[1].set, undefined);
+  // Through a Proxy, each element costs exactly one descriptor read and no get trap.
+  const traps = [];
+  const proxied = new Proxy(build(), {
+    getOwnPropertyDescriptor(t, k) {
+      traps.push(`gopd:${String(k)}`);
+      return Reflect.getOwnPropertyDescriptor(t, k);
+    },
+    get(t, k) {
+      traps.push(`get:${String(k)}`);
+      return Reflect.get(t, k);
+    },
+  });
+  assert.deepEqual(v.verifyAll(proxied), first);
+  assert.deepEqual(traps, ['get:length', 'gopd:0', 'gopd:1', 'gopd:2']);
+  // The verifier never calls a producer function through Reflect.apply.
+  const src = readFileSync(fileURLToPath(new URL('../../scripts/ai/verify-evidence.mjs', import.meta.url)), 'utf8');
+  assert.ok(!src.includes('Reflect.apply'), 'verify-evidence must not invoke accessors');
 });
