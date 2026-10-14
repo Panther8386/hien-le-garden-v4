@@ -85,6 +85,13 @@ or network access. Errors carry only a rule ID and a JSON pointer, never values.
   `.` (e.g. `CLAUDE.md.`, `scripts/ai./x.mjs`) is invalid. Windows strips trailing dots, so
   such a path would alias a different (possibly protected) path. It is rejected, never
   normalized.
+- **Common path policy L0** (`scripts/ai/repo-path.mjs`, [ADR-AI-010](../adr/ADR-AI-010-evidence-approval-verification-and-path-safety.md)):
+  scope paths in both lists are checked by the shared lexical policy, which also produces
+  `BR-PATH-TRAILING-DOT`. Further rules: **`BR-PATH-DEVICE-NAME`** (a segment whose stem is a
+  Windows device name — CON, PRN, AUX, NUL, COM0–COM9, LPT0–LPT9 — in any case, with or
+  without an extension), **`BR-PATH-GIT-SEGMENT`** (a `.git` segment in any case),
+  **`BR-PATH-LEADING-DASH`** (a segment starting with `-`) and **`BR-PATH-GRAMMAR`** (only for
+  input that skipped the schema).
 - Passing business validation means only "passes deterministic TaskSpec business validation".
   It is not approval, authorization, freshness, mergeability or deployability. Protected-scope,
   human-gate, declared-change and secret policies are the next layer (below).

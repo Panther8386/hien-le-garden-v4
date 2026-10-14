@@ -8,15 +8,18 @@
 //
 // Paths are lexical, exact and case-sensitive (Git semantics): no OS path library, no
 // normalization, no lowercasing. ASCII case folding is used only to detect paths that
-// would collide on a case-insensitive filesystem. A scope path with a segment ending in
-// "." is rejected (Windows strips trailing dots, so it would alias another path); it is
-// never rewritten.
+// would collide on a case-insensitive filesystem. Scope paths must also pass the common
+// lexical repository path policy L0 (repo-path.mjs, ADR-AI-010): no segment ending in ".",
+// no Windows device name, no ".git" segment, no segment starting with "-". They are
+// rejected, never rewritten.
 //
 // A successful result means only "passes deterministic TaskSpec business validation":
 // not approved, authorized, current, mergeable or deployable.
 //
 // Errors carry only { rule, path } (path: JSON pointer built from schema field names and
 // indices); no values from the TaskSpec or the file name are ever returned.
+
+import { repoPathViolations } from './repo-path.mjs';
 
 export const MAX_BUSINESS_ERRORS = 20;
 
@@ -64,12 +67,14 @@ export function isCaseAmbiguous(a, b) {
   return a !== b && related(foldAscii(a), foldAscii(b)) && !related(a, b);
 }
 
-// True when any segment ends in "." (one trailing "/" directory marker is ignored).
-// Lexical only: the path is inspected, never normalized.
-function hasTrailingDotSegment(p) {
-  const body = p.endsWith(SLASH) ? p.slice(0, -1) : p;
-  return body.split(SLASH).some((seg) => seg.endsWith('.'));
-}
+// Business rule for each common L0 path rule (repo-path.mjs).
+const L0_RULES = {
+  'PATH-GRAMMAR': 'BR-PATH-GRAMMAR',
+  'PATH-TRAILING-DOT': 'BR-PATH-TRAILING-DOT',
+  'PATH-DEVICE-NAME': 'BR-PATH-DEVICE-NAME',
+  'PATH-GIT-SEGMENT': 'BR-PATH-GIT-SEGMENT',
+  'PATH-LEADING-DASH': 'BR-PATH-LEADING-DASH',
+};
 
 // ---- rules ----
 
@@ -135,11 +140,13 @@ export function validateTaskSpecBusiness(spec, { fileName } = {}) {
     }
   }
 
-  // BR-PATH-TRAILING-DOT: a segment ending in "." is a Windows alias of the path without
-  // the dot (e.g. "CLAUDE.md." -> "CLAUDE.md"), so it could slip past protected-scope
-  // classification. Rejected in both lists, one error per entry, never normalized.
+  // Common L0 path policy (ADR-AI-010) for both lists, one error per violated rule per entry,
+  // never normalized. BR-PATH-TRAILING-DOT: a segment ending in "." is a Windows alias of the
+  // path without the dot (e.g. "CLAUDE.md." -> "CLAUDE.md"). BR-PATH-DEVICE-NAME,
+  // BR-PATH-GIT-SEGMENT, BR-PATH-LEADING-DASH: Windows device aliases, Git metadata and
+  // option-like segments. BR-PATH-GRAMMAR only fires for input that skipped the schema.
   for (const { p, ptr } of entries) {
-    if (hasTrailingDotSegment(p)) add('BR-PATH-TRAILING-DOT', ptr);
+    for (const violation of repoPathViolations(p, { directory: true })) add(L0_RULES[violation], ptr);
   }
 
   if (found.size === 0) return { ok: true };
