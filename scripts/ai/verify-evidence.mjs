@@ -441,11 +441,12 @@ export function createEvidenceVerifier({
     for (let i = 0; i < length; i++) {
       let r;
       try {
-        // One descriptor read per index (a single trap for a Proxy); an accessor runs once.
+        // One descriptor read per index (a single trap for a Proxy).
         const d = Reflect.getOwnPropertyDescriptor(refs, i);
         if (d === undefined) r = result('INVALID', 'E_EVIDENCE_REF_MISSING', null);
         else if (Object.hasOwn(d, 'value')) r = verify(d.value);
-        else r = verify(d.get === undefined ? undefined : Reflect.apply(d.get, refs, []));
+        // An accessor element (getter and/or setter) is T0 code: never invoked, fails closed.
+        else r = result('INVALID', 'E_EVIDENCE_REF_NOT_DATA', null);
       } catch {
         r = result('ERROR', 'E_EVIDENCE_REF_UNREADABLE', null);
       }
