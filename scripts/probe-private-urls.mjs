@@ -32,7 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PRIVATE_PATHS = [
-  '/wrangler.toml', '/BACKEND.md', '/package.json', '/package-lock.json', '/vitest.config.js',
+  '/wrangler.toml', '/BACKEND.md', '/CLAUDE.md', '/package.json', '/package-lock.json', '/vitest.config.js',
   '/.assetsignore', '/.gitignore', '/.env.example', '/.dev.vars',
   '/migrations/0001_init.sql', '/migrations/0042_permissions.sql',
   '/lib/auth.js', '/lib/permissions.js', '/test/auth.test.js',
