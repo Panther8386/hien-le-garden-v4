@@ -1155,3 +1155,19 @@ describe('PATCH /api/finance/transactions/:id — linked rows only allow note ed
     expect(await updateAudits()).toBe(0);
   });
 });
+
+describe('GET /api/finance/transactions exposes linked (PR A)', () => {
+  it('marks linked rows true and manual rows false', async () => {
+    await env.DB.exec('DELETE FROM dine_in_orders');
+    const linked = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+      VALUES ('income', 'ban_hang', 100000, 'order', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:00Z')`).run();
+    const manual = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+      VALUES ('income', 'ban_hang', 200000, 'tay', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:01Z')`).run();
+    await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+      VALUES ('fx', 'closed', 'fx', '2026-08-01', ?)`).bind(linked.meta.last_row_id).run();
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', adminToken, 'GET'), env });
+    const { transactions } = await response.json();
+    expect(transactions.find((t) => t.id === linked.meta.last_row_id).linked).toBe(true);
+    expect(transactions.find((t) => t.id === manual.meta.last_row_id).linked).toBe(false);
+  });
+});
