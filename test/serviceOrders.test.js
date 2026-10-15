@@ -10,6 +10,8 @@ import * as confirmOrder from '../functions/api/service-orders/[id]/confirm.js';
 import * as orderDeposits from '../functions/api/service-orders/[id]/deposits/index.js';
 import * as orderDeposit from '../functions/api/service-orders/[id]/deposits/[depositId].js';
 import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
+import * as cancelOrder from '../functions/api/service-orders/[id]/cancel.js';
+import * as hideOrder from '../functions/api/service-orders/[id]/hide.js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -358,3 +360,74 @@ async function expectNotSettled(id) {
   expect((await env.DB.prepare('SELECT status FROM service_orders WHERE id = ?').bind(id).first()).status).toBe('confirmed');
   expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_settle'`).first()).n).toBe(0);
 }
+
+function cancel(id, body, token = managerToken, testEnv = env) {
+  return call(cancelOrder.onRequestPost, { method: 'POST', token, params: { id: String(id) }, body, testEnv });
+}
+
+describe('POST /api/service-orders/:id/cancel', () => {
+  it('lets reception cancel an order without deposit; reason is required', async () => {
+    const id = await createOrder();
+    expect((await cancel(id, { origin: 'guest', reason: '' }, receptionToken)).status).toBe(400);
+    expect((await cancel(id, { origin: 'guest', reason: 'Khách đổi kế hoạch' }, receptionToken)).status).toBe(200);
+    expect(await env.DB.prepare('SELECT status, cancellation_origin, refund_amount FROM service_orders WHERE id = ?').bind(id).first())
+      .toEqual({ status: 'cancelled', cancellation_origin: 'guest', refund_amount: 0 });
+  });
+
+  it('refuses reception (no refund permission) on an order with a deposit, even with refund 0', async () => {
+    const id = await createOrder();
+    await addDeposit(id, 1000000);
+    const response = await cancel(id, { origin: 'guest', reason: 'Huỷ', refundAmount: 0 }, receptionToken);
+    expect(response.status).toBe(403);
+    expect((await env.DB.prepare('SELECT status FROM service_orders WHERE id = ?').bind(id).first()).status).toBe('draft');
+  });
+
+  it('records a hoan_coc expense for a partial refund and keeps the rest as revenue', async () => {
+    const id = await createOrder();
+    await addDeposit(id, 2000000);
+    const response = await cancel(id, { origin: 'hotel', reason: 'Trùng lịch', refundAmount: 1500000, refundPaymentMethod: 'transfer' });
+    expect(response.status).toBe(200);
+    const order = await env.DB.prepare('SELECT refund_amount, refund_payment_method, refund_finance_transaction_id FROM service_orders WHERE id = ?').bind(id).first();
+    expect(order).toMatchObject({ refund_amount: 1500000, refund_payment_method: 'transfer' });
+    const tx = await env.DB.prepare('SELECT type, category, amount, service_order_id FROM finance_transactions WHERE id = ?').bind(order.refund_finance_transaction_id).first();
+    expect(tx).toEqual({ type: 'expense', category: 'hoan_coc', amount: 1500000, service_order_id: id });
+  });
+
+  it('rejects a refund above the deposit, a missing method and a refund without any deposit', async () => {
+    const id = await createOrder();
+    expect((await cancel(id, { origin: 'guest', reason: 'x', refundAmount: 1 })).status).toBe(400);
+    await addDeposit(id, 1000000);
+    expect((await cancel(id, { origin: 'guest', reason: 'x', refundAmount: 1000001, refundPaymentMethod: 'cash' })).status).toBe(400);
+    expect((await cancel(id, { origin: 'guest', reason: 'x', refundAmount: 500000 })).status).toBe(400);
+    expect((await cancel(id, { origin: 'guest', reason: 'x' })).status).toBe(400);
+  });
+
+  it('cannot cancel a settled order', async () => {
+    const id = await confirmed();
+    await settle(id);
+    expect((await cancel(id, { origin: 'guest', reason: 'x' })).status).toBe(400);
+  });
+
+  it('a deposit landing after preflight makes a reception cancel return 409 and cancels nothing', async () => {
+    const id = await createOrder();
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => { await addDeposit(id, 1000000); });
+    expect((await cancel(id, { origin: 'guest', reason: 'x' }, receptionToken, raced)).status).toBe(409);
+    expect((await env.DB.prepare('SELECT status FROM service_orders WHERE id = ?').bind(id).first()).status).toBe('draft');
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_cancel'`).first()).n).toBe(0);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ? AND category = 'hoan_coc'`).bind(id).first()).n).toBe(0);
+  });
+});
+
+describe('PATCH /api/service-orders/:id/hide', () => {
+  it('hides only settled/cancelled orders, with records.hide, and audits record_hide', async () => {
+    const id = await createOrder();
+    const hide = (token) => call(hideOrder.onRequestPatch, { method: 'PATCH', token, params: { id: String(id) }, body: { hidden: true } });
+    expect((await hide(managerToken)).status).toBe(403);
+    expect((await hide(adminToken)).status).toBe(400);
+    await cancel(id, { origin: 'guest', reason: 'x' });
+    expect((await hide(adminToken)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT is_hidden FROM service_orders WHERE id = ?').bind(id).first()).is_hidden).toBe(1);
+    expect((await env.DB.prepare(`SELECT entity_type, old_value, new_value FROM audit_log WHERE action_type = 'record_hide'`).first()))
+      .toEqual({ entity_type: 'service_order', old_value: 'hiện', new_value: 'ẩn' });
+  });
+});
