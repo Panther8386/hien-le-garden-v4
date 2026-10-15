@@ -204,6 +204,54 @@ try {
     assert.deepEqual(errors, [], 'service-orders booking link: browser errors');
     await context.close();
   }
+  // PR B: quote prints the order with amount in words; settings form is read-only without settings.quote_template.
+  {
+    const context = await browser.newContext();
+    await context.route('https://**/*', (r) => r.abort());
+    const settings = { businessName: 'Hiền Lê Garden', address: 'Tổ Dân Phố 6 Bờ Đập, Nam Gia Nghĩa, Lâm Đồng', hotline: '0968 987 311', email: 'hello@hienlegarden.vn', website: 'hienlegarden.vn',
+      defaultValidDays: 7, defaultDepositPercent: 30, taxNote: 'Giá trên chưa bao gồm thuế VAT', cancellationTerms: 'Điều khoản huỷ', footerNote: null, bankName: null, bankAccount: null, bankHolder: null, updatedAt: null, updatedBy: null };
+    const order = { id: 7, quoteNumber: 'BG-2026-0007', orderType: 'dat_tiec', customerName: 'Chị Lan', phone: '0900000000', organization: null, eventDate: '2026-12-20', eventTime: '18:30',
+      guestCount: 50, venueNote: null, quoteValidDays: 7, requestedDeposit: 3300000, depositAmount: 0, createdAt: '2026-10-15T03:00:00.000Z', status: 'draft',
+      items: [{ description: 'Set menu', quantity: 5, unitPrice: 2000000 }, { description: 'Nước', quantity: 1, unitPrice: 250000 }] };
+    let role = 'reception';
+    await context.route('**/api/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/auth/me') return route.fulfill({ json: { role, username: 'Kiểm tra phiếu', permissions: ROLE_DEFAULTS[role] } });
+      if (path === '/api/quote-settings') return route.fulfill({ json: settings });
+      if (path === '/api/service-orders/7') return route.fulfill({ json: order });
+      return route.fulfill({ json: [] });
+    });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${base}/admin/service-order-quote.html?orderId=7`);
+    await page.waitForSelector('#quote h1');
+    const text = await page.locator('#quote').textContent();
+    assert.match(text, /PHIẾU BÁO GIÁ/);
+    assert.match(text, /BG-2026-0007/);
+    assert.match(text, /Hiệu lực đến: 22\/10\/2026/);
+    assert.match(text, /Mười triệu hai trăm năm mươi nghìn đồng/);
+    assert.doesNotMatch(text, /Chuyển khoản:/);
+    await page.emulateMedia({ media: 'print' });
+    await page.screenshot({ path: 'test-results/admin-refresh/print-service-order-quote.png', fullPage: true });
+    await page.emulateMedia({ media: 'screen' });
+    await page.goto(`${base}/admin/quote-settings.html`);
+    await page.waitForFunction(() => document.querySelector('[name="businessName"]').value.length > 0);
+    assert.equal(await page.locator('[name="businessName"]').isDisabled(), true);
+    role = 'manager';
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector('[name="businessName"]').value.length > 0);
+    assert.equal(await page.locator('[name="businessName"]').isDisabled(), false);
+    // Issue date follows Vietnam time: 20:00Z on the 15th is already the 16th in Asia/Ho_Chi_Minh.
+    Object.assign(order, { createdAt: '2026-10-15T20:00:00.000Z' });
+    await page.goto(`${base}/admin/service-order-quote.html?orderId=7`);
+    await page.waitForSelector('#quote h1');
+    assert.match(await page.locator('#quote').textContent(), /Ngày lập: 16\/10\/2026 · Hiệu lực đến: 23\/10\/2026/);
+    // Amount in words (global function in the classic script).
+    const words = await page.evaluate(() => [0, 15000, 21000, 105000, 1005000, 10250000, 2000000000].map((n) => amountInWords(n)));
+    assert.deepEqual(words, ['Không đồng', 'Mười lăm nghìn đồng', 'Hai mươi mốt nghìn đồng', 'Một trăm lẻ năm nghìn đồng', 'Một triệu không trăm lẻ năm nghìn đồng', 'Mười triệu hai trăm năm mươi nghìn đồng', 'Hai tỷ đồng']);
+    assert.deepEqual(errors, [], 'quote pages: browser errors');
+    await context.close();
+  }
   // PR A: editing a linked finance row locks the financial fields; a manual row stays editable.
   {
     const context = await browser.newContext();
@@ -245,15 +293,18 @@ try {
     const path = new URL(r.request().url()).pathname;
     const booking = {id:1,guestName:'Khách kiểm thử',phone:'0900000000',roomName:'Triangle 01',guestsCount:2,checkIn:'2026-12-01',checkOut:'2026-12-02',nationality:'Việt Nam',idNumber:'000000000000'};
     const invoice = {...booking,status:'closed',paymentStatus:'paid',tableLabel:'Bàn 01',openedAt:'2026-12-01T03:00:00Z',closedAt:'2026-12-01T05:00:00Z',paymentMethod:'cash',totalAmount:100000,items:[{status:'posted',name:'Dịch vụ kiểm thử',quantity:2,unitPrice:50000,amount:100000}]};
+    if (path === '/api/quote-settings') return r.fulfill({ json: { businessName: 'Hiền Lê Garden', address: 'Lâm Đồng', hotline: '0968 987 311', defaultValidDays: 7, defaultDepositPercent: 30 } });
+    if (path.startsWith('/api/service-orders/')) return r.fulfill({ json: { ...invoice, quoteNumber: 'BG-2026-0001', orderType: 'dat_tiec', customerName: 'Khách kiểm thử', eventDate: '2026-12-01', quoteValidDays: 7, requestedDeposit: 0, depositAmount: 0, createdAt: '2026-10-15T00:00:00Z', status: 'draft', items: [{ description: 'Dịch vụ', quantity: 1, unitPrice: 100000 }] } });
     r.fulfill({json:path === '/api/auth/me' ? {role:'admin',username:'Kiểm tra bố cục',permissions}:path.startsWith('/api/bookings/') ? booking:invoice});
   });
-  await context.route('**/admin/*.js', r => /\/(nav-drawer|tabs|.*-print)\.js$/.test(r.request().url()) ? r.continue() : r.abort());
+  await context.route('**/admin/*.js', r => /\/(nav-drawer|tabs|.*-print|service-order-quote)\.js$/.test(r.request().url()) ? r.continue() : r.abort());
   const page = await context.newPage();
   for (const file of (await readdir(resolve(publicRoot, 'admin'))).filter(f => f.endsWith('.html'))) {
     for (const width of [390,800,1440]) {
       await page.setViewportSize({width,height:900});
       await page.goto(`${base}/admin/${file}?bookingId=1&orderId=1&sessionId=1`);
       if (file.endsWith('-print.html')) await page.locator('#formPrint h2').waitFor();
+      if (file === 'service-order-quote.html') await page.locator('#quote h1').waitFor();
       if (await page.locator('script[src="/admin/nav-drawer.js"]').count()) await page.waitForSelector('.nav-drawer');
       if (!file.endsWith('-print.html')) assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true,`${file}/${width}: layout overflow`);
       await page.screenshot({path:`test-results/admin-refresh/layout-${file}-${width}.png`,fullPage:true});

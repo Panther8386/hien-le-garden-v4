@@ -1,0 +1,50 @@
+<!-- v4/admin/quote-settings.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Mẫu phiếu báo giá — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <div class="page-head"><h1>Mẫu phiếu báo giá</h1><a id="quotePreviewBtn" class="btn-secondary" href="/admin/service-order-quote.html?preview=1" target="_blank" rel="noopener">Xem trước phiếu</a></div>
+    <p id="pageError" class="error" role="alert"></p>
+    <p id="quoteUpdated" class="muted"></p>
+    <form id="quoteSettingsForm">
+      <h2>Thông tin cơ sở</h2>
+      <label>Tên hiển thị <input name="businessName" required maxlength="200" /></label>
+      <label>Địa chỉ <input name="address" required maxlength="300" /></label>
+      <div class="form-row">
+        <label>Hotline / Zalo <input name="hotline" required maxlength="50" /></label>
+        <label>Email <input name="email" maxlength="200" /></label>
+        <label>Website <input name="website" maxlength="200" /></label>
+      </div>
+      <h2>Mặc định cho đơn mới</h2>
+      <div class="form-row">
+        <label>Hiệu lực báo giá (ngày) <input type="number" name="defaultValidDays" min="1" max="365" step="1" required /></label>
+        <label>Cọc đề nghị (% tổng đơn) <input type="number" name="defaultDepositPercent" min="0" max="100" step="1" required /></label>
+      </div>
+      <h2>Nội dung in trên phiếu</h2>
+      <label>Dòng thuế <input name="taxNote" maxlength="500" /></label>
+      <label>Điều khoản huỷ <textarea name="cancellationTerms" maxlength="1000"></textarea></label>
+      <label>Ghi chú cuối phiếu <textarea name="footerNote" maxlength="1000"></textarea></label>
+      <h2>Thông tin chuyển khoản (tuỳ chọn)</h2>
+      <div class="form-row">
+        <label>Ngân hàng <input name="bankName" maxlength="200" autocomplete="off" /></label>
+        <label>Số tài khoản <input name="bankAccount" maxlength="50" autocomplete="off" /></label>
+        <label>Chủ tài khoản <input name="bankHolder" maxlength="200" autocomplete="off" /></label>
+      </div>
+      <button type="submit" id="quoteSaveBtn">Lưu mẫu phiếu</button>
+      <p id="quoteSettingsError" class="error" role="alert"></p>
+    </form>
+  </div>
+  <script src="/admin/quote-settings.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>
