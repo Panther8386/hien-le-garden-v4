@@ -6,6 +6,7 @@ import { envWithHookBefore } from './helpers/raceEnv.js';
 import * as ordersIndex from '../functions/api/service-orders/index.js';
 import * as ordersCategories from '../functions/api/service-orders/categories.js';
 import * as orderById from '../functions/api/service-orders/[id].js';
+import * as confirmOrder from '../functions/api/service-orders/[id]/confirm.js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -105,5 +106,89 @@ describe('GET /api/service-orders and /:id', () => {
     const rows = await (await call(ordersCategories.onRequestGet, { url: 'https://x/api/service-orders/categories', token: receptionToken })).json();
     expect(rows.find((c) => c.slug === 'bep_hien_le')).toMatchObject({ label: expect.any(String), isActive: true });
     expect(rows.some((c) => c.slug === 'vat_tu')).toBe(false);
+  });
+});
+
+async function detail(id, token = managerToken) {
+  return (await call(orderById.onRequestGet, { url: `https://x/api/service-orders/${id}`, token, params: { id: String(id) } })).json();
+}
+function patch(id, body, token = managerToken, testEnv = env) {
+  return call(orderById.onRequestPatch, { method: 'PATCH', url: `https://x/api/service-orders/${id}`, token, body, params: { id: String(id) }, testEnv });
+}
+function bodyFrom(d, changes = {}) {
+  return {
+    orderType: d.orderType, customerName: d.customerName, phone: d.phone, organization: d.organization, note: d.note,
+    eventDate: d.eventDate, eventTime: d.eventTime, guestCount: d.guestCount, venueNote: d.venueNote, bookingId: d.bookingId,
+    primaryCategory: d.primaryCategory, quoteValidDays: d.quoteValidDays, requestedDeposit: d.requestedDeposit,
+    items: d.items.map((i) => ({ id: i.id, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, financeCategory: i.financeCategory })),
+    ...changes,
+  };
+}
+
+describe('PATCH /api/service-orders/:id', () => {
+  it('updates header and items (keep, change, remove, add) and writes one update audit', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const items = [{ ...bodyFrom(d).items[0], quantity: 6 }, { description: 'Thuê âm thanh', quantity: 1, unitPrice: 3000000, financeCategory: 'ban_hang' }];
+    expect((await patch(id, bodyFrom(d, { customerName: 'Anh Minh', items }))).status).toBe(200);
+    const after = await detail(id);
+    expect(after.customerName).toBe('Anh Minh');
+    expect(after.items.map((i) => [i.description, i.quantity])).toEqual([['Set menu 8 món', 6], ['Thuê âm thanh', 1]]);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_update'`).first()).n).toBe(1);
+  });
+
+  it('stale snapshot returns 409 and writes nothing', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => {
+      await env.DB.prepare('UPDATE service_order_items SET quantity = 9 WHERE order_id = ?').bind(id).run();
+    });
+    const response = await patch(id, bodyFrom(d, { customerName: 'Muộn' }), managerToken, raced);
+    expect(response.status).toBe(409);
+    expect((await detail(id)).customerName).toBe('Chị Lan');
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_update'`).first()).n).toBe(0);
+  });
+
+  it('refuses edits that would push the primary line below the deposit', async () => {
+    const id = await createOrder();
+    await env.DB.prepare('UPDATE service_orders SET deposit_amount = 5000000 WHERE id = ?').bind(id).run();
+    const d = await detail(id);
+    const moved = bodyFrom(d).items.map((i) => ({ ...i, financeCategory: 'hien_le_drinks' }));
+    expect((await patch(id, bodyFrom(d, { items: moved }))).status).toBe(400);
+    expect((await patch(id, bodyFrom(d, { primaryCategory: 'hien_le_drinks' }))).status).toBe(400);
+  });
+
+  it('keeps the stored phone when the editor cannot see contacts', async () => {
+    const id = await createOrder();
+    await setOverride(env.DB, receptionId, 'guests.contact_view', 'deny');
+    const d = await detail(id, receptionToken);
+    expect(d.phone).toBeNull();
+    expect((await patch(id, bodyFrom(d, { note: 'Đổi ghi chú' }), receptionToken)).status).toBe(200);
+    expect((await env.DB.prepare('SELECT phone FROM service_orders WHERE id = ?').bind(id).first()).phone).toBe('0900000000');
+  });
+
+  it('rejects edits on settled or cancelled orders and from observers', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    expect((await patch(id, bodyFrom(d), observerToken)).status).toBe(403);
+    await env.DB.prepare(`UPDATE service_orders SET status = 'cancelled' WHERE id = ?`).bind(id).run();
+    expect((await patch(id, bodyFrom(d))).status).toBe(400);
+  });
+});
+
+describe('POST /api/service-orders/:id/confirm', () => {
+  it('confirms a draft with items once', async () => {
+    const id = await createOrder();
+    const ok = await call(confirmOrder.onRequestPost, { method: 'POST', token: receptionToken, params: { id: String(id) } });
+    expect(ok.status).toBe(200);
+    expect((await env.DB.prepare('SELECT status, confirmed_by FROM service_orders WHERE id = ?').bind(id).first())).toEqual({ status: 'confirmed', confirmed_by: 'lt_so' });
+    const again = await call(confirmOrder.onRequestPost, { method: 'POST', token: receptionToken, params: { id: String(id) } });
+    expect(again.status).toBe(400);
+  });
+
+  it('refuses to confirm an order without items', async () => {
+    const id = await createOrder({ items: [] });
+    const response = await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } });
+    expect(response.status).toBe(400);
   });
 });
