@@ -124,6 +124,51 @@ try {
     assert.deepEqual(errors,[],`${role}: browser errors`);
     await context.close();
   }
+  // PR B: service orders page — list, new order form totals and deposit warning, detail actions per role.
+  for (const role of ['manager', 'reception', 'observer']) {
+    const context = await browser.newContext();
+    const permissions = ROLE_DEFAULTS[role];
+    await context.route('https://**/*', (r) => r.abort());
+    const order = { id: 7, version: 'v1', quoteNumber: 'BG-2026-0007', orderType: 'dat_tiec', customerName: 'Chị Lan', phone: role === 'observer' ? null : '0900000000', organization: 'Công ty A',
+      eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: 'Sân vườn', bookingId: null, primaryCategory: 'bep_hien_le', depositAmount: 3000000,
+      status: 'confirmed', total: 11000000, isHidden: false, note: null, quoteValidDays: 7, requestedDeposit: 3300000, createdAt: '2026-10-15T00:00:00Z',
+      items: [{ id: 1, description: 'Set menu', quantity: 5, unitPrice: 2000000, financeCategory: 'bep_hien_le' }, { id: 2, description: 'Nước', quantity: 1, unitPrice: 1000000, financeCategory: 'hien_le_drinks' }],
+      deposits: [{ id: 1, amount: 3000000, paymentMethod: 'transfer', note: null, createdAt: '2026-10-15T00:00:00Z', voidedAt: null }], categoryTotals: {} };
+    await context.route('**/api/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/auth/me') return route.fulfill({ json: { role, username: 'Kiểm tra đơn', permissions } });
+      if (path === '/api/service-orders/categories') return route.fulfill({ json: [{ slug: 'bep_hien_le', label: 'Bếp Hiền Lê', isActive: true }, { slug: 'hien_le_drinks', label: 'Hiền Lê Drinks', isActive: true }] });
+      if (path === '/api/service-orders') return route.fulfill({ json: new URL(route.request().url()).searchParams.get('status') === 'open' ? [order] : [] });
+      if (path === '/api/service-orders/7') return route.fulfill({ json: order });
+      if (path === '/api/quote-settings') return route.fulfill({ json: { defaultValidDays: 7, defaultDepositPercent: 30 } });
+      return route.fulfill({ json: [] });
+    });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    for (const width of [390, 800, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${base}/admin/service-orders.html`);
+      await page.waitForSelector('#openOrdersList .booking-card');
+      assert.equal(await page.locator('#openNewOrderBtn').isVisible(), role !== 'observer');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `service-orders ${role}/${width}: overflow`);
+      await page.locator('#openOrdersList .booking-card button').first().click();
+      await page.waitForSelector('#orderDetailOverlay:not(.hidden)');
+      assert.equal(await page.getByRole('button', { name: 'Xoá cọc' }).count(), role === 'manager' ? 1 : 0);
+      assert.equal(await page.getByRole('button', { name: 'Huỷ đơn' }).count(), role === 'manager' ? 1 : 0);
+      assert.equal(await page.getByRole('button', { name: 'Tất toán' }).count(), role === 'observer' ? 0 : 1);
+      await page.screenshot({ path: `test-results/admin-refresh/service-orders-${role}-${width}.png`, fullPage: true });
+      await page.keyboard.press('Escape');
+    }
+    if (role !== 'observer') {
+      await page.locator('#openNewOrderBtn').click();
+      await page.locator('#itemsBody tr input').first().fill('Set menu');
+      await page.locator('#itemsBody tr input').nth(1).fill('2');
+      await page.locator('#itemsBody tr input').nth(2).fill('500000');
+      assert.match(await page.locator('#itemsTotals').textContent(), /Tổng đơn: 1\.000\.000đ/);
+    }
+    assert.deepEqual(errors, [], `service-orders ${role}: browser errors`);
+    await context.close();
+  }
   // PR A: editing a linked finance row locks the financial fields; a manual row stays editable.
   {
     const context = await browser.newContext();

@@ -24,6 +24,7 @@ const NAV_GROUPS = [
       { page: 'reception.html', label: 'Vận hành hôm nay', icon: '🛎️', perm: 'bookings.view' },
       { page: 'dine-in-orders.html', label: 'Order ăn uống', icon: '🍽️', perm: 'dine_in.view' },
       { page: 'gio-xanh.html', label: 'Giờ Xanh Hiền Lê', icon: '🌿', perm: 'gio_xanh.view' },
+      { page: 'service-orders.html', label: 'Đơn dịch vụ', icon: '🎉', perm: 'service_orders.view' },
     ],
   },
   {
@@ -43,6 +44,7 @@ const NAV_GROUPS = [
       { page: 'audit-log.html', label: 'Nhật ký thao tác', icon: '📜', perm: 'audit.view' },
       { page: 'cancellation-policy.html', label: 'Chính sách hoàn cọc', icon: '🔄', perm: ['settings.view', 'settings.cancellation_policy'] },
       { page: 'rooms.html', label: 'Quản lý phòng', icon: '🛏️', perm: { any: ['settings.view', 'settings.rooms'], all: ['bookings.view'] } },
+      { page: 'quote-settings.html', label: 'Mẫu phiếu báo giá', icon: '🧾', perm: ['settings.view', 'settings.quote_template'] },
       { page: 'users.html', label: 'Phân quyền', icon: '🔑', perm: 'users.manage' },
     ],
   },
@@ -51,17 +53,17 @@ const NAV_GROUPS = [
 // Reuse the existing permission contracts while changing information architecture.
 const itemsByPage = Object.fromEntries(NAV_GROUPS.flatMap(g => g.items).map(i => [i.page, i]));
 NAV_GROUPS.splice(0, NAV_GROUPS.length, ...[
- ['Vận hành', ['reception','dine-in-orders','gio-xanh']],
+ ['Vận hành', ['reception','dine-in-orders','gio-xanh','service-orders']],
  ['Khách hàng', ['customers','templates','manager']],
  ['Tài chính', ['dashboard','finance']],
  ['Kho & tài sản', ['asset-inventory-stock','asset-inventory','assets','asset-source-data','asset-config']],
- ['Cài đặt', ['rooms','catalog','dine-in-menu','cancellation-policy','finance-categories','users','audit-log']],
+ ['Cài đặt', ['rooms','catalog','dine-in-menu','cancellation-policy','finance-categories','users','audit-log','quote-settings']],
 ].map(([label,pages]) => ({label, items:pages.map(p => itemsByPage[p+'.html'])})));
 
 const ROLE_URL_PREFIX = { admin: '/manager', manager: '/manager', reception: '/reception', observer: '/observer' };
 
 // Page file -> clean URL slug under /manager, /reception, /observer (see _redirects).
-const PAGE_SLUG = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'security.html': 'security', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock' };
+const PAGE_SLUG = { 'dashboard.html': 'dashboard', 'dine-in-orders.html': 'dine-in-orders', 'gio-xanh.html': 'gio-xanh', 'finance.html': 'finance', 'finance-categories.html': 'finance-categories', 'dine-in-menu.html': 'dine-in-menu', 'customers.html': 'customers', 'templates.html': 'templates', 'manager.html': 'config', 'catalog.html': 'catalog', 'audit-log.html': 'audit-log', 'cancellation-policy.html': 'cancellation-policy', 'rooms.html': 'rooms', 'users.html': 'users', 'change-password.html': 'change-password', 'security.html': 'security', 'asset-config.html': 'asset-config', 'asset-source-data.html': 'asset-source-data', 'assets.html': 'assets', 'asset-inventory.html': 'asset-inventory', 'asset-inventory-stock.html': 'asset-inventory-stock', 'service-orders.html': 'service-orders', 'quote-settings.html': 'quote-settings' };
 const SLUG_PAGE = Object.fromEntries(Object.entries(PAGE_SLUG).map(([file, slug]) => [slug, file]));
 const CLEAN_URL_PREFIXES = ['manager', 'reception', 'observer'];
 
@@ -70,6 +72,7 @@ const PAGE_ALWAYS_ALLOWED = ['change-password.html', 'security.html'];
 const PAGE_EXTRA_PERMS = {
   'dine-in-order-detail.html': 'dine_in.view',
   'gio-xanh-detail.html': 'gio_xanh.view',
+  'service-order-quote.html': ['service_orders.view', 'settings.view'],
 };
 
 // True when `permissions` satisfies `perm`: a key, an any-of array of keys,

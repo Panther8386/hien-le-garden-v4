@@ -1,0 +1,117 @@
+<!-- v4/admin/service-orders.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Đơn dịch vụ — Hiền Lê Garden CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="page page-wide">
+    <div class="page-head"><h1>Đơn dịch vụ</h1><button type="button" id="openNewOrderBtn" hidden>+ Đơn mới</button></div>
+    <p id="pageError" class="error" role="alert"></p>
+    <div class="tabs" data-tabs role="tablist" aria-label="Đơn dịch vụ">
+      <button type="button" class="tab" role="tab" id="tab-sap-dien-ra" data-tab="sap-dien-ra" aria-controls="panel-sap-dien-ra">Sắp diễn ra</button>
+      <button type="button" class="tab" role="tab" id="tab-lich-su" data-tab="lich-su" aria-controls="panel-lich-su">Lịch sử</button>
+    </div>
+    <section id="panel-sap-dien-ra" role="tabpanel" aria-labelledby="tab-sap-dien-ra">
+      <label>Loại đơn <select id="filterType"><option value="">Tất cả</option></select></label>
+      <div id="openOrdersList" class="booking-list"></div>
+    </section>
+    <section id="panel-lich-su" role="tabpanel" aria-labelledby="tab-lich-su" hidden>
+      <label>Tìm tên / đơn vị / SĐT <input type="search" id="historySearch" maxlength="100" /></label>
+      <label class="checkbox-label" id="showHiddenWrap" hidden><input type="checkbox" id="showHiddenOrders" /> Hiện đơn đã ẩn</label>
+      <div id="historyOrdersList" class="booking-list"></div>
+    </section>
+  </div>
+
+  <div id="orderFormOverlay" class="confirm-overlay form-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="orderFormTitle">
+    <div class="confirm-box wide">
+      <div class="page-head"><h2 id="orderFormTitle">Đơn mới</h2><button type="button" id="closeOrderFormBtn" class="btn-ghost" aria-label="Đóng">✕</button></div>
+      <form id="orderForm">
+        <div class="form-row">
+          <label>Loại đơn <select name="orderType" required></select></label>
+          <label>Ngày diễn ra <input type="date" name="eventDate" required /></label>
+          <label>Giờ <input type="time" name="eventTime" /></label>
+          <label>Số khách <input type="number" name="guestCount" min="1" step="1" /></label>
+        </div>
+        <div class="form-row">
+          <label>Tên khách <input name="customerName" required maxlength="200" /></label>
+          <label>Số điện thoại <input name="phone" required maxlength="30" /></label>
+          <label>Đơn vị <input name="organization" maxlength="200" /></label>
+        </div>
+        <label>Khu vực / yêu cầu <input name="venueNote" maxlength="2000" /></label>
+        <div class="form-row">
+          <label>Gắn booking (tuỳ chọn) <select name="bookingId"><option value="">Không gắn</option></select></label>
+          <label>Mảng chính (nhận cọc) <select name="primaryCategory" required></select></label>
+        </div>
+        <h3>Các dòng</h3>
+        <div class="table-scroll">
+          <table id="itemsTable"><thead><tr><th>Mô tả</th><th>SL</th><th>Đơn giá</th><th>Mảng</th><th>Thành tiền</th><th></th></tr></thead><tbody id="itemsBody"></tbody></table>
+        </div>
+        <button type="button" id="addItemBtn" class="btn-secondary">+ Thêm dòng</button>
+        <div id="itemsTotals"></div>
+        <p id="depositWarning" class="error" hidden></p>
+        <div class="form-row">
+          <label>Cọc đề nghị (đ) <input type="number" name="requestedDeposit" min="0" step="1000" /></label>
+          <label>Hiệu lực báo giá (ngày) <input type="number" name="quoteValidDays" min="1" max="365" step="1" required /></label>
+        </div>
+        <label>Ghi chú <textarea name="note" maxlength="2000"></textarea></label>
+        <button type="submit">Lưu đơn</button>
+        <p id="orderFormError" class="error" role="alert"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="orderDetailOverlay" class="confirm-overlay form-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="orderDetailTitle">
+    <div class="confirm-box wide">
+      <div class="page-head"><h2 id="orderDetailTitle">Chi tiết đơn</h2><button type="button" id="closeOrderDetailBtn" class="btn-ghost" aria-label="Đóng">✕</button></div>
+      <div id="orderDetail"></div>
+      <p id="orderDetailError" class="error" role="alert"></p>
+    </div>
+  </div>
+
+  <div id="settleOverlay" class="confirm-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settleTitle">
+    <div class="confirm-box">
+      <h2 id="settleTitle">Tất toán đơn</h2>
+      <div id="settlePreview"></div>
+      <div id="settleMethodFields">
+        <label class="checkbox-label"><input type="radio" name="settleMethod" value="cash" /> 💵 Tiền mặt</label>
+        <label class="checkbox-label"><input type="radio" name="settleMethod" value="transfer" /> 🏦 Chuyển khoản</label>
+      </div>
+      <button type="button" id="settleSubmitBtn">Xác nhận tất toán</button>
+      <button type="button" id="settleCloseBtn" class="btn-secondary">Đóng</button>
+      <p id="settleError" class="error" role="alert"></p>
+    </div>
+  </div>
+
+  <div id="cancelOverlay" class="confirm-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+    <div class="confirm-box">
+      <h2 id="cancelTitle">Huỷ đơn</h2>
+      <label class="checkbox-label"><input type="radio" name="cancelOrigin" value="guest" checked /> Khách huỷ</label>
+      <label class="checkbox-label"><input type="radio" name="cancelOrigin" value="hotel" /> Khách sạn huỷ</label>
+      <label>Lý do (bắt buộc) <textarea id="cancelReason" maxlength="1000" required></textarea></label>
+      <div id="refundFields" hidden>
+        <p id="refundHint"></p>
+        <label>Số tiền hoàn (đ) <input type="number" id="refundAmount" min="0" step="1000" /></label>
+        <label class="checkbox-label"><input type="radio" name="refundMethod" value="cash" /> 💵 Tiền mặt</label>
+        <label class="checkbox-label"><input type="radio" name="refundMethod" value="transfer" /> 🏦 Chuyển khoản</label>
+      </div>
+      <button type="button" id="cancelSubmitBtn">Xác nhận huỷ</button>
+      <button type="button" id="cancelCloseBtn" class="btn-secondary">Đóng</button>
+      <p id="cancelError" class="error" role="alert"></p>
+    </div>
+  </div>
+
+  <script src="/admin/tabs.js"></script>
+  <script src="/admin/service-orders.js"></script>
+  <script src="/admin/nav-drawer.js"></script>
+</body>
+</html>

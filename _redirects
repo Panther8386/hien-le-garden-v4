@@ -86,3 +86,9 @@
 /observer/config              /admin/manager         200
 /observer/users               /admin/users           200
 /observer/audit-log           /admin/audit-log       200
+/manager/service-orders         /admin/service-orders   200
+/manager/quote-settings         /admin/quote-settings   200
+/reception/service-orders       /admin/service-orders   200
+/reception/quote-settings       /admin/quote-settings   200
+/observer/service-orders        /admin/service-orders   200
+/observer/quote-settings        /admin/quote-settings   200

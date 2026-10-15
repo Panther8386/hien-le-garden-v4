@@ -76,6 +76,8 @@ export const REQUIRED = [
   'admin/reception.js',
   'admin/nav-drawer.js',
   'admin/tabs.js',
+  'admin/service-orders.html',
+  'admin/service-orders.js',
   'tri-an-khach-hang/index.html',
   'bang-gia/index.html',
 ];
