@@ -169,6 +169,41 @@ try {
     assert.deepEqual(errors, [], `service-orders ${role}: browser errors`);
     await context.close();
   }
+  // PR B: a manage user without bookings.view must keep the stored booking link when editing.
+  {
+    const context = await browser.newContext();
+    await context.route('https://**/*', (r) => r.abort());
+    const permissions = ROLE_DEFAULTS.reception.filter((p) => p !== 'bookings.view');
+    const order = { id: 7, version: 'v1', quoteNumber: 'BG-2026-0007', orderType: 'dat_tiec', customerName: 'Chị Lan', phone: '0900000000', organization: '',
+      eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: '', bookingId: 12, primaryCategory: 'bep_hien_le', depositAmount: 0,
+      status: 'draft', total: 1000000, isHidden: false, note: null, quoteValidDays: 7, requestedDeposit: 300000, createdAt: '2026-10-15T00:00:00Z',
+      items: [{ id: 1, description: 'Set menu', quantity: 1, unitPrice: 1000000, financeCategory: 'bep_hien_le' }], deposits: [], categoryTotals: {} };
+    await context.route('**/api/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/auth/me') return route.fulfill({ json: { role: 'reception', username: 'Kiểm tra liên kết', permissions } });
+      if (path === '/api/service-orders/categories') return route.fulfill({ json: [{ slug: 'bep_hien_le', label: 'Bếp Hiền Lê', isActive: true }] });
+      if (path === '/api/service-orders') return route.fulfill({ json: [order] });
+      if (path === '/api/service-orders/7') return route.fulfill({ json: route.request().method() === 'PATCH' ? { ok: true } : order });
+      if (path === '/api/quote-settings') return route.fulfill({ json: { defaultValidDays: 7, defaultDepositPercent: 30 } });
+      return route.fulfill({ json: [] });
+    });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${base}/admin/service-orders.html`);
+    await page.waitForSelector('#openOrdersList .booking-card');
+    await page.locator('#openOrdersList .booking-card button').first().click();
+    await page.getByRole('button', { name: 'Sửa đơn' }).click();
+    await page.waitForSelector('#orderFormOverlay:not(.hidden)');
+    const [request] = await Promise.all([
+      page.waitForRequest((r) => r.method() === 'PATCH' && new URL(r.url()).pathname === '/api/service-orders/7'),
+      page.locator('#orderForm button[type="submit"]').click(),
+    ]);
+    const sent = request.postDataJSON();
+    assert.equal(sent.bookingId, 12, 'service-orders: booking link must survive an edit without bookings.view');
+    assert.equal(sent.version, 'v1');
+    assert.deepEqual(errors, [], 'service-orders booking link: browser errors');
+    await context.close();
+  }
   // PR A: editing a linked finance row locks the financial fields; a manual row stays editable.
   {
     const context = await browser.newContext();

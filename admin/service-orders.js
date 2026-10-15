@@ -143,9 +143,13 @@ document.querySelector('#orderForm [name="primaryCategory"]').addEventListener('
 async function loadBookingOptions(selected) {
   const select = document.querySelector('#orderForm [name="bookingId"]');
   select.replaceChildren(el('option', { value: '', textContent: 'Không gắn' }));
-  if (!can('bookings.view')) return;
-  const lists = await Promise.all(['confirmed', 'checked_in'].map((s) => api(`/api/bookings?status=${s}`).catch(() => [])));
-  lists.flat().forEach((b) => select.append(el('option', { value: b.id, textContent: `#${b.id} · ${b.guestName} · ${b.checkIn}→${b.checkOut}`, selected: b.id === selected })));
+  // Without bookings.view the user cannot pick bookings: disable the select, but keep the stored link
+  // as the only option (a disabled select still exposes .value, so the submit preserves bookingId).
+  select.disabled = !can('bookings.view');
+  if (can('bookings.view')) {
+    const lists = await Promise.all(['confirmed', 'checked_in'].map((s) => api(`/api/bookings?status=${s}`).catch(() => [])));
+    lists.flat().forEach((b) => select.append(el('option', { value: b.id, textContent: `#${b.id} · ${b.guestName} · ${b.checkIn}→${b.checkOut}`, selected: b.id === selected })));
+  }
   if (selected && ![...select.options].some((o) => Number(o.value) === selected)) select.append(el('option', { value: selected, textContent: `#${selected}`, selected: true }));
 }
 
