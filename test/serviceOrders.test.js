@@ -8,6 +8,7 @@ import * as ordersCategories from '../functions/api/service-orders/categories.js
 import * as orderById from '../functions/api/service-orders/[id].js';
 import * as confirmOrder from '../functions/api/service-orders/[id]/confirm.js';
 import * as orderDeposits from '../functions/api/service-orders/[id]/deposits/index.js';
+import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
 import * as orderDeposit from '../functions/api/service-orders/[id]/deposits/[depositId].js';
 
 let adminToken, managerToken, receptionToken, observerToken;
@@ -289,5 +290,51 @@ describe('service order deposits', () => {
     const id = await createOrder();
     await env.DB.prepare(`UPDATE service_orders SET status = 'settled' WHERE id = ?`).bind(id).run();
     expect((await addDeposit(id, 100000)).status).toBe(400);
+  });
+});
+
+async function confirmed(overrides = {}) {
+  const id = await createOrder(overrides);
+  expect((await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } })).status).toBe(200);
+  return id;
+}
+function settle(id, body = { paymentMethod: 'cash' }, token = managerToken, testEnv = env) {
+  return call(settleOrder.onRequestPost, { method: 'POST', token, params: { id: String(id) }, body, testEnv });
+}
+
+describe('POST /api/service-orders/:id/settle', () => {
+  it('writes one income row per line, subtracting the deposit from the primary line', async () => {
+    const id = await confirmed();
+    await addDeposit(id, 3000000);
+    const response = await settle(id);
+    expect(response.status).toBe(200);
+    const rows = (await env.DB.prepare(`SELECT category, amount, note FROM finance_transactions
+      WHERE service_order_id = ? AND id NOT IN (SELECT finance_transaction_id FROM service_order_deposits) ORDER BY category`).bind(id).all()).results;
+    expect(rows.map((r) => [r.category, r.amount])).toEqual([['bep_hien_le', 7000000], ['hien_le_drinks', 1000000]]);
+    expect(rows[0].note).toBe(`Tất toán đơn #${id} — Chị Lan`);
+    expect(await env.DB.prepare('SELECT status, settlement_payment_method FROM service_orders WHERE id = ?').bind(id).first())
+      .toEqual({ status: 'settled', settlement_payment_method: 'cash' });
+  });
+
+  it('succeeds with no receipt and no payment method when the deposit covers everything', async () => {
+    const id = await confirmed({ items: [{ description: 'Tiệc', quantity: 1, unitPrice: 2000000, financeCategory: 'bep_hien_le' }] });
+    await addDeposit(id, 2000000);
+    const response = await settle(id, {});
+    expect(response.status).toBe(200);
+    expect((await response.json()).receipts).toEqual([]);
+  });
+
+  it('requires a payment method when something is due, and only for confirmed orders', async () => {
+    const draft = await createOrder();
+    expect((await settle(draft)).status).toBe(400);
+    const id = await confirmed();
+    expect((await settle(id, {})).status).toBe(400);
+  });
+
+  it('a deposit landing after preflight makes settlement return 409 with no receipts', async () => {
+    const id = await confirmed();
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => { await addDeposit(id, 1000000); });
+    expect((await settle(id, { paymentMethod: 'cash' }, managerToken, raced)).status).toBe(409);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ? AND note LIKE 'Tất toán%'`).bind(id).first()).n).toBe(0);
   });
 });
