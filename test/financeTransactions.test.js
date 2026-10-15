@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listTransactions, onRequestPost as createTransaction } from '../functions/api/finance/transactions/index.js';
-import { onRequestPatch as patchTransaction } from '../functions/api/finance/transactions/[id].js';
+import { onRequestPatch as patchTransaction, LINKED_EDIT_ERROR, NOTE_LOCKED_ERROR } from '../functions/api/finance/transactions/[id].js';
 import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
 import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
@@ -1074,6 +1074,14 @@ describe('PATCH /api/finance/transactions/:id — linked rows only allow note ed
       await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
         VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
     },
+    'cancelled booking with refund': async () => {
+      const id = await booking('cancelled');
+      const other = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+        VALUES ('expense', 'hoan_coc', 400000, 'refund', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:02Z')`).run();
+      await env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id = ? WHERE id = ?').bind(other.meta.last_row_id, id).run();
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
     'cancelled unrefunded deposit': async () => {
       const id = await booking('cancelled');
       await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
@@ -1104,7 +1112,7 @@ describe('PATCH /api/finance/transactions/:id — linked rows only allow note ed
       await link();
       const response = await patch({ ...FULL_UNCHANGED, amount: 500000, note: 'Gốc' });
       expect(response.status).toBe(400);
-      expect((await response.json()).error).toBe('Khoản này gắn với nghiệp vụ (đặt phòng, cọc, order, Giờ Xanh…); chỉ sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.');
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
       expect(await row()).toMatchObject({ amount: 400000, note: 'Gốc' });
       expect(await updateAudits()).toBe(0);
     });
@@ -1123,6 +1131,7 @@ describe('PATCH /api/finance/transactions/:id — linked rows only allow note ed
     for (const change of [{ category: 'ban_hang' }, { type: 'expense', category: 'vat_tu' }, { transactionDate: '2026-08-06' }, { status: 'paid' }]) {
       const response = await patch({ ...FULL_UNCHANGED, note: 'Gốc', ...change });
       expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
     }
     expect(await row()).toMatchObject({ type: 'income', category: 'dich_vu', transaction_date: '2026-08-05', status: 'confirmed' });
     expect(await updateAudits()).toBe(0);
@@ -1143,6 +1152,50 @@ describe('PATCH /api/finance/transactions/:id — linked rows only allow note ed
     expect(response.status).toBe(409);
     expect((await row()).amount).toBe(400000);
     expect(await updateAudits()).toBe(0);
+  });
+
+  describe('legacy audit-matched checkout receipt (no checkout_booking_id)', () => {
+    const NOTE = 'Tiền phòng — Fixture';
+    beforeEach(async () => {
+      await env.DB.exec(`DELETE FROM audit_log WHERE action_type = 'booking_checkout'`);
+      await env.DB.prepare(`UPDATE finance_transactions SET note = ? WHERE id = ?`).bind(NOTE, txId).run();
+      await env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, new_value, actor, created_at)
+        VALUES ('booking_checkout', 'booking', 123, 'Fixture', ?, 'quan_ly_fin', '2026-08-05T00:00:00Z')`).bind(JSON.stringify({ roomDue: 400000 })).run();
+    });
+
+    it('rejects an amount change with LINKED_EDIT_ERROR and no audit', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, amount: 500000, note: NOTE });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
+      expect(await row()).toMatchObject({ amount: 400000, note: NOTE });
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it('rejects a note change with NOTE_LOCKED_ERROR, leaving row and audit untouched', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Đã sửa ghi chú' });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(NOTE_LOCKED_ERROR);
+      expect((await row()).note).toBe(NOTE);
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it('still accepts a save that resends every field unchanged', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, note: NOTE });
+      expect(response.status).toBe(200);
+      expect((await row()).note).toBe(NOTE);
+    });
+
+    it('rejects with 409 when the audit match appears after preflight of a note change', async () => {
+      await env.DB.exec(`DELETE FROM audit_log WHERE action_type = 'booking_checkout'`);
+      const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+        await env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, new_value, actor, created_at)
+          VALUES ('booking_checkout', 'booking', 124, 'Fixture', ?, 'quan_ly_fin', '2026-08-05T00:00:00Z')`).bind(JSON.stringify({ roomDue: 400000 })).run();
+      });
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Đã sửa ghi chú' }, raced);
+      expect(response.status).toBe(409);
+      expect((await row()).note).toBe(NOTE);
+      expect(await updateAudits()).toBe(0);
+    });
   });
 
   it('rejects an edit when the row is voided after preflight', async () => {

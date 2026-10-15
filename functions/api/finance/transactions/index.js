@@ -106,6 +106,7 @@ export async function onRequestGet({ request, env }) {
   // Computed only for the returned page: the link checks are per-row subqueries.
   if (pageRows.length > 0) {
     const ids = pageRows.map((r) => r.id);
+    // Binds one parameter per page row; pageSize <= 100 is D1's per-statement bound-parameter limit.
     const { results: linkRows } = await env.DB.prepare(
       `SELECT id, ((${blockedFinanceLinks}) OR (${cancelledDepositLink})) AS linked
        FROM finance_transactions WHERE id IN (${ids.map(() => '?').join(',')})`
