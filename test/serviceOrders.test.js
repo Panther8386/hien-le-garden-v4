@@ -12,6 +12,7 @@ import * as orderDeposit from '../functions/api/service-orders/[id]/deposits/[de
 import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
 import * as cancelOrder from '../functions/api/service-orders/[id]/cancel.js';
 import * as hideOrder from '../functions/api/service-orders/[id]/hide.js';
+import * as quoteSettings from '../functions/api/quote-settings.js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -429,5 +430,26 @@ describe('PATCH /api/service-orders/:id/hide', () => {
     expect((await env.DB.prepare('SELECT is_hidden FROM service_orders WHERE id = ?').bind(id).first()).is_hidden).toBe(1);
     expect((await env.DB.prepare(`SELECT entity_type, old_value, new_value FROM audit_log WHERE action_type = 'record_hide'`).first()))
       .toEqual({ entity_type: 'service_order', old_value: 'hiện', new_value: 'ẩn' });
+  });
+});
+
+describe('/api/quote-settings', () => {
+  const VALID = { businessName: 'Hiền Lê Garden', address: 'Lâm Đồng', hotline: '0968 987 311', email: 'hello@hienlegarden.vn', website: 'hienlegarden.vn',
+    defaultValidDays: 10, defaultDepositPercent: 40, taxNote: 'Giá trên chưa bao gồm thuế VAT', cancellationTerms: 'Điều khoản', footerNote: '',
+    bankName: 'Ngân hàng A', bankAccount: '123', bankHolder: 'HKD' };
+  it('reception can read, cannot write; manager writes a new version without bank details in audit', async () => {
+    expect((await call(quoteSettings.onRequestGet, { url: 'https://x/api/quote-settings', token: receptionToken })).status).toBe(200);
+    expect((await call(quoteSettings.onRequestPut, { method: 'PUT', url: 'https://x/api/quote-settings', token: receptionToken, body: VALID })).status).toBe(403);
+    expect((await call(quoteSettings.onRequestPut, { method: 'PUT', url: 'https://x/api/quote-settings', token: managerToken, body: VALID })).status).toBe(200);
+    const read = await (await call(quoteSettings.onRequestGet, { url: 'https://x/api/quote-settings', token: receptionToken })).json();
+    expect(read).toMatchObject({ defaultValidDays: 10, defaultDepositPercent: 40, bankAccount: '123', updatedBy: 'ql_so' });
+    const audit = await env.DB.prepare(`SELECT new_value FROM audit_log WHERE action_type = 'quote_settings_update'`).first();
+    expect(audit.new_value).not.toContain('123');
+  });
+  it('new orders take validity and deposit percent from the latest settings', async () => {
+    await call(quoteSettings.onRequestPut, { method: 'PUT', url: 'https://x/api/quote-settings', token: managerToken, body: VALID });
+    const id = await createOrder();
+    expect(await env.DB.prepare('SELECT quote_valid_days, requested_deposit FROM service_orders WHERE id = ?').bind(id).first())
+      .toEqual({ quote_valid_days: 10, requested_deposit: 4400000 });
   });
 });

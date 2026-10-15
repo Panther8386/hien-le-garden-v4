@@ -171,3 +171,12 @@ describe('GET /api/audit-log', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('service order audit action types', () => {
+  it('accepts every new action type as a filter', () => {
+    for (const t of ['service_order_create', 'service_order_update', 'service_order_confirm', 'service_order_deposit',
+      'service_order_deposit_delete', 'service_order_settle', 'service_order_cancel', 'quote_settings_update']) {
+      expect(VALID_ACTION_TYPES).toContain(t);
+    }
+  });
+});
