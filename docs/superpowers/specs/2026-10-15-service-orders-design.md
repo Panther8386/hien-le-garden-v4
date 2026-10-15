@@ -19,7 +19,7 @@ Thành công khi:
 |---|---|
 | D1 | Đơn có thể đứng độc lập hoặc gắn một booking lưu trú (chỉ để tham chiếu). |
 | D2 | Tiền cọc ghi thẳng vào doanh thu của mảng (danh mục thu), nhận diện là cọc qua liên kết với đơn. Không tạo danh mục `tien_coc`; phương án B cũ bị huỷ. |
-| D3 | Một đơn gồm nhiều dòng, mỗi dòng thuộc một mảng. Cọc ghi vào **mảng chính** do nhân viên chọn. Ràng buộc: tổng cọc ≤ giá trị mảng chính. |
+| D3 | Một đơn gồm nhiều dòng, mỗi dòng thuộc một mảng. Cọc ghi vào **mảng chính** do nhân viên chọn. Ràng buộc: tổng cọc ≤ giá trị mảng chính. **Không đổi được mảng chính khi đơn còn cọc hiệu lực (`deposit_amount > 0`)** — bổ sung 15/10/2026 sau kiểm tra chéo F1: khoản thu cọc đã ghi theo mảng cũ, nếu đổi mảng thì tất toán trừ cọc ở mảng mới và lệch doanh thu từng mảng. Muốn đổi khi cọc ghi nhầm: xoá cọc (quyền `refund`) rồi đổi. |
 | D4 | Giai đoạn này chỉ nhân viên nhập trong Admin; form công khai trên website để sau. |
 | D5 | Dòng đơn nhập tự do: mô tả · số lượng · đơn giá · mảng. |
 | D6 | Đơn gắn booking tất toán riêng; khi trả phòng chỉ cảnh báo nếu đơn liên kết chưa tất toán. |
@@ -51,7 +51,7 @@ Không cần migration.
 
 ### 4.1 Dữ liệu — migration `0046_service_orders.sql`
 
-Chỉ thêm bảng, cột tuỳ chọn và dòng mới; tương thích bản code cũ khi rollback ứng dụng.
+Chỉ thêm bảng, cột tuỳ chọn và dòng mới. Code cũ vẫn chạy được trên schema mới, nhưng sau khi đơn đã phát sinh thu chi thì code cũ **không** giữ guard cho các khoản đó — xem phương án rollback ở §6.
 
 `service_orders`
 
@@ -98,7 +98,7 @@ Giá trị mảng `c` = Σ thành tiền các dòng có `finance_category = c`. 
 | Thao tác | Điều kiện | Thu chi | Quyền |
 |---|---|---|---|
 | Tạo | — | — | manage |
-| Sửa thông tin, dòng, mảng chính | `draft`/`confirmed`; sau khi sửa `deposit_amount ≤ P` | — | manage |
+| Sửa thông tin, dòng, mảng chính | `draft`/`confirmed`; sau khi sửa `deposit_amount ≤ P`; đổi mảng chính chỉ khi `deposit_amount = 0` (kiểm cả ở preflight và trong câu lệnh ghi, cọc phát sinh giữa chừng → 409) | — | manage |
 | Chốt | `draft` → `confirmed`; ≥ 1 dòng | — | manage |
 | Nhận cọc | `draft`/`confirmed`; `deposit_amount + amount ≤ P` | Thu · `primary_category` · "Cọc đơn #id — tên" | manage |
 | Xoá cọc ghi nhầm | `draft`/`confirmed`; cọc chưa xoá | Huỷ khoản thu của cọc đó | **refund** |
@@ -159,7 +159,7 @@ Mọi endpoint ghi yêu cầu thêm `service_orders.view`; thiếu quyền xem h
 
 ## 5. Kiểm thử
 
-- API: tạo/sửa/chốt/nhận cọc/xoá cọc/tất toán/huỷ ở mọi trạng thái hợp lệ và không hợp lệ; quyền đủ/thiếu cho từng thao tác (gồm huỷ có cọc hoàn 0đ cần `refund`); 404 khi thiếu quyền xem hoặc bị ẩn; ràng buộc cọc ≤ mảng chính (nhận cọc, sửa dòng, đổi mảng chính); tất toán ghi đúng từng mảng và trừ đúng cọc ở mảng chính; tranh chấp hai thao tác cùng lúc → đúng một thắng, không ghi trùng; dữ liệu cũ (snapshot lệch) → 409; audit lỗi → rollback toàn bộ; danh mục không hoạt động / sai loại bị từ chối; giới hạn đầu vào.
+- API: tạo/sửa/chốt/nhận cọc/xoá cọc/tất toán/huỷ ở mọi trạng thái hợp lệ và không hợp lệ; quyền đủ/thiếu cho từng thao tác (gồm huỷ có cọc hoàn 0đ cần `refund`); 404 khi thiếu quyền xem hoặc bị ẩn; ràng buộc cọc ≤ mảng chính (nhận cọc, sửa dòng); đổi mảng chính bị từ chối khi còn cọc, được phép khi cọc = 0 hoặc đã xoá hết cọc, cọc phát sinh sau preflight → 409; luồng cọc → chốt → tất toán ghi tổng thu theo từng mảng đúng bằng tổng dòng; tất toán ghi đúng từng mảng và trừ đúng cọc ở mảng chính; tranh chấp hai thao tác cùng lúc → đúng một thắng, không ghi trùng; dữ liệu cũ (snapshot lệch) → 409; audit lỗi → rollback toàn bộ; danh mục không hoạt động / sai loại bị từ chối; giới hạn đầu vào.
 - Guard thu chi: khoản của đơn không huỷ/sửa lẻ được; khoản nhập tay không bị ảnh hưởng.
 - Migration: chạy lại không lỗi; `role_permissions` khớp `ROLE_DEFAULTS`; danh mục 42 mã; dữ liệu cũ không đổi.
 - `GET /api/finance/transactions`: `source` và `depositsOnly` đúng cho cọc đơn và cọc booking.
@@ -171,7 +171,12 @@ Mọi endpoint ghi yêu cầu thêm `service_orders.view`; thiếu quyền xem h
 1. PR A → CI → staging → chủ dự án duyệt → merge/deploy → kiểm tra chỉ đọc.
 2. PR B → CI → staging (áp `0046` trên staging trước) → chủ dự án duyệt → áp `0046` trên production trước khi merge → merge/deploy → kiểm tra chỉ đọc.
 
-Rollback: deploy lại bản trước; giữ migration (chỉ thêm bảng/cột/dòng). Khoản thu chi đã tạo từ đơn vẫn hợp lệ trong tổng thu chi; guard vẫn bảo vệ nhờ cột `service_order_id`.
+Rollback (sửa 15/10/2026 sau kiểm tra chéo F2). Không xoá migration, không phục hồi toàn bộ D1, không xoá giao dịch.
+
+- **Chưa phát sinh giao dịch từ đơn** (`SELECT COUNT(*) FROM finance_transactions WHERE service_order_id IS NOT NULL` = 0): deploy lại bản PR A được, nhưng vẫn ưu tiên bản tương thích bên dưới. Lý do: bản PR A không biết 4 mã quyền mới, nên nếu ai đó lưu quyền vai trò trong lúc rollback thì các dòng `service_orders.*` mà 0046 đã seed sẽ bị xoá, và migration không chạy lại để bù.
+- **Đã phát sinh giao dịch từ đơn:** **không** deploy nguyên bản PR A. Code PR A không nhận diện `service_order_id`, nên khoản cọc/tất toán/hoàn cọc của đơn sẽ sửa số tiền và huỷ riêng được trong Thu chi (đã tái hiện bằng test). Phải deploy **bản rollback tương thích 0046** = PR A + file migration `0046` + danh mục 4 mã quyền + guard `service_order_id IS NOT NULL` trong `blockedFinanceLinks`. Bản này không có API/trang đơn dịch vụ; dữ liệu đơn giữ nguyên trong D1.
+- **Trong thời gian rollback:** tạm dừng mọi thao tác tiền của đơn dịch vụ. Không nhập tay khoản thu/chi thay cho cọc/tất toán/hoàn của đơn, để tránh ghi trùng khi bật lại. Khoản của đơn vẫn hiện và vẫn bị khoá trong Thu chi.
+- **Kiểm chứng:** `test/serviceOrderRollbackGuard.test.js` qua trên PR B và trên bản tương thích, trượt trên PR A + 0046.
 
 ## 7. Rủi ro và giới hạn
 
