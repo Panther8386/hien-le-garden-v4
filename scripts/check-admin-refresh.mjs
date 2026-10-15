@@ -170,13 +170,14 @@ try {
     assert.deepEqual(errors, [], `service-orders ${role}: browser errors`);
     await context.close();
   }
-  // PR B: a manage user without bookings.view must keep the stored booking link when editing.
-  {
+  // PR B: a manage user without bookings.view must keep the stored booking link when editing;
+  // with a live deposit the primary line is locked (still submitted unchanged), without one it is editable.
+  for (const depositAmount of [0, 300000]) {
     const context = await browser.newContext();
     await context.route('https://**/*', (r) => r.abort());
     const permissions = ROLE_DEFAULTS.reception.filter((p) => p !== 'bookings.view');
     const order = { id: 7, version: 'v1', quoteNumber: 'BG-2026-0007', orderType: 'dat_tiec', customerName: 'Chị Lan', phone: '0900000000', organization: '',
-      eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: '', bookingId: 12, primaryCategory: 'bep_hien_le', depositAmount: 0,
+      eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: '', bookingId: 12, primaryCategory: 'bep_hien_le', depositAmount,
       status: 'draft', total: 1000000, isHidden: false, note: null, quoteValidDays: 7, requestedDeposit: 300000, createdAt: '2026-10-15T00:00:00Z',
       items: [{ id: 1, description: 'Set menu', quantity: 1, unitPrice: 1000000, financeCategory: 'bep_hien_le' }], deposits: [], financeRows: [], categoryTotals: {} };
     await context.route('**/api/**', (route) => {
@@ -195,6 +196,8 @@ try {
     await page.locator('#openOrdersList .booking-card button').first().click();
     await page.getByRole('button', { name: 'Sửa đơn' }).click();
     await page.waitForSelector('#orderFormOverlay:not(.hidden)');
+    assert.equal(await page.locator('#orderForm [name="primaryCategory"]').isDisabled(), depositAmount > 0, `service-orders: primary lock with deposit ${depositAmount}`);
+    assert.equal(await page.locator('#primaryLockedHint').isVisible(), depositAmount > 0);
     const [request] = await Promise.all([
       page.waitForRequest((r) => r.method() === 'PATCH' && new URL(r.url()).pathname === '/api/service-orders/7'),
       page.locator('#orderForm button[type="submit"]').click(),
@@ -202,6 +205,7 @@ try {
     const sent = request.postDataJSON();
     assert.equal(sent.bookingId, 12, 'service-orders: booking link must survive an edit without bookings.view');
     assert.equal(sent.version, 'v1');
+    assert.equal(sent.primaryCategory, 'bep_hien_le', 'service-orders: a locked primary line is still submitted unchanged');
     assert.deepEqual(errors, [], 'service-orders booking link: browser errors');
     await context.close();
   }

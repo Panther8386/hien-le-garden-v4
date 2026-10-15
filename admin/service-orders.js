@@ -162,6 +162,10 @@ async function openForm(order = null) {
   document.getElementById('orderFormError').textContent = '';
   document.getElementById('orderFormTitle').textContent = order ? `Sửa đơn ${order.quoteNumber}` : 'Đơn mới';
   categoryOptions(form.primaryCategory, order ? order.primaryCategory : (categories.find((c) => c.isActive) || {}).slug, order ? order.primaryCategory : null);
+  // Same rule as the API: the primary line is fixed while a deposit is live (disabled selects still submit their value).
+  const primaryLocked = !!(order && order.depositAmount > 0);
+  form.primaryCategory.disabled = primaryLocked;
+  document.getElementById('primaryLockedHint').hidden = !primaryLocked;
   await loadBookingOptions(order ? order.bookingId : null);
   const fields = order || { orderType: 'dat_tiec', quoteValidDays: '', requestedDeposit: '' };
   ['orderType', 'eventDate', 'eventTime', 'guestCount', 'customerName', 'phone', 'organization', 'venueNote', 'requestedDeposit', 'quoteValidDays', 'note']

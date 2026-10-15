@@ -13,6 +13,7 @@ import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
 import * as cancelOrder from '../functions/api/service-orders/[id]/cancel.js';
 import * as hideOrder from '../functions/api/service-orders/[id]/hide.js';
 import * as quoteSettings from '../functions/api/quote-settings.js';
+import { PRIMARY_LOCKED } from '../lib/serviceOrders.js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -492,5 +493,90 @@ describe('final review fixes', () => {
     });
     expect((await patch(id, bodyFrom(d, { items: [] }), managerToken, raced)).status).toBe(409);
     expect((await detail(id)).items).toHaveLength(2);
+  });
+});
+
+describe('primary line is fixed while a deposit is live (crosscheck F1)', () => {
+  // Income booked against the order, per category, ignoring voided rows: what the finance ledger reports.
+  async function ledger(id) {
+    const { results } = await env.DB.prepare(`SELECT category, SUM(amount) AS amount FROM finance_transactions
+      WHERE service_order_id = ? AND type = 'income' AND voided_at IS NULL GROUP BY category ORDER BY category`).bind(id).all();
+    return Object.fromEntries(results.map((r) => [r.category, r.amount]));
+  }
+  async function state(id) {
+    return {
+      order: await env.DB.prepare('SELECT * FROM service_orders WHERE id = ?').bind(id).first(),
+      items: (await env.DB.prepare('SELECT * FROM service_order_items WHERE order_id = ? ORDER BY id').bind(id).all()).results,
+      finance: (await env.DB.prepare('SELECT * FROM finance_transactions WHERE service_order_id = ? ORDER BY id').bind(id).all()).results,
+      audits: (await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE entity_type = 'service_order' AND entity_id = ?`).bind(id).first()).n,
+    };
+  }
+  const ITEM_TOTALS = { bep_hien_le: 10000000, hien_le_drinks: 1000000 };
+
+  it('with a live deposit, changing the primary line is refused and nothing changes', async () => {
+    const id = await createOrder();
+    expect((await addDeposit(id, 500000)).status).toBe(201);
+    const before = await state(id);
+    const response = await patch(id, bodyFrom(await detail(id), { primaryCategory: 'hien_le_drinks', customerName: 'Đổi tên' }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(PRIMARY_LOCKED);
+    expect(await state(id)).toEqual(before);
+  });
+
+  it('without a deposit, the primary line can change', async () => {
+    const id = await createOrder();
+    expect((await patch(id, bodyFrom(await detail(id), { primaryCategory: 'hien_le_drinks' }))).status).toBe(200);
+    expect((await detail(id)).primaryCategory).toBe('hien_le_drinks');
+  });
+
+  it('other fields and lines stay editable while a deposit is live', async () => {
+    const id = await createOrder();
+    await addDeposit(id, 500000);
+    const d = await detail(id);
+    const items = [...bodyFrom(d).items, { description: 'Bánh', quantity: 1, unitPrice: 200000, financeCategory: 'hien_le_drinks' }];
+    expect((await patch(id, bodyFrom(d, { customerName: 'Anh Minh', items }))).status).toBe(200);
+    expect(await detail(id)).toMatchObject({ customerName: 'Anh Minh', primaryCategory: 'bep_hien_le' });
+  });
+
+  it('after deleting a mistaken deposit, the primary line can change and revenue stays per line', async () => {
+    const id = await createOrder();
+    const { depositId } = await (await addDeposit(id, 500000)).json();
+    const del = await call(orderDeposit.onRequestDelete, { method: 'DELETE', token: managerToken, params: { id: String(id), depositId: String(depositId) } });
+    expect(del.status).toBe(200);
+    expect((await patch(id, bodyFrom(await detail(id), { primaryCategory: 'hien_le_drinks' }))).status).toBe(200);
+    expect((await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } })).status).toBe(200);
+    expect((await settle(id)).status).toBe(200);
+    expect(await ledger(id)).toEqual(ITEM_TOTALS);
+  });
+
+  it('a deposit landing after preflight but before the edit batch makes the primary change return 409 with no writes', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => {
+      expect((await addDeposit(id, 500000)).status).toBe(201);
+    });
+    const response = await patch(id, bodyFrom(d, { primaryCategory: 'hien_le_drinks' }), managerToken, raced);
+    expect(response.status).toBe(409);
+    const after = await state(id);
+    expect(after.order).toMatchObject({ primary_category: 'bep_hien_le', deposit_amount: 500000, updated_at: null });
+    expect(after.finance).toHaveLength(1);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_update' AND entity_id = ?`).bind(id).first()).n).toBe(0);
+  });
+
+  it('deposit → confirm → settle books exactly the line totals per category', async () => {
+    const id = await createOrder();
+    expect((await addDeposit(id, 3000000)).status).toBe(201);
+    expect((await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } })).status).toBe(200);
+    expect((await settle(id)).status).toBe(200);
+    expect(await ledger(id)).toEqual(ITEM_TOTALS);
+  });
+
+  it('regression: 10M kitchen / 1M drinks / 500k deposit cannot be skewed by moving the primary line', async () => {
+    const id = await createOrder();
+    expect((await addDeposit(id, 500000)).status).toBe(201);
+    expect((await patch(id, bodyFrom(await detail(id), { primaryCategory: 'hien_le_drinks' }))).status).toBe(400);
+    expect((await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } })).status).toBe(200);
+    expect((await settle(id)).status).toBe(200);
+    expect(await ledger(id)).toEqual(ITEM_TOTALS);
   });
 });
