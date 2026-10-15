@@ -57,7 +57,7 @@ export async function onRequestPatch({ request, env, params }) {
   const statements = [
     auditInsert(env.DB, 'service_order_update', order.id, auditValue, auth.username, now,
       `${orderGuardSql(OPEN_STATUSES)} AND EXISTS (SELECT 1 FROM service_orders WHERE id = ? AND COALESCE(updated_at, '') = ?)`,
-      [order.id, order.deposit_amount, order.id, snapshot, order.id, order.updated_at || '']),
+      [order.id, order.deposit_amount, order.primary_category, order.id, snapshot, order.id, order.updated_at || '']),
     env.DB.prepare(`UPDATE service_orders SET order_type = ?, customer_name = ?, phone = ?, organization = ?, note = ?, event_date = ?,
         event_time = ?, guest_count = ?, venue_note = ?, booking_id = ?, primary_category = ?, quote_valid_days = ?, requested_deposit = ?,
         updated_by = ?, updated_at = ? WHERE id = ? AND ${gate}`)

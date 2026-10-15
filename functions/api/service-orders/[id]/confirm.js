@@ -14,7 +14,7 @@ export async function onRequestPost({ request, env, params }) {
   const auditValue = JSON.stringify({ key: crypto.randomUUID() });
   const results = await env.DB.batch([
     auditInsert(env.DB, 'service_order_confirm', order.id, auditValue, auth.username, now,
-      orderGuardSql(['draft']), [order.id, order.deposit_amount, order.id, snapshot]),
+      orderGuardSql(['draft']), [order.id, order.deposit_amount, order.primary_category, order.id, snapshot]),
     env.DB.prepare(`UPDATE service_orders SET status = 'confirmed', confirmed_by = ?, confirmed_at = ? WHERE id = ? AND ${gateSql('service_order_confirm')}`)
       .bind(auth.username, now, order.id, order.id, auditValue),
   ]);

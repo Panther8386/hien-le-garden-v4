@@ -254,6 +254,22 @@ describe('service order deposits', () => {
     const outer = await addDeposit(id, 6000000, managerToken, raced);
     expect([inner.status, outer.status].sort()).toEqual([201, 409]);
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ?').bind(id).first()).n).toBe(1);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM service_order_deposits WHERE order_id = ?').bind(id).first()).n).toBe(1);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM service_orders WHERE id = ?').bind(id).first()).deposit_amount).toBe(6000000);
+  });
+
+  it('a concurrent primary-category change makes the deposit fail with 409', async () => {
+    const id = await createOrder();
+    let inner;
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => {
+      inner = await patch(id, bodyFrom(await detail(id), { primaryCategory: 'hien_le_drinks' }));
+    });
+    const outer = await addDeposit(id, 2000000, managerToken, raced);
+    expect(inner.status).toBe(200);
+    expect(outer.status).toBe(409);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ?').bind(id).first()).n).toBe(0);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM service_order_deposits WHERE order_id = ?').bind(id).first()).n).toBe(0);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM service_orders WHERE id = ?').bind(id).first()).deposit_amount).toBe(0);
   });
 
   it('deleting a deposit needs service_orders.refund and voids its income row', async () => {

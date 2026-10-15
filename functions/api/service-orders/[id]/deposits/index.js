@@ -28,7 +28,7 @@ export async function onRequestPost({ request, env, params }) {
   const txNote = `Cọc đơn #${order.id} — ${order.customer_name}${cleanNote ? ` — ${cleanNote}` : ''}`;
   const results = await env.DB.batch([
     auditInsert(env.DB, 'service_order_deposit', order.id, auditValue, auth.username, now,
-      orderGuardSql(OPEN_STATUSES), [order.id, order.deposit_amount, order.id, snapshot]),
+      orderGuardSql(OPEN_STATUSES), [order.id, order.deposit_amount, order.primary_category, order.id, snapshot]),
     env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at, service_order_id)
       SELECT 'income', ?, ?, ?, ?, 'confirmed', ?, ?, ? WHERE ${gate}`)
       .bind(order.primary_category, amount, txNote, now.slice(0, 10), auth.username, now, order.id, ...gateBinds),
