@@ -945,3 +945,33 @@ describe('migration 0040', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('migration 0046', () => {
+  it('creates the service order tables and the finance link column', async () => {
+    for (const table of ['service_orders', 'service_order_items', 'service_order_deposits', 'quote_settings']) {
+      const row = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).bind(table).first();
+      expect(row?.name).toBe(table);
+    }
+    const cols = (await env.DB.prepare(`SELECT name FROM pragma_table_info('finance_transactions')`).all()).results.map((c) => c.name);
+    expect(cols).toContain('service_order_id');
+  });
+
+  it('seeds one quote settings row with the agreed defaults', async () => {
+    const row = await env.DB.prepare('SELECT * FROM quote_settings ORDER BY id DESC LIMIT 1').first();
+    expect(row).toMatchObject({
+      business_name: 'Hiền Lê Garden', default_valid_days: 7, default_deposit_percent: 30,
+      tax_note: 'Giá trên chưa bao gồm thuế VAT',
+      cancellation_terms: 'Tiền cọc được hoàn hoặc giữ lại theo thoả thuận khi huỷ dịch vụ; vui lòng báo trước tối thiểu 7 ngày.',
+      bank_name: null, bank_account: null, bank_holder: null,
+    });
+  });
+
+  it('rejects an unknown order type and a negative deposit', async () => {
+    const insert = (type, deposit) => env.DB.prepare(`INSERT INTO service_orders
+      (creation_key, order_type, customer_name, phone, event_date, primary_category, deposit_amount, quote_valid_days, created_by, created_at)
+      VALUES (?, ?, 'A', '0900000000', '2026-12-01', 'bep_hien_le', ?, 7, 'x', '2026-10-15T00:00:00Z')`).bind(crypto.randomUUID(), type, deposit).run();
+    await expect(insert('picnic', 0)).rejects.toThrow();
+    await expect(insert('dat_tiec', -1)).rejects.toThrow();
+    await expect(insert('dat_tiec', 0)).resolves.toBeTruthy();
+  });
+});

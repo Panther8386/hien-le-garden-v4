@@ -81,7 +81,7 @@ describe('GET /api/permissions', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.canEditRoles).toBe(false);
-    expect(body.roles.observer).toEqual(['bookings.view', 'finance.view_income']);
+    expect(body.roles.observer).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
     expect(Array.isArray(body.groups)).toBe(true);
     expect(body.groups.length).toBeGreaterThan(0);
     expect(Object.keys(body.roles).sort()).toEqual(['manager', 'observer', 'reception']);
@@ -105,11 +105,10 @@ describe('PUT /api/roles/:role/permissions', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(await rolePerms('observer')).toEqual(['assets.view', 'bookings.view', 'finance.view_income']);
-
     const row = await auditRow('role_permissions_change');
     expect(row.entity_type).toBe('role');
     expect(row.entity_label).toBe('observer');
-    expect(row.old_value).toBe('bookings.view,finance.view_income');
+    expect(row.old_value).toBe('bookings.view,finance.view_income,service_orders.view');
     expect(row.new_value).toBe('assets.view,bookings.view,finance.view_income');
     expect(row.actor).toBe('qt');
   });
@@ -118,7 +117,7 @@ describe('PUT /api/roles/:role/permissions', () => {
     const response = await putRole(qlToken, 'observer', { permissions: ['bookings.view'] });
     expect(response.status).toBe(403);
     expect((await response.json()).error).toBe('Không đủ quyền');
-    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income']);
+    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
     expect(await auditRow('role_permissions_change')).toBeNull();
   });
 
@@ -140,7 +139,7 @@ describe('PUT /api/roles/:role/permissions', () => {
     const response = await putRole(qtToken, 'observer', { permissions: ['bookings.view', 'bookings.fly'] });
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe('Mã quyền không hợp lệ: bookings.fly');
-    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income']);
+    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
     expect(await auditRow('role_permissions_change')).toBeNull();
   });
 
@@ -148,7 +147,7 @@ describe('PUT /api/roles/:role/permissions', () => {
     const response = await putRole(qtToken, 'observer', { permissions: 'bookings.view' });
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe('Dữ liệu không hợp lệ');
-    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income']);
+    expect(await rolePerms('observer')).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
   });
 });
 
