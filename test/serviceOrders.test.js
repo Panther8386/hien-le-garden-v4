@@ -119,7 +119,7 @@ function bodyFrom(d, changes = {}) {
   return {
     orderType: d.orderType, customerName: d.customerName, phone: d.phone, organization: d.organization, note: d.note,
     eventDate: d.eventDate, eventTime: d.eventTime, guestCount: d.guestCount, venueNote: d.venueNote, bookingId: d.bookingId,
-    primaryCategory: d.primaryCategory, quoteValidDays: d.quoteValidDays, requestedDeposit: d.requestedDeposit,
+    primaryCategory: d.primaryCategory, quoteValidDays: d.quoteValidDays, requestedDeposit: d.requestedDeposit, version: d.version,
     items: d.items.map((i) => ({ id: i.id, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, financeCategory: i.financeCategory })),
     ...changes,
   };
@@ -147,6 +147,33 @@ describe('PATCH /api/service-orders/:id', () => {
     expect(response.status).toBe(409);
     expect((await detail(id)).customerName).toBe('Chị Lan');
     expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_update'`).first()).n).toBe(0);
+  });
+
+  it('an edit saved from an outdated form returns 409 and keeps the other edit', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const extra = { description: 'Thuê âm thanh', quantity: 1, unitPrice: 3000000, financeCategory: 'ban_hang' };
+    expect((await patch(id, bodyFrom(d, { customerName: 'B', items: [...bodyFrom(d).items, extra] }))).status).toBe(200);
+    expect((await patch(id, bodyFrom(d, { items: [bodyFrom(d).items[0]] }))).status).toBe(409);
+    const after = await detail(id);
+    expect(after.items).toHaveLength(3);
+    expect(after.customerName).toBe('B');
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_update'`).first()).n).toBe(1);
+  });
+
+  it('requires the version token', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const { version, ...rest } = bodyFrom(d);
+    expect((await patch(id, rest)).status).toBe(400);
+  });
+
+  it('exposes a version that changes after a successful update', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    expect(typeof d.version).toBe('string');
+    expect((await patch(id, bodyFrom(d, { note: 'Mới' }))).status).toBe(200);
+    expect((await detail(id)).version).not.toBe(d.version);
   });
 
   it('refuses edits that would push the primary line below the deposit', async () => {

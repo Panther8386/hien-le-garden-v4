@@ -5,7 +5,7 @@ import { redactContact } from '../../../lib/redactContact.js';
 import {
   json, jsonError, NOT_FOUND, STALE, DEPOSIT_EXCEEDS, OPEN_STATUSES, MAX_BODY_BYTES, requireOrderPermission, loadVisibleOrder,
   loadItems, loadDeposits, coerceOrder, validateOrderFields, validateItems, categoryTotals, orderTotal, checkBookingLink,
-  readSnapshot, orderGuardSql, gateSql, auditInsert,
+  readSnapshot, orderVersion, orderGuardSql, gateSql, auditInsert,
 } from '../../../lib/serviceOrders.js';
 
 export async function onRequestGet({ request, env, params }) {
@@ -13,7 +13,9 @@ export async function onRequestGet({ request, env, params }) {
   if (auth instanceof Response) return auth;
   const order = await loadVisibleOrder(env, auth, params.id);
   if (!order) return jsonError(NOT_FOUND, 404);
+  const snapshot = await readSnapshot(env.DB, order.id);
   const out = coerceOrder(order, await loadItems(env.DB, order.id), await loadDeposits(env.DB, order.id));
+  out.version = orderVersion(order, snapshot);
   redactContact(auth, out);
   return json(out);
 }
@@ -27,21 +29,26 @@ export async function onRequestPatch({ request, env, params }) {
   const parsed = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;
+  if (typeof body.version !== 'string') return jsonError('Thiếu phiên bản đơn, vui lòng tải lại', 400);
+  // Snapshot first, then items: an item added in between fails the guard instead of escaping the delete set.
+  const snapshot = await readSnapshot(env.DB, order.id);
+  const currentItems = await loadItems(env.DB, order.id);
+  if (body.version !== orderVersion(order, snapshot)) return jsonError(STALE, 409);
   // An editor who cannot see contacts receives phone = null; never overwrite the stored value.
   if (!hasPermission(auth, 'guests.contact_view')) body.phone = order.phone;
   const categoryMeta = await loadCategoryMeta(env);
   const fields = validateOrderFields(body, categoryMeta, order.primary_category);
   if (fields.error) return jsonError(fields.error, 400);
-  const currentItems = await loadItems(env.DB, order.id);
   const items = validateItems(body.items, categoryMeta, currentItems);
   if (items.error) return jsonError(items.error, 400);
   if (order.status === 'confirmed' && items.value.length === 0) return jsonError('Đơn đã chốt phải có ít nhất 1 dòng', 400);
-  const linkError = await checkBookingLink(env, auth, fields.value.bookingId);
-  if (linkError) return linkError;
+  if (fields.value.bookingId !== order.booking_id) {
+    const linkError = await checkBookingLink(env, auth, fields.value.bookingId);
+    if (linkError) return linkError;
+  }
   if (order.deposit_amount > (categoryTotals(items.value)[fields.value.primaryCategory] || 0)) return jsonError(DEPOSIT_EXCEEDS, 400);
 
   const f = fields.value;
-  const snapshot = await readSnapshot(env.DB, order.id);
   const now = new Date().toISOString();
   const auditValue = JSON.stringify({ key: crypto.randomUUID(), total: orderTotal(items.value), items: items.value.length });
   const gate = gateSql('service_order_update');
@@ -49,7 +56,8 @@ export async function onRequestPatch({ request, env, params }) {
   const keep = new Set(items.value.filter((i) => i.id !== null).map((i) => i.id));
   const statements = [
     auditInsert(env.DB, 'service_order_update', order.id, auditValue, auth.username, now,
-      orderGuardSql(OPEN_STATUSES), [order.id, order.deposit_amount, order.id, snapshot]),
+      `${orderGuardSql(OPEN_STATUSES)} AND EXISTS (SELECT 1 FROM service_orders WHERE id = ? AND COALESCE(updated_at, '') = ?)`,
+      [order.id, order.deposit_amount, order.id, snapshot, order.id, order.updated_at || '']),
     env.DB.prepare(`UPDATE service_orders SET order_type = ?, customer_name = ?, phone = ?, organization = ?, note = ?, event_date = ?,
         event_time = ?, guest_count = ?, venue_note = ?, booking_id = ?, primary_category = ?, quote_valid_days = ?, requested_deposit = ?,
         updated_by = ?, updated_at = ? WHERE id = ? AND ${gate}`)
