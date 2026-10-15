@@ -34,7 +34,7 @@ try {
       if (path === '/api/bookings/staff') await new Promise(r => setTimeout(r, 600));
       let body = [];
       if (path === '/api/auth/me') body = {role,username:'Kiểm tra giao diện',permissions};
-      if (path === '/api/bookings' && new URL(route.request().url()).searchParams.get('status') === 'pending') body = [{id:1,guestName:'Khách thử nghiệm',phone:'0900000000',roomType:'triangle',checkIn:'2026-12-01',checkOut:'2026-12-02',guestsCount:2,status:'pending',depositAmount:0,services:[],notes:'Dữ liệu giả lập để kiểm tra giao diện.'}];
+      if (path === '/api/bookings' && new URL(route.request().url()).searchParams.get('status') === 'pending') body = [{id:1,guestName:'Khách thử nghiệm',phone:'0900000000',roomType:'triangle',checkIn:'2026-12-01',checkOut:'2026-12-02',guestsCount:2,status:'pending',depositAmount:0,services:[],serviceOrders:[{id:7,status:'confirmed'}],notes:'Dữ liệu giả lập để kiểm tra giao diện.'}];
       if (path === '/api/rooms') body = ['empty','booked','booked_deposited','occupied','used'].map((status,index) => ({id:index+1,name:`Triangle ${index+1}`,status,roomType:'triangle',pricePerNight:500000}));
       if (path === '/api/reception/reminders') body = {pendingNoDeposit:[],arrivingToday:[],roomsNotCleaned:[],thresholds:{}};
       if (path === '/api/availability') body = {availableRooms:[{id:1,name:'Phòng thử nghiệm'}]};
@@ -60,6 +60,7 @@ try {
       await page.goto(`${base}/admin/reception.html`);
       await page.waitForSelector('.nav-drawer');
       await page.waitForFunction(() => document.querySelector('#pendingList').textContent.length > 0);
+      assert.match(await page.locator('#pendingList').textContent(), /Có đơn dịch vụ: #7/);
       assert.equal(await page.locator('#pendingTabCount').textContent(),'1');
       assert.equal(await page.locator('#openNewBookingBtn').isVisible(), role !== 'observer');
       assert.equal(await page.locator('#tab-uu-dai').isVisible(), role !== 'observer');
@@ -261,7 +262,7 @@ try {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { role: 'admin', username: 'Kiểm tra Thu chi', permissions: PERMISSION_KEYS } });
       if (path === '/api/finance/categories') return route.fulfill({ json: [{ id: 1, slug: 'dich_vu', label: 'Lưu trú Hiền Lê', type: 'income', isActive: true }] });
-      if (path === '/api/finance/transactions') return route.fulfill({ json: { transactions: [tx(1, true), tx(2, false)], total: 2, page: 1, pageSize: 25, sumIncome: 800000, sumExpense: 0, categoryTotals: { dich_vu: { income: 800000, expense: 0 } }, chartRows: [] } });
+      if (path === '/api/finance/transactions') return route.fulfill({ json: { transactions: [{ ...tx(1, true), source: { kind: 'service_order_deposit', refId: 7 } }, tx(2, false)], total: 2, page: 1, pageSize: 25, sumIncome: 800000, sumExpense: 0, categoryTotals: { dich_vu: { income: 800000, expense: 0 } }, chartRows: [] } });
       if (path === '/api/finance/summary') return route.fulfill({ json: { month: '2026-10', openingBalance: 0, openingBalanceSource: 'none', totalIncome: 800000, totalExpense: 0, netChange: 800000, closingBalance: 800000 } });
       if (path === '/api/finance/opening-balance') return route.fulfill({ json: { period: '2026-10', openingBalance: null, setBy: null, setAt: null } });
       if (path === '/api/finance/receipts-usage') return route.fulfill({ json: { totalBytes: 0, thresholdBytes: 1, overThreshold: false } });
@@ -282,6 +283,11 @@ try {
     await editButtons.nth(1).click();
     assert.equal(await page.locator('#financeForm [name="amount"]').isDisabled(), false);
     assert.equal(await page.locator('#financeLinkedHint').isVisible(), false);
+    await page.locator('#financeFormCloseBtn').click();
+    assert.match(await page.locator('#financeTable tbody').textContent(), /Cọc đơn #7/);
+    const depositsRequest = page.waitForRequest((r) => r.url().includes('/api/finance/transactions') && r.url().includes('depositsOnly=1'));
+    await page.locator('#depositsOnlyFilter').check();
+    await depositsRequest;
     assert.deepEqual(errors, [], 'finance page: browser errors');
     await context.close();
   }

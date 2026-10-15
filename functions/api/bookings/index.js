@@ -217,7 +217,7 @@ export async function onRequestGet({ request, env }) {
   }
 
   results.forEach((r) => { r.serviceOrders = []; });
-  if (results.length > 0) {
+  if (results.length > 0 && hasPermission(auth, 'service_orders.view')) {
     // Hidden orders stay out unless the caller may see hidden records (records.hide).
     const hiddenClause = hasPermission(auth, 'records.hide') ? '' : 'AND is_hidden = 0';
     const { results: orderRows } = await env.DB.prepare(

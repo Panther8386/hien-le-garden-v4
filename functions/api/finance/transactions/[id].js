@@ -4,7 +4,7 @@ import { canSeeTransaction } from '../../../../lib/financeAccess.js';
 import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
 import { blockedFinanceLinks, cancelledDepositLink, auditCheckoutLink } from '../../../../lib/financeVoidGuard.js';
 
-export const LINKED_EDIT_ERROR = 'Khoản này gắn với nghiệp vụ (đặt phòng, cọc, order, Giờ Xanh…); chỉ sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.';
+export const LINKED_EDIT_ERROR = 'Khoản này gắn với nghiệp vụ (đặt phòng, cọc, order, Giờ Xanh, đơn dịch vụ…); chỉ sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.';
 export const NOTE_LOCKED_ERROR = 'Khoản trả phòng cũ được nhận diện theo ghi chú nên không sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.';
 const noteOnlyLinkSql = `(finance_transactions.checkout_booking_id IS NULL AND ${auditCheckoutLink})`;
 const linkedSql = `((${blockedFinanceLinks}) OR (${cancelledDepositLink}))`;

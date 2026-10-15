@@ -1290,4 +1290,14 @@ describe('GET /api/bookings — serviceOrders (PR B)', () => {
     const adminRows = await (await listBookings({ request: authedRequest('https://x/api/bookings?status=confirmed', adminToken, 'GET'), env })).json();
     expect(adminRows.find((b) => b.id === booking).serviceOrders.map((o) => o.id)).toHaveLength(2);
   });
+
+  it('returns serviceOrders: [] for a caller denied service_orders.view even with a linked order', async () => {
+    const booking = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+      VALUES ('Gắn đơn', '090', 'circle', '2026-12-01', '2026-12-02', 'confirmed', 'phone', '2026-10-01T00:00:00Z')`).run()).meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO service_orders (creation_key, order_type, customer_name, phone, event_date, booking_id, primary_category, quote_valid_days, status, is_hidden, created_by, created_at)
+      VALUES ('k-deny', 'dat_tiec', 'A', '0900000000', '2026-12-01', ?, 'bep_hien_le', 7, 'confirmed', 0, 'x', '2026-10-15T00:00:00Z')`).bind(booking).run();
+    await setOverride(env.DB, 3, 'service_orders.view', 'deny');
+    const rows = await (await listBookings({ request: authedRequest('https://x/api/bookings?status=confirmed', receptionToken, 'GET'), env })).json();
+    expect(rows.find((b) => b.id === booking).serviceOrders).toEqual([]);
+  });
 });
