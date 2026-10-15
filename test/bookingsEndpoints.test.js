@@ -22,6 +22,7 @@ beforeEach(async () => {
   await env.DB.exec('DELETE FROM login_rate_limits');
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
+  await env.DB.exec('DELETE FROM service_orders');
   await env.DB.exec('DELETE FROM bookings');
   await env.DB.exec('DELETE FROM notification_settings');
 
@@ -1272,5 +1273,21 @@ describe('PATCH /api/bookings/:id/hide — records.hide does not imply bookings.
     expect(res.status).toBe(200);
     const row = await env.DB.prepare('SELECT is_hidden FROM bookings WHERE id = ?').bind(cancelledId).first();
     expect(row.is_hidden).toBe(1);
+  });
+});
+
+describe('GET /api/bookings — serviceOrders (PR B)', () => {
+  it('lists non-cancelled linked service orders per booking', async () => {
+    const booking = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+      VALUES ('Gắn đơn', '090', 'circle', '2026-12-01', '2026-12-02', 'confirmed', 'phone', '2026-10-01T00:00:00Z')`).run()).meta.last_row_id;
+    const add = (key, status, hidden = 0) => env.DB.prepare(`INSERT INTO service_orders (creation_key, order_type, customer_name, phone, event_date, booking_id, primary_category, quote_valid_days, status, is_hidden, created_by, created_at)
+      VALUES (?, 'dat_tiec', 'A', '0900000000', '2026-12-01', ?, 'bep_hien_le', 7, ?, ?, 'x', '2026-10-15T00:00:00Z')`).bind(key, booking, status, hidden).run();
+    const open = (await add('k-b1', 'confirmed')).meta.last_row_id;
+    await add('k-b2', 'cancelled');
+    await add('k-b3', 'confirmed', 1);
+    const rows = await (await listBookings({ request: authedRequest('https://x/api/bookings?status=confirmed', receptionToken, 'GET'), env })).json();
+    expect(rows.find((b) => b.id === booking).serviceOrders).toEqual([{ id: open, status: 'confirmed' }]);
+    const adminRows = await (await listBookings({ request: authedRequest('https://x/api/bookings?status=confirmed', adminToken, 'GET'), env })).json();
+    expect(adminRows.find((b) => b.id === booking).serviceOrders.map((o) => o.id)).toHaveLength(2);
   });
 });

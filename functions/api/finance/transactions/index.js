@@ -37,6 +37,7 @@ function coerceRow(r) {
     receiptUploadedAt: r.receipt_uploaded_at,
     isHidden: !!r.is_hidden,
     linked: !!r.linked,
+    source: r.source ?? null,
   };
 }
 
@@ -73,6 +74,10 @@ export async function onRequestGet({ request, env }) {
   if (category) { clauses.push('category = ?'); params.push(category); }
   if (status) { clauses.push('status = ?'); params.push(status); }
   if (q) { clauses.push('note LIKE ? COLLATE NOCASE'); params.push(`%${q}%`); }
+  if (url.searchParams.get('depositsOnly') === '1') {
+    clauses.push(`(EXISTS (SELECT 1 FROM service_order_deposits d WHERE d.finance_transaction_id = finance_transactions.id)
+      OR EXISTS (SELECT 1 FROM booking_deposits bd WHERE bd.finance_transaction_id = finance_transactions.id))`);
+  }
   if (!includeHidden) { clauses.push('is_hidden = 0'); }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -108,11 +113,22 @@ export async function onRequestGet({ request, env }) {
     const ids = pageRows.map((r) => r.id);
     // Binds one parameter per page row; pageSize <= 100 is D1's per-statement bound-parameter limit.
     const { results: linkRows } = await env.DB.prepare(
-      `SELECT id, ((${blockedFinanceLinks}) OR (${cancelledDepositLink})) AS linked
+      `SELECT id, ((${blockedFinanceLinks}) OR (${cancelledDepositLink})) AS linked,
+         CASE
+           WHEN EXISTS (SELECT 1 FROM service_order_deposits d WHERE d.finance_transaction_id = finance_transactions.id) THEN 'service_order_deposit'
+           WHEN service_order_id IS NOT NULL AND type = 'expense' THEN 'service_order_refund'
+           WHEN service_order_id IS NOT NULL THEN 'service_order_settle'
+           WHEN EXISTS (SELECT 1 FROM booking_deposits bd WHERE bd.finance_transaction_id = finance_transactions.id) THEN 'booking_deposit'
+         END AS source_kind,
+         COALESCE(service_order_id, (SELECT booking_id FROM booking_deposits bd WHERE bd.finance_transaction_id = finance_transactions.id LIMIT 1)) AS source_ref
        FROM finance_transactions WHERE id IN (${ids.map(() => '?').join(',')})`
     ).bind(...ids).all();
-    const linkedIds = new Set(linkRows.filter((r) => r.linked).map((r) => r.id));
-    pageRows.forEach((r) => { r.linked = linkedIds.has(r.id); });
+    const infoById = new Map(linkRows.map((r) => [r.id, r]));
+    pageRows.forEach((r) => {
+      const info = infoById.get(r.id);
+      r.linked = !!(info && info.linked);
+      r.source = info && info.source_kind ? { kind: info.source_kind, refId: info.source_ref } : null;
+    });
   }
 
   return new Response(JSON.stringify({
