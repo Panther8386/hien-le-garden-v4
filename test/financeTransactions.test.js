@@ -1023,3 +1023,135 @@ describe('finance.view_all does not imply hidden-row visibility (records.hide re
     expect(response.status).toBe(200);
   });
 });
+
+describe('PATCH /api/finance/transactions/:id — linked rows only allow note edits (PR A)', () => {
+  let txId;
+  beforeEach(async () => {
+    await env.DB.exec('DELETE FROM dine_in_orders');
+    await env.DB.exec('DELETE FROM booking_service_items');
+    await env.DB.exec('DELETE FROM booking_deposits');
+    await env.DB.exec('DELETE FROM bookings');
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+       VALUES ('income', 'dich_vu', 400000, 'Gốc', '2026-08-05', 'confirmed', 'quan_ly_fin', '2026-08-05T00:00:00Z')`
+    ).run();
+    txId = result.meta.last_row_id;
+  });
+
+  async function booking(status) {
+    const row = await env.DB.prepare(`INSERT INTO bookings
+      (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+      VALUES ('Fixture', '000', 'circle', '2099-01-01', '2099-01-02', ?, 'website', '2026-08-01')`).bind(status).run();
+    return row.meta.last_row_id;
+  }
+
+  // Each entry links txId to one business flow.
+  const LINKS = {
+    'checkout receipt': async () => {
+      const id = await booking('checked_out');
+      await env.DB.prepare('UPDATE finance_transactions SET checkout_booking_id = ? WHERE id = ?').bind(id, txId).run();
+    },
+    'dine-in order receipt': async () => {
+      await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+        VALUES ('fx', 'closed', 'fx', '2026-08-01', ?)`).bind(txId).run();
+    },
+    'Giờ Xanh receipt': async () => {
+      const room = await env.DB.prepare('SELECT id FROM rooms LIMIT 1').first();
+      await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, finance_transaction_id)
+        VALUES (?, 'fx', 'closed', 'fx', '2026-08-01', ?)`).bind(room.id, txId).run();
+    },
+    'booking service receipt': async () => {
+      const id = await booking('checked_in');
+      await env.DB.prepare(`INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, created_at, finance_transaction_id)
+        VALUES (?, 'fx', 400000, 1, 400000, '2026-08-01', ?)`).bind(id, txId).run();
+    },
+    'booking refund': async () => {
+      const id = await booking('cancelled');
+      await env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id = ? WHERE id = ?').bind(txId, id).run();
+    },
+    'live booking deposit': async () => {
+      const id = await booking('confirmed');
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
+    'cancelled unrefunded deposit': async () => {
+      const id = await booking('cancelled');
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
+  };
+
+  function patch(body, testEnv = env) {
+    return patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, adminToken, 'PATCH', body),
+      env: testEnv,
+      params: { id: String(txId) },
+    });
+  }
+
+  // What the real form sends: every field, financial ones unchanged.
+  const FULL_UNCHANGED = { type: 'income', category: 'dich_vu', amount: 400000, transactionDate: '2026-08-05', status: 'confirmed' };
+
+  async function row() {
+    return env.DB.prepare('SELECT type, category, amount, note, transaction_date, status FROM finance_transactions WHERE id = ?').bind(txId).first();
+  }
+  async function updateAudits() {
+    return (await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'finance_transaction_update' AND entity_id = ?`).bind(txId).first()).n;
+  }
+
+  for (const [name, link] of Object.entries(LINKS)) {
+    it(`${name}: rejects an amount change with 400, leaving row and audit untouched`, async () => {
+      await link();
+      const response = await patch({ ...FULL_UNCHANGED, amount: 500000, note: 'Gốc' });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('Khoản này gắn với nghiệp vụ (đặt phòng, cọc, order, Giờ Xanh…); chỉ sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.');
+      expect(await row()).toMatchObject({ amount: 400000, note: 'Gốc' });
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it(`${name}: allows a note-only edit sent with every field unchanged`, async () => {
+      await link();
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Ghi chú mới' });
+      expect(response.status).toBe(200);
+      expect(await row()).toMatchObject({ amount: 400000, category: 'dich_vu', note: 'Ghi chú mới' });
+      expect(await updateAudits()).toBe(1);
+    });
+  }
+
+  it('rejects category, type, date and status changes on a linked row', async () => {
+    await LINKS['dine-in order receipt']();
+    for (const change of [{ category: 'ban_hang' }, { type: 'expense', category: 'vat_tu' }, { transactionDate: '2026-08-06' }, { status: 'paid' }]) {
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Gốc', ...change });
+      expect(response.status).toBe(400);
+    }
+    expect(await row()).toMatchObject({ type: 'income', category: 'dich_vu', transaction_date: '2026-08-05', status: 'confirmed' });
+    expect(await updateAudits()).toBe(0);
+  });
+
+  it('still lets a manual (unlinked) row change its amount', async () => {
+    const response = await patch({ ...FULL_UNCHANGED, amount: 450000, note: 'Gốc' });
+    expect(response.status).toBe(200);
+    expect((await row()).amount).toBe(450000);
+  });
+
+  it('rejects with 409 when a link is created after preflight, without writing an audit', async () => {
+    const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+      await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+        VALUES ('race', 'closed', 'fx', '2026-08-01', ?)`).bind(txId).run();
+    });
+    const response = await patch({ ...FULL_UNCHANGED, amount: 450000, note: 'Gốc' }, raced);
+    expect(response.status).toBe(409);
+    expect((await row()).amount).toBe(400000);
+    expect(await updateAudits()).toBe(0);
+  });
+
+  it('rejects an edit when the row is voided after preflight', async () => {
+    const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+      await env.DB.prepare(`UPDATE finance_transactions SET voided_at = '2026-08-06T00:00:00Z', voided_by = 'x' WHERE id = ?`).bind(txId).run();
+    });
+    const response = await patch({ ...FULL_UNCHANGED, note: 'Sau khi huỷ' }, raced);
+    expect(response.status).toBe(409);
+    expect((await row()).note).toBe('Gốc');
+    expect(await updateAudits()).toBe(0);
+  });
+});
