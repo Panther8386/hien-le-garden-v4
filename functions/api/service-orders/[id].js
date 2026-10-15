@@ -4,7 +4,7 @@ import { loadCategoryMeta } from '../../../lib/financeCategories.js';
 import { redactContact } from '../../../lib/redactContact.js';
 import {
   json, jsonError, NOT_FOUND, STALE, DEPOSIT_EXCEEDS, OPEN_STATUSES, MAX_BODY_BYTES, requireOrderPermission, loadVisibleOrder,
-  loadItems, loadDeposits, coerceOrder, validateOrderFields, validateItems, categoryTotals, orderTotal, checkBookingLink,
+  loadItems, loadDeposits, loadFinanceRows, coerceOrder, validateOrderFields, validateItems, categoryTotals, orderTotal, checkBookingLink,
   readSnapshot, orderVersion, orderGuardSql, gateSql, auditInsert,
 } from '../../../lib/serviceOrders.js';
 
@@ -15,7 +15,8 @@ export async function onRequestGet({ request, env, params }) {
   if (!order) return jsonError(NOT_FOUND, 404);
   const snapshot = await readSnapshot(env.DB, order.id);
   const out = coerceOrder(order, await loadItems(env.DB, order.id), await loadDeposits(env.DB, order.id));
-  out.version = orderVersion(order, snapshot);
+  out.version = await orderVersion(order, snapshot);
+  out.financeRows = await loadFinanceRows(env.DB, order.id);
   redactContact(auth, out);
   return json(out);
 }
@@ -33,7 +34,7 @@ export async function onRequestPatch({ request, env, params }) {
   // Snapshot first, then items: an item added in between fails the guard instead of escaping the delete set.
   const snapshot = await readSnapshot(env.DB, order.id);
   const currentItems = await loadItems(env.DB, order.id);
-  if (body.version !== orderVersion(order, snapshot)) return jsonError(STALE, 409);
+  if (body.version !== await orderVersion(order, snapshot)) return jsonError(STALE, 409);
   // An editor who cannot see contacts receives phone = null; never overwrite the stored value.
   if (!hasPermission(auth, 'guests.contact_view')) body.phone = order.phone;
   const categoryMeta = await loadCategoryMeta(env);
@@ -56,7 +57,7 @@ export async function onRequestPatch({ request, env, params }) {
   const keep = new Set(items.value.filter((i) => i.id !== null).map((i) => i.id));
   const statements = [
     auditInsert(env.DB, 'service_order_update', order.id, auditValue, auth.username, now,
-      `${orderGuardSql(OPEN_STATUSES)} AND EXISTS (SELECT 1 FROM service_orders WHERE id = ? AND COALESCE(updated_at, '') = ?)`,
+      `${orderGuardSql([order.status])} AND EXISTS (SELECT 1 FROM service_orders WHERE id = ? AND COALESCE(updated_at, '') = ?)`,
       [order.id, order.deposit_amount, order.primary_category, order.id, snapshot, order.id, order.updated_at || '']),
     env.DB.prepare(`UPDATE service_orders SET order_type = ?, customer_name = ?, phone = ?, organization = ?, note = ?, event_date = ?,
         event_time = ?, guest_count = ?, venue_note = ?, booking_id = ?, primary_category = ?, quote_valid_days = ?, requested_deposit = ?,

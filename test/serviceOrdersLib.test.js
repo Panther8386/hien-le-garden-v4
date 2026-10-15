@@ -76,6 +76,7 @@ describe('totals and settlement', () => {
     expect(roundDeposit(2800000, 30)).toBe(840000);
     expect(roundDeposit(1234567, 30)).toBe(370000);
     expect(quoteNumber(12, '2026-10-15T03:00:00.000Z')).toBe('BG-2026-0012');
+    expect(quoteNumber(5, '2026-12-31T18:00:00.000Z')).toBe('BG-2027-0005');
   });
 });
 

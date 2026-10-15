@@ -134,7 +134,7 @@ try {
       eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: 'Sân vườn', bookingId: null, primaryCategory: 'bep_hien_le', depositAmount: 3000000,
       status: 'confirmed', total: 11000000, isHidden: false, note: null, quoteValidDays: 7, requestedDeposit: 3300000, createdAt: '2026-10-15T00:00:00Z',
       items: [{ id: 1, description: 'Set menu', quantity: 5, unitPrice: 2000000, financeCategory: 'bep_hien_le' }, { id: 2, description: 'Nước', quantity: 1, unitPrice: 1000000, financeCategory: 'hien_le_drinks' }],
-      deposits: [{ id: 1, amount: 3000000, paymentMethod: 'transfer', note: null, createdAt: '2026-10-15T00:00:00Z', voidedAt: null }], categoryTotals: {} };
+      deposits: [{ id: 1, amount: 3000000, paymentMethod: 'transfer', note: null, createdAt: '2026-10-15T00:00:00Z', voidedAt: null }], financeRows: [], categoryTotals: {} };
     await context.route('**/api/**', (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { role, username: 'Kiểm tra đơn', permissions } });
@@ -178,7 +178,7 @@ try {
     const order = { id: 7, version: 'v1', quoteNumber: 'BG-2026-0007', orderType: 'dat_tiec', customerName: 'Chị Lan', phone: '0900000000', organization: '',
       eventDate: '2026-12-20', eventTime: '18:30', guestCount: 50, venueNote: '', bookingId: 12, primaryCategory: 'bep_hien_le', depositAmount: 0,
       status: 'draft', total: 1000000, isHidden: false, note: null, quoteValidDays: 7, requestedDeposit: 300000, createdAt: '2026-10-15T00:00:00Z',
-      items: [{ id: 1, description: 'Set menu', quantity: 1, unitPrice: 1000000, financeCategory: 'bep_hien_le' }], deposits: [], categoryTotals: {} };
+      items: [{ id: 1, description: 'Set menu', quantity: 1, unitPrice: 1000000, financeCategory: 'bep_hien_le' }], deposits: [], financeRows: [], categoryTotals: {} };
     await context.route('**/api/**', (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { role: 'reception', username: 'Kiểm tra liên kết', permissions } });

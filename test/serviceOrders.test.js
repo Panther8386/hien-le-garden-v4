@@ -453,3 +453,44 @@ describe('/api/quote-settings', () => {
       .toEqual({ quote_valid_days: 10, requested_deposit: 4400000 });
   });
 });
+
+describe('final review fixes', () => {
+  it('a large order (~40 KB of items) can be read and saved back unchanged', async () => {
+    const items = Array.from({ length: 80 }, (_, n) => ({
+      description: `${n}-${'x'.repeat(450)}`, quantity: 1, unitPrice: 1000, financeCategory: 'bep_hien_le',
+    }));
+    const id = await createOrder({ items });
+    const d = await detail(id);
+    expect(d.version.length).toBeLessThan(200);
+    expect((await patch(id, bodyFrom(d))).status).toBe(200);
+  });
+
+  it('GET /:id lists the finance rows linked to the order', async () => {
+    const id = await confirmed();
+    await addDeposit(id, 3000000);
+    expect((await settle(id)).status).toBe(200);
+    const d = await detail(id);
+    expect(d.financeRows.map((r) => [r.type, r.category, r.amount])).toEqual([
+      ['income', 'bep_hien_le', 3000000], ['income', 'bep_hien_le', 7000000], ['income', 'hien_le_drinks', 1000000],
+    ]);
+    expect(d.financeRows[0]).toMatchObject({ id: expect.any(Number), transactionDate: expect.any(String), voidedAt: null });
+  });
+
+  it('includes the hoan_coc row after a cancel with refund', async () => {
+    const id = await createOrder();
+    await addDeposit(id, 2000000);
+    expect((await cancel(id, { origin: 'hotel', reason: 'Trùng lịch', refundAmount: 1500000, refundPaymentMethod: 'transfer' })).status).toBe(200);
+    const d = await detail(id);
+    expect(d.financeRows.map((r) => [r.type, r.category, r.amount])).toContainEqual(['expense', 'hoan_coc', 1500000]);
+  });
+
+  it('a draft edit that races a confirm returns 409 and keeps the items', async () => {
+    const id = await createOrder();
+    const d = await detail(id);
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => {
+      expect((await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } })).status).toBe(200);
+    });
+    expect((await patch(id, bodyFrom(d, { items: [] }), managerToken, raced)).status).toBe(409);
+    expect((await detail(id)).items).toHaveLength(2);
+  });
+});

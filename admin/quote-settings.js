@@ -28,6 +28,8 @@ document.getElementById('quoteSettingsForm').addEventListener('submit', async (e
   const form = event.target;
   const error = document.getElementById('quoteSettingsError');
   error.textContent = '';
+  const status = document.getElementById('quoteSettingsStatus');
+  status.textContent = '';
   const payload = {};
   TEXT_FIELDS.forEach((name) => { payload[name] = form[name].value; });
   NUMBER_FIELDS.forEach((name) => { payload[name] = Number(form[name].value); });
@@ -38,6 +40,6 @@ document.getElementById('quoteSettingsForm').addEventListener('submit', async (e
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Không lưu được mẫu phiếu');
     await loadSettings();
-    error.textContent = 'Đã lưu.';
+    status.textContent = 'Đã lưu.';
   } catch (e) { error.textContent = e.message; } finally { button.disabled = false; }
 });

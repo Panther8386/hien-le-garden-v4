@@ -7,7 +7,9 @@ let editingOrder = null;
 let currentOrder = null;
 const can = (key) => currentPermissions.includes(key);
 const formatVnd = (n) => `${Number(n || 0).toLocaleString('vi-VN')}đ`;
-const categoryLabel = (slug) => (categories.find((c) => c.slug === slug) || { label: slug }).label;
+const categoryLabel = (slug) => (categories.find((c) => c.slug === slug) || { label: slug === 'hoan_coc' ? 'Hoàn cọc' : slug }).label;
+const vnDate = (iso) => new Date(iso).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+const methodLabel = (m) => (m === 'cash' ? 'Tiền mặt' : m === 'transfer' ? 'Chuyển khoản' : '—');
 const el = (tag, props = {}, ...children) => { const n = document.createElement(tag); Object.assign(n, props); n.append(...children); return n; };
 
 function openOverlay(id) { const o = document.getElementById(id); o.classList.remove('hidden'); (o.querySelector('input, select, textarea, button') || o).focus(); }
@@ -102,7 +104,7 @@ function itemRow(item = { description: '', quantity: 1, unitPrice: 0, financeCat
   tr.dataset.id = item.id ?? '';
   const desc = el('input', { value: item.description, maxLength: 500, required: true, ariaLabel: 'Mô tả' });
   const qty = el('input', { type: 'number', min: 1, step: 1, value: item.quantity, required: true, ariaLabel: 'Số lượng' });
-  const price = el('input', { type: 'number', min: 0, step: 1000, value: item.unitPrice, required: true, ariaLabel: 'Đơn giá' });
+  const price = el('input', { type: 'number', min: 0, step: 1, value: item.unitPrice, required: true, ariaLabel: 'Đơn giá' });
   const cat = el('select', { ariaLabel: 'Mảng' });
   categoryOptions(cat, item.financeCategory, item.id ? item.financeCategory : null);
   const amount = el('td');
@@ -235,11 +237,18 @@ async function showDetail(id, notice = '') {
     el('p', {}, el('strong', { textContent: `Tổng ${formatVnd(o.total)} · Đã cọc ${formatVnd(o.depositAmount)} · Còn lại ${formatVnd(o.total - o.depositAmount)}` })),
     el('h3', { textContent: 'Tiền cọc' }), ...(deposits.length ? deposits : [el('p', { textContent: 'Chưa có cọc.' })]),
   );
-  if (o.status === 'cancelled') box.append(el('p', { textContent: `Huỷ bởi ${o.cancellationOrigin === 'hotel' ? 'khách sạn' : 'khách'} · Lý do: ${o.cancelReason} · Hoàn ${formatVnd(o.refundAmount)}` }));
+  if (o.status === 'cancelled') box.append(el('p', { textContent: `Huỷ bởi ${o.cancellationOrigin === 'hotel' ? 'khách sạn' : 'khách'} · Lý do: ${o.cancelReason} · Hoàn ${formatVnd(o.refundAmount)} · ${methodLabel(o.refundPaymentMethod)}` }));
+  if (o.status === 'settled' && o.settledAt) box.append(el('p', { textContent: `Tất toán lúc ${vnDate(o.settledAt)} · ${methodLabel(o.settlementPaymentMethod)}` }));
+  const financeRows = o.financeRows || [];
+  if (financeRows.length) {
+    box.append(el('h3', { textContent: 'Khoản thu chi liên kết' }), ...financeRows.map((r) => el('p', {
+      textContent: `${r.type === 'income' ? 'Thu' : 'Chi'} · ${categoryLabel(r.category)} · ${formatVnd(r.amount)} · ${r.transactionDate}${r.voidedAt ? ' · đã huỷ' : ''}`,
+    })));
+  }
   const actions = el('div', { className: 'form-row' });
   if (open && can('service_orders.manage')) {
     const depositForm = el('form', { className: 'add-deposit-form' });
-    const amount = el('input', { type: 'number', min: 1000, step: 1000, placeholder: 'Số tiền cọc', required: true, ariaLabel: 'Số tiền cọc' });
+    const amount = el('input', { type: 'number', min: 1, step: 1, placeholder: 'Số tiền cọc', required: true, ariaLabel: 'Số tiền cọc' });
     const method = el('select', { ariaLabel: 'Hình thức' }, el('option', { value: 'cash', textContent: 'Tiền mặt' }), el('option', { value: 'transfer', textContent: 'Chuyển khoản' }));
     const note = el('input', { maxLength: 500, placeholder: 'Ghi chú', ariaLabel: 'Ghi chú cọc' });
     const save = el('button', { type: 'submit', textContent: 'Nhận cọc' });

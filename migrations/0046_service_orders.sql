@@ -98,3 +98,5 @@ INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
   ('manager', 'service_orders.view'), ('manager', 'service_orders.manage'), ('manager', 'service_orders.refund'),
   ('manager', 'settings.quote_template'),
   ('observer', 'service_orders.view');
+
+CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);

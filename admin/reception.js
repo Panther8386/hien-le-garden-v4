@@ -686,7 +686,14 @@ function renderBookingCard(b) {
   if ((b.serviceOrders || []).length) {
     const linked = document.createElement('p');
     linked.className = 'muted';
-    linked.textContent = `Có đơn dịch vụ: ${b.serviceOrders.map((o) => `#${o.id}`).join(', ')}`;
+    linked.append('Có đơn dịch vụ: ');
+    b.serviceOrders.forEach((o, index) => {
+      if (index) linked.append(', ');
+      const link = document.createElement('a');
+      link.href = '/admin/service-orders.html';
+      link.textContent = `#${o.id}`;
+      linked.appendChild(link);
+    });
     card.appendChild(linked);
   }
   if (b.status === 'cancelled' && b.cancellationOrigin) {

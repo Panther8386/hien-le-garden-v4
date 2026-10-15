@@ -78,6 +78,10 @@ export const REQUIRED = [
   'admin/tabs.js',
   'admin/service-orders.html',
   'admin/service-orders.js',
+  'admin/service-order-quote.html',
+  'admin/service-order-quote.js',
+  'admin/quote-settings.html',
+  'admin/quote-settings.js',
   'tri-an-khach-hang/index.html',
   'bang-gia/index.html',
 ];
