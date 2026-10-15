@@ -164,7 +164,7 @@ try {
   await context.route('**/api/**', r => {
     const path = new URL(r.request().url()).pathname;
     const booking = {id:1,guestName:'Khách kiểm thử',phone:'0900000000',roomName:'Triangle 01',guestsCount:2,checkIn:'2026-12-01',checkOut:'2026-12-02',nationality:'Việt Nam',idNumber:'000000000000'};
-    const invoice = {...booking,status:'closed',tableLabel:'Bàn 01',openedAt:'2026-12-01T03:00:00Z',closedAt:'2026-12-01T05:00:00Z',paymentMethod:'cash',totalAmount:100000,items:[{status:'posted',name:'Dịch vụ kiểm thử',quantity:2,unitPrice:50000,amount:100000}]};
+    const invoice = {...booking,status:'closed',paymentStatus:'paid',tableLabel:'Bàn 01',openedAt:'2026-12-01T03:00:00Z',closedAt:'2026-12-01T05:00:00Z',paymentMethod:'cash',totalAmount:100000,items:[{status:'posted',name:'Dịch vụ kiểm thử',quantity:2,unitPrice:50000,amount:100000}]};
     r.fulfill({json:path === '/api/auth/me' ? {role:'admin',username:'Kiểm tra bố cục',permissions}:path.startsWith('/api/bookings/') ? booking:invoice});
   });
   await context.route('**/admin/*.js', r => /\/(nav-drawer|tabs|.*-print)\.js$/.test(r.request().url()) ? r.continue() : r.abort());
