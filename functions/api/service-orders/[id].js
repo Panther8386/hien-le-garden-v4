@@ -57,7 +57,8 @@ export async function onRequestPatch({ request, env, params }) {
   const gate = gateSql('service_order_update');
   const gateBinds = [order.id, auditValue];
   const keep = new Set(items.value.filter((i) => i.id !== null).map((i) => i.id));
-  // Re-checked at write time: the primary line may only move while no deposit is live.
+  // Re-checked at write time: the primary line may only move while no deposit is live. A deposit landing after
+  // preflight is already caught by orderGuardSql's deposit_amount pin; this clause is the explicit backstop.
   const primaryGuard = '(primary_category = ? OR deposit_amount = 0)';
   const statements = [
     auditInsert(env.DB, 'service_order_update', order.id, auditValue, auth.username, now,

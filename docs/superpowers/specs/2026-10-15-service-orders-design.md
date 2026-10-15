@@ -98,7 +98,7 @@ Giá trị mảng `c` = Σ thành tiền các dòng có `finance_category = c`. 
 | Thao tác | Điều kiện | Thu chi | Quyền |
 |---|---|---|---|
 | Tạo | — | — | manage |
-| Sửa thông tin, dòng, mảng chính | `draft`/`confirmed`; sau khi sửa `deposit_amount ≤ P`; đổi mảng chính chỉ khi `deposit_amount = 0` (kiểm cả ở preflight và trong câu lệnh ghi, cọc phát sinh giữa chừng → 409) | — | manage |
+| Sửa thông tin, dòng, mảng chính | `draft`/`confirmed`; sau khi sửa `deposit_amount ≤ P`; đổi mảng chính chỉ khi `deposit_amount = 0` (kiểm ở preflight; trong câu lệnh ghi, cọc phát sinh giữa chừng bị chặn bởi điều kiện ghim `deposit_amount` sẵn có → 409, kèm điều kiện `primary_category = mới OR deposit_amount = 0` làm lớp chặn dự phòng) | — | manage |
 | Chốt | `draft` → `confirmed`; ≥ 1 dòng | — | manage |
 | Nhận cọc | `draft`/`confirmed`; `deposit_amount + amount ≤ P` | Thu · `primary_category` · "Cọc đơn #id — tên" | manage |
 | Xoá cọc ghi nhầm | `draft`/`confirmed`; cọc chưa xoá | Huỷ khoản thu của cọc đó | **refund** |
@@ -174,7 +174,7 @@ Mọi endpoint ghi yêu cầu thêm `service_orders.view`; thiếu quyền xem h
 Rollback (sửa 15/10/2026 sau kiểm tra chéo F2). Không xoá migration, không phục hồi toàn bộ D1, không xoá giao dịch.
 
 - **Chưa phát sinh giao dịch từ đơn** (`SELECT COUNT(*) FROM finance_transactions WHERE service_order_id IS NOT NULL` = 0): deploy lại bản PR A được, nhưng vẫn ưu tiên bản tương thích bên dưới. Lý do: bản PR A không biết 4 mã quyền mới, nên nếu ai đó lưu quyền vai trò trong lúc rollback thì các dòng `service_orders.*` mà 0046 đã seed sẽ bị xoá, và migration không chạy lại để bù.
-- **Đã phát sinh giao dịch từ đơn:** **không** deploy nguyên bản PR A. Code PR A không nhận diện `service_order_id`, nên khoản cọc/tất toán/hoàn cọc của đơn sẽ sửa số tiền và huỷ riêng được trong Thu chi (đã tái hiện bằng test). Phải deploy **bản rollback tương thích 0046** = PR A + file migration `0046` + danh mục 4 mã quyền + guard `service_order_id IS NOT NULL` trong `blockedFinanceLinks`. Bản này không có API/trang đơn dịch vụ; dữ liệu đơn giữ nguyên trong D1.
+- **Đã phát sinh giao dịch từ đơn:** **không** deploy nguyên bản PR A. Code PR A không nhận diện `service_order_id`, nên khoản cọc/tất toán/hoàn cọc của đơn sẽ sửa số tiền và huỷ riêng được trong Thu chi (đã tái hiện bằng test). Phải deploy **bản rollback tương thích 0046** = PR A + file migration `0046` + danh mục 4 mã quyền + guard `service_order_id IS NOT NULL` trong `blockedFinanceLinks`. Bản này không có API/trang đơn dịch vụ; dữ liệu đơn giữ nguyên trong D1. Trang Phân quyền vẫn hiện các ô `service_orders.*` và `settings.quote_template` dù chưa có chức năng đi kèm — cố ý, để việc lưu quyền không xoá các dòng 0046 đã seed.
 - **Trong thời gian rollback:** tạm dừng mọi thao tác tiền của đơn dịch vụ. Không nhập tay khoản thu/chi thay cho cọc/tất toán/hoàn của đơn, để tránh ghi trùng khi bật lại. Khoản của đơn vẫn hiện và vẫn bị khoá trong Thu chi.
 - **Kiểm chứng:** `test/serviceOrderRollbackGuard.test.js` qua trên PR B và trên bản tương thích, trượt trên PR A + 0046.
 

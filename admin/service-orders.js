@@ -162,7 +162,8 @@ async function openForm(order = null) {
   document.getElementById('orderFormError').textContent = '';
   document.getElementById('orderFormTitle').textContent = order ? `Sửa đơn ${order.quoteNumber}` : 'Đơn mới';
   categoryOptions(form.primaryCategory, order ? order.primaryCategory : (categories.find((c) => c.isActive) || {}).slug, order ? order.primaryCategory : null);
-  // Same rule as the API: the primary line is fixed while a deposit is live (disabled selects still submit their value).
+  // Same rule as the API: the primary line is fixed while a deposit is live. The submit handler reads
+  // form.primaryCategory.value into the body, which still works for a disabled select (FormData would drop it).
   const primaryLocked = !!(order && order.depositAmount > 0);
   form.primaryCategory.disabled = primaryLocked;
   document.getElementById('primaryLockedHint').hidden = !primaryLocked;

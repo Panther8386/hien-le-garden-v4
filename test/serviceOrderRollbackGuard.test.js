@@ -45,6 +45,8 @@ describe('service-order finance rows stay locked (rollback guarantee)', () => {
     for (const change of [{ amount: 1 }, { category: 'ban_hang' }, { status: 'paid' }]) {
       const response = await patchTransaction({ request: request(`https://x/api/finance/transactions/${txId}`, 'PATCH', { ...UNCHANGED, note: 'Cọc đơn', ...change }), env, params: { id: txId } });
       expect(response.status).toBe(400);
+      // Wording differs slightly between builds; both say only the note is editable.
+      expect((await response.json()).error).toMatch(/chỉ sửa được ghi chú/);
     }
     expect(await env.DB.prepare('SELECT amount, category, status FROM finance_transactions WHERE id = ?').bind(txId).first())
       .toEqual({ amount: 500000, category: 'bep_hien_le', status: 'confirmed' });
