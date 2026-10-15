@@ -7,6 +7,8 @@ import * as ordersIndex from '../functions/api/service-orders/index.js';
 import * as ordersCategories from '../functions/api/service-orders/categories.js';
 import * as orderById from '../functions/api/service-orders/[id].js';
 import * as confirmOrder from '../functions/api/service-orders/[id]/confirm.js';
+import * as orderDeposits from '../functions/api/service-orders/[id]/deposits/index.js';
+import * as orderDeposit from '../functions/api/service-orders/[id]/deposits/[depositId].js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -217,5 +219,59 @@ describe('POST /api/service-orders/:id/confirm', () => {
     const id = await createOrder({ items: [] });
     const response = await call(confirmOrder.onRequestPost, { method: 'POST', token: managerToken, params: { id: String(id) } });
     expect(response.status).toBe(400);
+  });
+});
+
+function addDeposit(id, amount, token = managerToken, testEnv = env, extra = {}) {
+  return call(orderDeposits.onRequestPost, { method: 'POST', token, params: { id: String(id) }, body: { amount, paymentMethod: 'transfer', ...extra }, testEnv });
+}
+
+describe('service order deposits', () => {
+  it('records an income row in the primary line linked to the order', async () => {
+    const id = await createOrder();
+    const response = await addDeposit(id, 3000000, receptionToken, env, { note: 'đợt 1' });
+    expect(response.status).toBe(201);
+    expect((await response.json()).depositAmount).toBe(3000000);
+    const tx = await env.DB.prepare('SELECT type, category, amount, service_order_id, note FROM finance_transactions WHERE service_order_id = ?').bind(id).first();
+    expect(tx).toMatchObject({ type: 'income', category: 'bep_hien_le', amount: 3000000, service_order_id: id });
+    expect(tx.note).toBe(`Cọc đơn #${id} — Chị Lan — đợt 1`);
+    const dep = await env.DB.prepare('SELECT finance_transaction_id FROM service_order_deposits WHERE order_id = ?').bind(id).first();
+    expect(dep.finance_transaction_id).toBeGreaterThan(0);
+  });
+
+  it('refuses a deposit above the primary line value', async () => {
+    const id = await createOrder();
+    expect((await addDeposit(id, 10000001)).status).toBe(400);
+    expect((await addDeposit(id, 6000000)).status).toBe(201);
+    expect((await addDeposit(id, 4000001)).status).toBe(400);
+    expect((await env.DB.prepare('SELECT deposit_amount FROM service_orders WHERE id = ?').bind(id).first()).deposit_amount).toBe(6000000);
+  });
+
+  it('two concurrent deposits that together exceed the line: exactly one wins', async () => {
+    const id = await createOrder();
+    let inner;
+    const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => { inner = await addDeposit(id, 6000000); });
+    const outer = await addDeposit(id, 6000000, managerToken, raced);
+    expect([inner.status, outer.status].sort()).toEqual([201, 409]);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ?').bind(id).first()).n).toBe(1);
+  });
+
+  it('deleting a deposit needs service_orders.refund and voids its income row', async () => {
+    const id = await createOrder();
+    const { depositId } = await (await addDeposit(id, 2000000)).json();
+    const del = (token) => call(orderDeposit.onRequestDelete, { method: 'DELETE', token, params: { id: String(id), depositId: String(depositId) } });
+    expect((await del(receptionToken)).status).toBe(403);
+    expect((await del(managerToken)).status).toBe(200);
+    const order = await env.DB.prepare('SELECT deposit_amount FROM service_orders WHERE id = ?').bind(id).first();
+    expect(order.deposit_amount).toBe(0);
+    const tx = await env.DB.prepare('SELECT voided_at FROM finance_transactions WHERE service_order_id = ?').bind(id).first();
+    expect(tx.voided_at).not.toBeNull();
+    expect((await del(managerToken)).status).toBe(400);
+  });
+
+  it('refuses deposits on settled or cancelled orders', async () => {
+    const id = await createOrder();
+    await env.DB.prepare(`UPDATE service_orders SET status = 'settled' WHERE id = ?`).bind(id).run();
+    expect((await addDeposit(id, 100000)).status).toBe(400);
   });
 });
