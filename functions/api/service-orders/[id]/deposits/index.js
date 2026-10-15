@@ -16,10 +16,10 @@ export async function onRequestPost({ request, env, params }) {
   if (!Number.isInteger(amount) || amount <= 0 || amount > LIMITS.total) return jsonError('Số tiền cọc phải là số nguyên dương', 400);
   if (!PAYMENT_METHODS.includes(paymentMethod)) return jsonError('Vui lòng chọn hình thức thanh toán', 400);
   if (note != null && (typeof note !== 'string' || note.length > 500)) return jsonError('Ghi chú tối đa 500 ký tự', 400);
+  const snapshot = await readSnapshot(env.DB, order.id); // snapshot first: a later change fails the guard
   const items = await loadItems(env.DB, order.id);
   if (order.deposit_amount + amount > (categoryTotals(items)[order.primary_category] || 0)) return jsonError(DEPOSIT_EXCEEDS, 400);
 
-  const snapshot = await readSnapshot(env.DB, order.id);
   const now = new Date().toISOString();
   const auditValue = JSON.stringify({ key: crypto.randomUUID(), amount, paymentMethod });
   const gate = gateSql('service_order_deposit');

@@ -8,8 +8,8 @@ import * as ordersCategories from '../functions/api/service-orders/categories.js
 import * as orderById from '../functions/api/service-orders/[id].js';
 import * as confirmOrder from '../functions/api/service-orders/[id]/confirm.js';
 import * as orderDeposits from '../functions/api/service-orders/[id]/deposits/index.js';
-import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
 import * as orderDeposit from '../functions/api/service-orders/[id]/deposits/[depositId].js';
+import * as settleOrder from '../functions/api/service-orders/[id]/settle.js';
 
 let adminToken, managerToken, receptionToken, observerToken;
 let receptionId;
@@ -336,5 +336,25 @@ describe('POST /api/service-orders/:id/settle', () => {
     const raced = envWithHookBefore(/INSERT INTO audit_log/, async () => { await addDeposit(id, 1000000); });
     expect((await settle(id, { paymentMethod: 'cash' }, managerToken, raced)).status).toBe(409);
     expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ? AND note LIKE 'Tất toán%'`).bind(id).first()).n).toBe(0);
+    await expectNotSettled(id);
+  });
+
+  it('an item edit landing between the item read and the guard makes settlement return 409', async () => {
+    const id = await confirmed();
+    let fired = false;
+    const raced = envWithHookBefore(/FROM service_order_items WHERE order_id = \? ORDER BY display_order/, async () => {
+      if (fired) return;
+      fired = true;
+      await env.DB.prepare('UPDATE service_order_items SET quantity = quantity + 1 WHERE order_id = ? AND finance_category = ?').bind(id, 'hien_le_drinks').run();
+    });
+    expect((await settle(id, { paymentMethod: 'cash' }, managerToken, raced)).status).toBe(409);
+    expect(fired).toBe(true);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM finance_transactions WHERE service_order_id = ? AND note LIKE 'Tất toán%'`).bind(id).first()).n).toBe(0);
+    await expectNotSettled(id);
   });
 });
+
+async function expectNotSettled(id) {
+  expect((await env.DB.prepare('SELECT status FROM service_orders WHERE id = ?').bind(id).first()).status).toBe('confirmed');
+  expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'service_order_settle'`).first()).n).toBe(0);
+}

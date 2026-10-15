@@ -12,12 +12,12 @@ export async function onRequestPost({ request, env, params }) {
   if (order.status !== 'confirmed') return jsonError('Chỉ tất toán được đơn đã chốt', 400);
   const parsed = await readJsonBody(request, { maxBytes: 1024 });
   if (!parsed.ok) return parsed.response;
+  const snapshot = await readSnapshot(env.DB, order.id); // snapshot first: a later change fails the guard
   const items = await loadItems(env.DB, order.id);
   const plan = settlementPlan(items, order.primary_category, order.deposit_amount);
   const paymentMethod = plan.length ? parsed.body.paymentMethod : null;
   if (plan.length && !PAYMENT_METHODS.includes(paymentMethod)) return jsonError('Vui lòng chọn hình thức thanh toán', 400);
 
-  const snapshot = await readSnapshot(env.DB, order.id);
   const now = new Date().toISOString();
   const auditValue = JSON.stringify({ key: crypto.randomUUID(), paymentMethod, receipts: plan });
   const gate = gateSql('service_order_settle');
