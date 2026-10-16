@@ -1,0 +1,43 @@
+diff --git a/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs b/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs
+index 7f2ca73..fd4b4b4 100644
+--- a/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs
++++ b/node_modules/@cloudflare/vitest-pool-workers/dist/pool/index.mjs
+@@ -528,6 +528,16 @@ async function waitForStorageReset(mf) {
+ }
+ var BLOBS_DIR_NAME = "blobs";
+ var STACK_DIR_NAME = "__vitest_pool_workers_stack";
++// hlg-v4 patch: on macOS an open SQLite database in WAL mode leaves
++// `-wal`/`-shm` sidecar files next to the `.sqlite` file. They are part of the
++// database state, so snapshot and restore them together with it.
++var SQLITE_FILE_SUFFIXES = [".sqlite", ".sqlite-wal", ".sqlite-shm"];
++function isSqliteStorageFile(name) {
++  return SQLITE_FILE_SUFFIXES.some((suffix) => name.endsWith(suffix));
++}
++function ignoreMissingFile(error) {
++  if (error?.code !== "ENOENT") throw error;
++}
+ async function pushStackedStorage(intoDepth, persistPath) {
+   const stackFramePath = path3.join(
+     persistPath,
+@@ -553,8 +563,8 @@ async function pushStackedStorage(intoDepth, persistPath) {
+       }
+       const namePath = path3.join(keyPath, name);
+       const stackFrameNamePath = path3.join(stackFrameKeyPath, name);
+-      assert2(name.endsWith(".sqlite"), `Expected .sqlite, got ${namePath}`);
+-      await fs.copyFile(namePath, stackFrameNamePath);
++      assert2(isSqliteStorageFile(name), `Expected .sqlite, got ${namePath}`);
++      await fs.copyFile(namePath, stackFrameNamePath).catch(ignoreMissingFile);
+     }
+   }
+ }
+@@ -569,8 +579,8 @@ async function popStackedStorage(fromDepth, persistPath) {
+         break;
+       }
+       const namePath = path3.join(keyPath, name);
+-      assert2(name.endsWith(".sqlite"), `Expected .sqlite, got ${namePath}`);
+-      await fs.unlink(namePath);
++      assert2(isSqliteStorageFile(name), `Expected .sqlite, got ${namePath}`);
++      await fs.unlink(namePath).catch(ignoreMissingFile);
+     }
+   }
+   const stackFramePath = path3.join(

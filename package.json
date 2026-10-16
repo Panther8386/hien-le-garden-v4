@@ -13,11 +13,13 @@
     "test": "node scripts/test-with-retry.js",
     "test:once": "vitest run",
     "test:each": "node scripts/test-each.js",
-    "deploy": "npm run build && npm run check:dist && wrangler pages deploy dist --project-name=hien-le-garden-v4"
+    "deploy": "npm run build && npm run check:dist && wrangler pages deploy dist --project-name=hien-le-garden-v4",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",
     "@playwright/test": "^1.63.0",
+    "patch-package": "^8.0.1",
     "vitest": "^2.1.0",
     "wrangler": "^3.78.0"
   },
