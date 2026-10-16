@@ -2,6 +2,12 @@ import { requireAuth } from '../../../../lib/requireAuth.js';
 import { summarize } from './index.js';
 import { canSeeTransaction } from '../../../../lib/financeAccess.js';
 import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
+import { blockedFinanceLinks, cancelledDepositLink, auditCheckoutLink } from '../../../../lib/financeVoidGuard.js';
+
+export const LINKED_EDIT_ERROR = 'Khoản này gắn với nghiệp vụ (đặt phòng, cọc, order, Giờ Xanh…); chỉ sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.';
+export const NOTE_LOCKED_ERROR = 'Khoản trả phòng cũ được nhận diện theo ghi chú nên không sửa được ghi chú. Hãy điều chỉnh tại nghiệp vụ gốc.';
+const noteOnlyLinkSql = `(finance_transactions.checkout_booking_id IS NULL AND ${auditCheckoutLink})`;
+const linkedSql = `((${blockedFinanceLinks}) OR (${cancelledDepositLink}))`;
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -60,19 +66,35 @@ export async function onRequestPatch({ request, env, params }) {
   if (typeof transactionDate !== 'string' || !DATE_FORMAT.test(transactionDate)) return jsonError('Ngày không hợp lệ', 400);
   if (!VALID_STATUSES.includes(status)) return jsonError('Trạng thái không hợp lệ', 400);
 
+  // Rows produced by a business flow (checkout, deposit, refund, order, Giờ Xanh, booking
+  // service) must stay equal to that flow; only the note is free text.
+  const financialChange = type !== existing.type || category !== existing.category
+    || amount !== existing.amount || transactionDate !== existing.transaction_date || status !== existing.status;
+  // Legacy checkout rows are identified by their note, so editing it would unlink them.
+  const noteChange = (note || null) !== (existing.note || null);
+  if (financialChange || noteChange) {
+    const link = await env.DB.prepare(
+      `SELECT ${linkedSql} AS linked, ${noteOnlyLinkSql} AS noteLocked FROM finance_transactions WHERE id = ?`
+    ).bind(params.id).first();
+    if (financialChange && link && link.linked) return jsonError(LINKED_EDIT_ERROR, 400);
+    if (noteChange && link && link.noteLocked) return jsonError(NOTE_LOCKED_ERROR, 400);
+  }
+
   const now = new Date().toISOString();
   const oldSummary = summarize(existing, categoryMeta);
   const newSummary = summarize({ type, category, amount }, categoryMeta);
 
-  await env.DB.batch([
+  const results = await env.DB.batch([
     env.DB.prepare(
-      `UPDATE finance_transactions SET type = ?, category = ?, amount = ?, note = ?, transaction_date = ?, status = ?, updated_by = ?, updated_at = ? WHERE id = ?`
-    ).bind(type, category, amount, note || null, transactionDate, status, auth.username, now, params.id),
+      `UPDATE finance_transactions SET type = ?, category = ?, amount = ?, note = ?, transaction_date = ?, status = ?, updated_by = ?, updated_at = ?
+       WHERE id = ? AND voided_at IS NULL AND (? = 0 OR NOT ${linkedSql}) AND (? = 0 OR NOT ${noteOnlyLinkSql})`
+    ).bind(type, category, amount, note || null, transactionDate, status, auth.username, now, params.id, financialChange ? 1 : 0, noteChange ? 1 : 0),
     env.DB.prepare(
       `INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, old_value, new_value, actor, created_at)
-       VALUES ('finance_transaction_update', 'finance_transaction', ?, ?, ?, ?, ?, ?)`
+       SELECT 'finance_transaction_update', 'finance_transaction', ?, ?, ?, ?, ?, ? WHERE changes() > 0`
     ).bind(params.id, newSummary, oldSummary, newSummary, auth.username, now),
   ]);
+  if (!results[0].meta.changes) return jsonError('Giao dịch hoặc liên kết vừa thay đổi, vui lòng tải lại', 409);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

@@ -124,6 +124,39 @@ try {
     assert.deepEqual(errors,[],`${role}: browser errors`);
     await context.close();
   }
+  // PR A: editing a linked finance row locks the financial fields; a manual row stays editable.
+  {
+    const context = await browser.newContext();
+    await context.route('https://**/*', (r) => r.abort());
+    const tx = (id, linked) => ({ id, type: 'income', category: 'dich_vu', amount: 400000, note: `Dòng ${id}`, transactionDate: '2026-10-01', status: 'confirmed', createdBy: 'fx', createdAt: '2026-10-01T00:00:00Z', voidedAt: null, isHidden: false, linked });
+    await context.route('**/api/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/auth/me') return route.fulfill({ json: { role: 'admin', username: 'Kiểm tra Thu chi', permissions: PERMISSION_KEYS } });
+      if (path === '/api/finance/categories') return route.fulfill({ json: [{ id: 1, slug: 'dich_vu', label: 'Lưu trú Hiền Lê', type: 'income', isActive: true }] });
+      if (path === '/api/finance/transactions') return route.fulfill({ json: { transactions: [tx(1, true), tx(2, false)], total: 2, page: 1, pageSize: 25, sumIncome: 800000, sumExpense: 0, categoryTotals: { dich_vu: { income: 800000, expense: 0 } }, chartRows: [] } });
+      if (path === '/api/finance/summary') return route.fulfill({ json: { month: '2026-10', openingBalance: 0, openingBalanceSource: 'none', totalIncome: 800000, totalExpense: 0, netChange: 800000, closingBalance: 800000 } });
+      if (path === '/api/finance/opening-balance') return route.fulfill({ json: { period: '2026-10', openingBalance: null, setBy: null, setAt: null } });
+      if (path === '/api/finance/receipts-usage') return route.fulfill({ json: { totalBytes: 0, thresholdBytes: 1, overThreshold: false } });
+      return route.fulfill({ json: [] });
+    });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${base}/admin/finance.html`);
+    await page.waitForSelector('#financeTable tbody tr');
+    const editButtons = page.locator('#financeTable tbody button[title="Sửa"]');
+    await editButtons.nth(0).click();
+    assert.equal(await page.locator('#financeForm [name="amount"]').isDisabled(), true);
+    assert.equal(await page.locator('#financeForm [name="category"]').isDisabled(), true);
+    assert.equal(await page.locator('#financeForm [name="note"]').isDisabled(), false);
+    assert.equal(await page.locator('#financeLinkedHint').isVisible(), true);
+    await page.locator('#financeFormCloseBtn').click();
+    await editButtons.nth(1).click();
+    assert.equal(await page.locator('#financeForm [name="amount"]').isDisabled(), false);
+    assert.equal(await page.locator('#financeLinkedHint').isVisible(), false);
+    assert.deepEqual(errors, [], 'finance page: browser errors');
+    await context.close();
+  }
   // Every HTML page: inspect shared layout without invoking unrelated page APIs.
   const context = await browser.newContext();
   const permissions = PERMISSION_KEYS;
@@ -131,7 +164,7 @@ try {
   await context.route('**/api/**', r => {
     const path = new URL(r.request().url()).pathname;
     const booking = {id:1,guestName:'Khách kiểm thử',phone:'0900000000',roomName:'Triangle 01',guestsCount:2,checkIn:'2026-12-01',checkOut:'2026-12-02',nationality:'Việt Nam',idNumber:'000000000000'};
-    const invoice = {...booking,status:'closed',tableLabel:'Bàn 01',openedAt:'2026-12-01T03:00:00Z',closedAt:'2026-12-01T05:00:00Z',paymentMethod:'cash',totalAmount:100000,items:[{status:'posted',name:'Dịch vụ kiểm thử',quantity:2,unitPrice:50000,amount:100000}]};
+    const invoice = {...booking,status:'closed',paymentStatus:'paid',tableLabel:'Bàn 01',openedAt:'2026-12-01T03:00:00Z',closedAt:'2026-12-01T05:00:00Z',paymentMethod:'cash',totalAmount:100000,items:[{status:'posted',name:'Dịch vụ kiểm thử',quantity:2,unitPrice:50000,amount:100000}]};
     r.fulfill({json:path === '/api/auth/me' ? {role:'admin',username:'Kiểm tra bố cục',permissions}:path.startsWith('/api/bookings/') ? booking:invoice});
   });
   await context.route('**/admin/*.js', r => /\/(nav-drawer|tabs|.*-print)\.js$/.test(r.request().url()) ? r.continue() : r.abort());

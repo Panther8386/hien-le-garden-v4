@@ -500,6 +500,13 @@ async function voidTransaction(id, confirmCancelledDeposit = false) {
   return true;
 }
 
+const LOCKABLE_FIELDS = ['type', 'category', 'amount', 'transactionDate', 'status'];
+function setFinancialFieldsLocked(locked) {
+  const form = document.getElementById('financeForm');
+  LOCKABLE_FIELDS.forEach((name) => { form.querySelector(`[name="${name}"]`).disabled = locked; });
+  document.getElementById('financeLinkedHint').hidden = !locked;
+}
+
 function openEditTransaction(t) {
   const form = document.getElementById('financeForm');
   form.querySelector('[name="type"]').value = t.type;
@@ -516,11 +523,13 @@ function openEditTransaction(t) {
   document.querySelector('#financeForm button[type="submit"]').textContent = 'Lưu thay đổi';
   document.getElementById('financeFormTitle').textContent = 'Sửa giao dịch';
   renderAttachmentEditor(t);
+  setFinancialFieldsLocked(!!t.linked);
   openFinanceFormOverlay();
 }
 
 function resetFinanceForm() {
   const form = document.getElementById('financeForm');
+  setFinancialFieldsLocked(false);
   form.reset();
   delete form.dataset.editingId;
   const defaultType = defaultTypePreference();

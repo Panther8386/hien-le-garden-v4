@@ -1,6 +1,7 @@
 import { requireAuth } from '../../../../lib/requireAuth.js';
 import { hasPermission } from '../../../../lib/permissions.js';
 import { loadCategoryMeta, categoryMatchesType } from '../../../../lib/financeCategories.js';
+import { blockedFinanceLinks, cancelledDepositLink } from '../../../../lib/financeVoidGuard.js';
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -35,6 +36,7 @@ function coerceRow(r) {
     receiptFilename: r.receipt_filename,
     receiptUploadedAt: r.receipt_uploaded_at,
     isHidden: !!r.is_hidden,
+    linked: !!r.linked,
   };
 }
 
@@ -101,6 +103,17 @@ export async function onRequestGet({ request, env }) {
 
   const offset = (page - 1) * pageSize;
   const pageRows = allRows.slice(offset, offset + pageSize);
+  // Computed only for the returned page: the link checks are per-row subqueries.
+  if (pageRows.length > 0) {
+    const ids = pageRows.map((r) => r.id);
+    // Binds one parameter per page row; pageSize <= 100 is D1's per-statement bound-parameter limit.
+    const { results: linkRows } = await env.DB.prepare(
+      `SELECT id, ((${blockedFinanceLinks}) OR (${cancelledDepositLink})) AS linked
+       FROM finance_transactions WHERE id IN (${ids.map(() => '?').join(',')})`
+    ).bind(...ids).all();
+    const linkedIds = new Set(linkRows.filter((r) => r.linked).map((r) => r.id));
+    pageRows.forEach((r) => { r.linked = linkedIds.has(r.id); });
+  }
 
   return new Response(JSON.stringify({
     transactions: pageRows.map(coerceRow),

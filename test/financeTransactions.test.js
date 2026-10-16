@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { onRequestGet as listTransactions, onRequestPost as createTransaction } from '../functions/api/finance/transactions/index.js';
-import { onRequestPatch as patchTransaction } from '../functions/api/finance/transactions/[id].js';
+import { onRequestPatch as patchTransaction, LINKED_EDIT_ERROR, NOTE_LOCKED_ERROR } from '../functions/api/finance/transactions/[id].js';
 import { onRequestPatch as voidTransaction } from '../functions/api/finance/transactions/[id]/void.js';
 import { onRequestPatch as hideTransaction } from '../functions/api/finance/transactions/[id]/hide.js';
 import { createSession } from '../lib/auth.js';
@@ -1021,5 +1021,206 @@ describe('finance.view_all does not imply hidden-row visibility (records.hide re
     const visible = await seed('income', 0);
     const response = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${visible}`, managerToken, 'PATCH', { amount: 999000 }), env, params: { id: visible } });
     expect(response.status).toBe(200);
+  });
+});
+
+describe('PATCH /api/finance/transactions/:id — linked rows only allow note edits (PR A)', () => {
+  let txId;
+  beforeEach(async () => {
+    await env.DB.exec('DELETE FROM dine_in_orders');
+    await env.DB.exec('DELETE FROM booking_service_items');
+    await env.DB.exec('DELETE FROM booking_deposits');
+    await env.DB.exec('DELETE FROM bookings');
+    const result = await env.DB.prepare(
+      `INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+       VALUES ('income', 'dich_vu', 400000, 'Gốc', '2026-08-05', 'confirmed', 'quan_ly_fin', '2026-08-05T00:00:00Z')`
+    ).run();
+    txId = result.meta.last_row_id;
+  });
+
+  async function booking(status) {
+    const row = await env.DB.prepare(`INSERT INTO bookings
+      (guest_name, phone, room_type, check_in, check_out, status, source, created_at)
+      VALUES ('Fixture', '000', 'circle', '2099-01-01', '2099-01-02', ?, 'website', '2026-08-01')`).bind(status).run();
+    return row.meta.last_row_id;
+  }
+
+  // Each entry links txId to one business flow.
+  const LINKS = {
+    'checkout receipt': async () => {
+      const id = await booking('checked_out');
+      await env.DB.prepare('UPDATE finance_transactions SET checkout_booking_id = ? WHERE id = ?').bind(id, txId).run();
+    },
+    'dine-in order receipt': async () => {
+      await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+        VALUES ('fx', 'closed', 'fx', '2026-08-01', ?)`).bind(txId).run();
+    },
+    'Giờ Xanh receipt': async () => {
+      const room = await env.DB.prepare('SELECT id FROM rooms LIMIT 1').first();
+      await env.DB.prepare(`INSERT INTO gio_xanh_sessions (room_id, guest_name, status, opened_by, opened_at, finance_transaction_id)
+        VALUES (?, 'fx', 'closed', 'fx', '2026-08-01', ?)`).bind(room.id, txId).run();
+    },
+    'booking service receipt': async () => {
+      const id = await booking('checked_in');
+      await env.DB.prepare(`INSERT INTO booking_service_items (booking_id, name, unit_price, quantity, amount, created_at, finance_transaction_id)
+        VALUES (?, 'fx', 400000, 1, 400000, '2026-08-01', ?)`).bind(id, txId).run();
+    },
+    'booking refund': async () => {
+      const id = await booking('cancelled');
+      await env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id = ? WHERE id = ?').bind(txId, id).run();
+    },
+    'live booking deposit': async () => {
+      const id = await booking('confirmed');
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
+    'cancelled booking with refund': async () => {
+      const id = await booking('cancelled');
+      const other = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+        VALUES ('expense', 'hoan_coc', 400000, 'refund', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:02Z')`).run();
+      await env.DB.prepare('UPDATE bookings SET refund_finance_transaction_id = ? WHERE id = ?').bind(other.meta.last_row_id, id).run();
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
+    'cancelled unrefunded deposit': async () => {
+      const id = await booking('cancelled');
+      await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at)
+        VALUES (?, 400000, 'cash', ?, 'fx', '2026-08-01')`).bind(id, txId).run();
+    },
+  };
+
+  function patch(body, testEnv = env) {
+    return patchTransaction({
+      request: authedRequest(`https://x/api/finance/transactions/${txId}`, adminToken, 'PATCH', body),
+      env: testEnv,
+      params: { id: String(txId) },
+    });
+  }
+
+  // What the real form sends: every field, financial ones unchanged.
+  const FULL_UNCHANGED = { type: 'income', category: 'dich_vu', amount: 400000, transactionDate: '2026-08-05', status: 'confirmed' };
+
+  async function row() {
+    return env.DB.prepare('SELECT type, category, amount, note, transaction_date, status FROM finance_transactions WHERE id = ?').bind(txId).first();
+  }
+  async function updateAudits() {
+    return (await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action_type = 'finance_transaction_update' AND entity_id = ?`).bind(txId).first()).n;
+  }
+
+  for (const [name, link] of Object.entries(LINKS)) {
+    it(`${name}: rejects an amount change with 400, leaving row and audit untouched`, async () => {
+      await link();
+      const response = await patch({ ...FULL_UNCHANGED, amount: 500000, note: 'Gốc' });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
+      expect(await row()).toMatchObject({ amount: 400000, note: 'Gốc' });
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it(`${name}: allows a note-only edit sent with every field unchanged`, async () => {
+      await link();
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Ghi chú mới' });
+      expect(response.status).toBe(200);
+      expect(await row()).toMatchObject({ amount: 400000, category: 'dich_vu', note: 'Ghi chú mới' });
+      expect(await updateAudits()).toBe(1);
+    });
+  }
+
+  it('rejects category, type, date and status changes on a linked row', async () => {
+    await LINKS['dine-in order receipt']();
+    for (const change of [{ category: 'ban_hang' }, { type: 'expense', category: 'vat_tu' }, { transactionDate: '2026-08-06' }, { status: 'paid' }]) {
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Gốc', ...change });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
+    }
+    expect(await row()).toMatchObject({ type: 'income', category: 'dich_vu', transaction_date: '2026-08-05', status: 'confirmed' });
+    expect(await updateAudits()).toBe(0);
+  });
+
+  it('still lets a manual (unlinked) row change its amount', async () => {
+    const response = await patch({ ...FULL_UNCHANGED, amount: 450000, note: 'Gốc' });
+    expect(response.status).toBe(200);
+    expect((await row()).amount).toBe(450000);
+  });
+
+  it('rejects with 409 when a link is created after preflight, without writing an audit', async () => {
+    const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+      await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+        VALUES ('race', 'closed', 'fx', '2026-08-01', ?)`).bind(txId).run();
+    });
+    const response = await patch({ ...FULL_UNCHANGED, amount: 450000, note: 'Gốc' }, raced);
+    expect(response.status).toBe(409);
+    expect((await row()).amount).toBe(400000);
+    expect(await updateAudits()).toBe(0);
+  });
+
+  describe('legacy audit-matched checkout receipt (no checkout_booking_id)', () => {
+    const NOTE = 'Tiền phòng — Fixture';
+    beforeEach(async () => {
+      await env.DB.exec(`DELETE FROM audit_log WHERE action_type = 'booking_checkout'`);
+      await env.DB.prepare(`UPDATE finance_transactions SET note = ? WHERE id = ?`).bind(NOTE, txId).run();
+      await env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, new_value, actor, created_at)
+        VALUES ('booking_checkout', 'booking', 123, 'Fixture', ?, 'quan_ly_fin', '2026-08-05T00:00:00Z')`).bind(JSON.stringify({ roomDue: 400000 })).run();
+    });
+
+    it('rejects an amount change with LINKED_EDIT_ERROR and no audit', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, amount: 500000, note: NOTE });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(LINKED_EDIT_ERROR);
+      expect(await row()).toMatchObject({ amount: 400000, note: NOTE });
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it('rejects a note change with NOTE_LOCKED_ERROR, leaving row and audit untouched', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Đã sửa ghi chú' });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(NOTE_LOCKED_ERROR);
+      expect((await row()).note).toBe(NOTE);
+      expect(await updateAudits()).toBe(0);
+    });
+
+    it('still accepts a save that resends every field unchanged', async () => {
+      const response = await patch({ ...FULL_UNCHANGED, note: NOTE });
+      expect(response.status).toBe(200);
+      expect((await row()).note).toBe(NOTE);
+    });
+
+    it('rejects with 409 when the audit match appears after preflight of a note change', async () => {
+      await env.DB.exec(`DELETE FROM audit_log WHERE action_type = 'booking_checkout'`);
+      const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+        await env.DB.prepare(`INSERT INTO audit_log (action_type, entity_type, entity_id, entity_label, new_value, actor, created_at)
+          VALUES ('booking_checkout', 'booking', 124, 'Fixture', ?, 'quan_ly_fin', '2026-08-05T00:00:00Z')`).bind(JSON.stringify({ roomDue: 400000 })).run();
+      });
+      const response = await patch({ ...FULL_UNCHANGED, note: 'Đã sửa ghi chú' }, raced);
+      expect(response.status).toBe(409);
+      expect((await row()).note).toBe(NOTE);
+      expect(await updateAudits()).toBe(0);
+    });
+  });
+
+  it('rejects an edit when the row is voided after preflight', async () => {
+    const raced = envWithHookBefore(/UPDATE finance_transactions SET type/, async () => {
+      await env.DB.prepare(`UPDATE finance_transactions SET voided_at = '2026-08-06T00:00:00Z', voided_by = 'x' WHERE id = ?`).bind(txId).run();
+    });
+    const response = await patch({ ...FULL_UNCHANGED, note: 'Sau khi huỷ' }, raced);
+    expect(response.status).toBe(409);
+    expect((await row()).note).toBe('Gốc');
+    expect(await updateAudits()).toBe(0);
+  });
+});
+
+describe('GET /api/finance/transactions exposes linked (PR A)', () => {
+  it('marks linked rows true and manual rows false', async () => {
+    await env.DB.exec('DELETE FROM dine_in_orders');
+    const linked = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+      VALUES ('income', 'ban_hang', 100000, 'order', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:00Z')`).run();
+    const manual = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at)
+      VALUES ('income', 'ban_hang', 200000, 'tay', '2026-08-05', 'confirmed', 'fx', '2026-08-05T00:00:01Z')`).run();
+    await env.DB.prepare(`INSERT INTO dine_in_orders (table_label, status, opened_by, opened_at, finance_transaction_id)
+      VALUES ('fx', 'closed', 'fx', '2026-08-01', ?)`).bind(linked.meta.last_row_id).run();
+    const response = await listTransactions({ request: authedRequest('https://x/api/finance/transactions', adminToken, 'GET'), env });
+    const { transactions } = await response.json();
+    expect(transactions.find((t) => t.id === linked.meta.last_row_id).linked).toBe(true);
+    expect(transactions.find((t) => t.id === manual.meta.last_row_id).linked).toBe(false);
   });
 });
