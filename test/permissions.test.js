@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { PERMISSION_KEYS, ROLE_DEFAULTS, EDITABLE_ROLES, isValidPermission, effectivePermissions, hasPermission } from '../lib/permissions.js';
 
 describe('permission catalog', () => {
-  it('has 38 unique keys matching the spec table', () => {
-    expect(PERMISSION_KEYS.length).toBe(38);
-    expect(new Set(PERMISSION_KEYS).size).toBe(38);
+  it('has 42 unique keys matching the spec table', () => {
+    expect(PERMISSION_KEYS.length).toBe(42);
+    expect(new Set(PERMISSION_KEYS).size).toBe(42);
   });
 
   it('only uses valid keys in role defaults', () => {
@@ -13,8 +13,14 @@ describe('permission catalog', () => {
     }
   });
 
-  it('gives observer only today-ops view and finance income view', () => {
-    expect([...ROLE_DEFAULTS.observer].sort()).toEqual(['bookings.view', 'finance.view_income']);
+  it('grants service order and quote template keys per the service orders spec', () => {
+    expect(ROLE_DEFAULTS.reception).toEqual(expect.arrayContaining(['service_orders.view', 'service_orders.manage']));
+    expect(ROLE_DEFAULTS.reception).not.toContain('service_orders.refund');
+    expect(ROLE_DEFAULTS.manager).toEqual(expect.arrayContaining(['service_orders.view', 'service_orders.manage', 'service_orders.refund', 'settings.quote_template']));
+  });
+
+  it('gives observer today-ops view, finance income view and service order view', () => {
+    expect([...ROLE_DEFAULTS.observer].sort()).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
   });
 
   it('rejects unknown keys', () => {

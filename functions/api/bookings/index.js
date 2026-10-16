@@ -216,5 +216,18 @@ export async function onRequestGet({ request, env }) {
     });
   }
 
+  results.forEach((r) => { r.serviceOrders = []; });
+  if (results.length > 0 && hasPermission(auth, 'service_orders.view')) {
+    // Hidden orders stay out unless the caller may see hidden records (records.hide).
+    const hiddenClause = hasPermission(auth, 'records.hide') ? '' : 'AND is_hidden = 0';
+    const { results: orderRows } = await env.DB.prepare(
+      `SELECT id, booking_id AS bookingId, status FROM service_orders
+       WHERE booking_id IN (SELECT id FROM bookings ${where}) AND status <> 'cancelled' ${hiddenClause} ORDER BY id`
+    ).bind(...params).all();
+    const ordersByBooking = {};
+    orderRows.forEach((o) => { (ordersByBooking[o.bookingId] ||= []).push({ id: o.id, status: o.status }); });
+    results.forEach((r) => { r.serviceOrders = ordersByBooking[r.id] || []; });
+  }
+
   return new Response(JSON.stringify(results), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }

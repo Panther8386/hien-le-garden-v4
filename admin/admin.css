@@ -588,3 +588,7 @@ tr:hover td { background:var(--bg); }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; } }
 @media print { body.has-nav-drawer { padding:0; } .nav-drawer,.nav-topbar,.nav-bottom,.nav-drawer-overlay { display:none !important; } }
+
+/* service orders: overlay close button and link-styled action */
+.confirm-box .page-head .btn-ghost { width:auto; }
+a.btn-secondary { display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border:1px solid var(--line-strong); border-radius:6px; text-decoration:none; font-size:0.9rem; font-weight:600; box-sizing:border-box; }

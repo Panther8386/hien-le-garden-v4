@@ -14,7 +14,10 @@ let managerStaffId;
 beforeEach(async () => {
   await env.DB.exec('DELETE FROM staff_accounts');
   await env.DB.exec('DELETE FROM sessions');
+  await env.DB.exec('DELETE FROM service_order_deposits');
+  await env.DB.exec('DELETE FROM booking_deposits');
   await env.DB.exec('DELETE FROM finance_transactions');
+  await env.DB.exec('DELETE FROM service_orders');
   await env.DB.exec('DELETE FROM audit_log');
 
   const m = await env.DB.prepare(`INSERT INTO staff_accounts (username, password_hash, role, created_at) VALUES ('quan_ly_fin', 'x', 'manager', '2026-08-01T00:00:00Z')`).run();
@@ -1222,5 +1225,45 @@ describe('GET /api/finance/transactions exposes linked (PR A)', () => {
     const { transactions } = await response.json();
     expect(transactions.find((t) => t.id === linked.meta.last_row_id).linked).toBe(true);
     expect(transactions.find((t) => t.id === manual.meta.last_row_id).linked).toBe(false);
+  });
+});
+
+describe('service order finance rows are linked (PR B)', () => {
+  it('cannot be voided or have their amount edited from Thu chi', async () => {
+    const order = await env.DB.prepare(`INSERT INTO service_orders
+      (creation_key, order_type, customer_name, phone, event_date, primary_category, quote_valid_days, created_by, created_at)
+      VALUES ('k-fin', 'dat_tiec', 'A', '0900000000', '2026-12-01', 'bep_hien_le', 7, 'x', '2026-10-15T00:00:00Z')`).run();
+    const tx = await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at, service_order_id)
+      VALUES ('income', 'bep_hien_le', 500000, 'Cọc đơn', '2026-10-15', 'confirmed', 'x', '2026-10-15T00:00:00Z', ?)`).bind(order.meta.last_row_id).run();
+    const id = String(tx.meta.last_row_id);
+    const voided = await voidTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}/void`, adminToken, 'PATCH', {}), env, params: { id } });
+    expect(voided.status).toBe(409);
+    const edited = await patchTransaction({ request: authedRequest(`https://x/api/finance/transactions/${id}`, adminToken, 'PATCH',
+      { type: 'income', category: 'bep_hien_le', amount: 1, transactionDate: '2026-10-15', status: 'confirmed', note: 'Cọc đơn' }), env, params: { id } });
+    expect(edited.status).toBe(400);
+  });
+});
+
+describe('finance list source and depositsOnly (PR B)', () => {
+  it('labels order deposits, settlements, refunds and booking deposits; filters deposits', async () => {
+    await env.DB.exec('DELETE FROM booking_deposits');
+    const order = (await env.DB.prepare(`INSERT INTO service_orders (creation_key, order_type, customer_name, phone, event_date, primary_category, quote_valid_days, created_by, created_at)
+      VALUES ('k-src', 'dat_tiec', 'A', '0900000000', '2026-12-01', 'bep_hien_le', 7, 'x', '2026-10-15T00:00:00Z')`).run()).meta.last_row_id;
+    const tx = async (type, amount, soId) => (await env.DB.prepare(`INSERT INTO finance_transactions (type, category, amount, note, transaction_date, status, created_by, created_at, service_order_id)
+      VALUES (?, 'bep_hien_le', ?, 'n', '2026-10-15', 'confirmed', 'x', '2026-10-15T00:00:00Z', ?)`).bind(type, amount, soId).run()).meta.last_row_id;
+    const dep = await tx('income', 100, order);
+    await env.DB.prepare(`INSERT INTO service_order_deposits (order_id, amount, payment_method, finance_transaction_id, created_by, created_at) VALUES (?, 100, 'cash', ?, 'x', '2026-10-15')`).bind(order, dep).run();
+    const settle = await tx('income', 200, order);
+    const refund = await tx('expense', 50, order);
+    const bookingDep = await tx('income', 300, null);
+    const booking = (await env.DB.prepare(`INSERT INTO bookings (guest_name, phone, room_type, check_in, check_out, status, source, created_at) VALUES ('B', '0', 'circle', '2099-01-01', '2099-01-02', 'confirmed', 'phone', '2026-10-01')`).run()).meta.last_row_id;
+    await env.DB.prepare(`INSERT INTO booking_deposits (booking_id, amount, payment_method, finance_transaction_id, created_by, created_at) VALUES (?, 300, 'cash', ?, 'x', '2026-10-15')`).bind(booking, bookingDep).run();
+    const list = async (q = '') => (await (await listTransactions({ request: authedRequest(`https://x/api/finance/transactions${q}`, adminToken, 'GET'), env })).json()).transactions;
+    const byId = Object.fromEntries((await list()).map((t) => [t.id, t.source]));
+    expect(byId[dep]).toEqual({ kind: 'service_order_deposit', refId: order });
+    expect(byId[settle]).toEqual({ kind: 'service_order_settle', refId: order });
+    expect(byId[refund]).toEqual({ kind: 'service_order_refund', refId: order });
+    expect(byId[bookingDep]).toEqual({ kind: 'booking_deposit', refId: booking });
+    expect((await list('?depositsOnly=1')).map((t) => t.id).sort()).toEqual([dep, bookingDep].sort());
   });
 });

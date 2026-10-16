@@ -683,6 +683,19 @@ function renderBookingCard(b) {
   }
   statusLine.appendChild(badge);
   card.appendChild(statusLine);
+  if ((b.serviceOrders || []).length) {
+    const linked = document.createElement('p');
+    linked.className = 'muted';
+    linked.append('Có đơn dịch vụ: ');
+    b.serviceOrders.forEach((o, index) => {
+      if (index) linked.append(', ');
+      const link = document.createElement('a');
+      link.href = '/admin/service-orders.html';
+      link.textContent = `#${o.id}`;
+      linked.appendChild(link);
+    });
+    card.appendChild(linked);
+  }
   if (b.status === 'cancelled' && b.cancellationOrigin) {
     const record = document.createElement('p');
     const sourceLabels = {phone:'Điện thoại',zalo:'Zalo',in_person:'Trực tiếp',unknown:'Chưa ghi nhận'};
@@ -1139,6 +1152,10 @@ function computeCheckoutPreview(booking) {
 function openCheckoutDialog(booking) {
   checkingOutBooking = booking;
   document.getElementById('checkoutError').textContent = '';
+  const openOrders = (booking.serviceOrders || []).filter((o) => o.status === 'draft' || o.status === 'confirmed');
+  const orderWarning = document.getElementById('checkoutServiceOrderWarning');
+  orderWarning.hidden = openOrders.length === 0;
+  orderWarning.textContent = `Booking còn đơn dịch vụ chưa tất toán: ${openOrders.map((o) => `#${o.id}`).join(', ')}. Tất toán tại trang Đơn dịch vụ (không ảnh hưởng việc trả phòng).`;
   document.getElementById('checkoutCash').checked = false;
   document.getElementById('checkoutTransfer').checked = false;
 

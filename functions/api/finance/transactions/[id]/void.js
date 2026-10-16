@@ -19,7 +19,7 @@ export async function onRequestPatch({ request, env, params }) {
 
   const links = await env.DB.prepare(`SELECT (${blockedFinanceLinks}) AS blocked,
     (${cancelledDepositLink}) AS cancelledDeposit FROM finance_transactions WHERE id = ?`).bind(params.id).first();
-  if (links.blocked) return jsonError('Chứng từ đang liên kết nghiệp vụ. Hãy xử lý tại Đặt phòng, Order ăn uống hoặc Giờ Xanh; không huỷ riêng trong Thu chi.', 409);
+  if (links.blocked) return jsonError('Chứng từ đang liên kết nghiệp vụ. Hãy xử lý tại Đặt phòng, Order ăn uống, Giờ Xanh hoặc Đơn dịch vụ; không huỷ riêng trong Thu chi.', 409);
   const body = await request.json().catch(() => ({}));
   const confirmed = body?.confirmCancelledDeposit === true;
   if (links.cancelledDeposit && !confirmed) return new Response(JSON.stringify({

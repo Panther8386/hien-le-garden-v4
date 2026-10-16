@@ -73,7 +73,7 @@ describe('GET /api/auth/me', () => {
   it('returns the sorted permission list', async () => {
     const res = await me({ request: req(await createSession(env.DB, observerId)), env });
     const body = await res.json();
-    expect(body.permissions).toEqual(['bookings.view', 'finance.view_income']);
+    expect(body.permissions).toEqual(['bookings.view', 'finance.view_income', 'service_orders.view']);
     expect(body).not.toHaveProperty('canManageRoomLayout');
   });
 });

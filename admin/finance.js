@@ -282,6 +282,17 @@ function buildActionButtons(t) {
   return container;
 }
 
+const SOURCE_LABELS = {
+  service_order_deposit: (id) => `Cọc đơn #${id}`,
+  service_order_settle: (id) => `Tất toán đơn #${id}`,
+  service_order_refund: (id) => `Hoàn cọc đơn #${id}`,
+  booking_deposit: (id) => `Cọc booking #${id}`,
+};
+function noteWithSource(t) {
+  const label = t.source && SOURCE_LABELS[t.source.kind] ? SOURCE_LABELS[t.source.kind](t.source.refId) : '';
+  return [label, t.note || ''].filter(Boolean).join(' · ');
+}
+
 function renderTransactions(list) {
   currentTransactions = list;
   const tbody = document.querySelector('#financeTable tbody');
@@ -319,7 +330,7 @@ function renderTransactions(list) {
     applyVoidedStyle(statusBadge, t.voidedAt);
     tdStatus.appendChild(statusBadge);
     const tdNote = document.createElement('td');
-    tdNote.textContent = t.note || '';
+    tdNote.textContent = noteWithSource(t);
     applyVoidedStyle(tdNote, t.voidedAt);
     const tdCreatedBy = document.createElement('td');
     tdCreatedBy.textContent = t.createdBy;
@@ -356,7 +367,7 @@ function renderTransactions(list) {
     pAmount.append(`${formatVnd(t.amount)} `, amountBadge);
     applyVoidedStyle(pAmount, t.voidedAt);
     const pNote = document.createElement('p');
-    pNote.textContent = t.note || '';
+    pNote.textContent = noteWithSource(t);
     applyVoidedStyle(pNote, t.voidedAt);
     const pCreatedBy = document.createElement('p');
     pCreatedBy.textContent = t.createdBy;
@@ -449,6 +460,7 @@ async function loadTransactions(filters) {
   if (can('records.hide') && document.getElementById('showHiddenTransactions').checked) {
     params.set('includeHidden', '1');
   }
+  if (document.getElementById('depositsOnlyFilter').checked) params.set('depositsOnly', '1');
   let response;
   try {
     response = await fetch(`/api/finance/transactions?${params.toString()}`);
@@ -969,3 +981,5 @@ document.querySelectorAll('#chartGranularity .tab-btn').forEach((btn) => {
     renderTimeChart(btn.dataset.granularity);
   });
 });
+
+document.getElementById('depositsOnlyFilter').addEventListener('change', () => { currentPage = 1; loadTransactions(); });

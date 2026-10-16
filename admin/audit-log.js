@@ -2,6 +2,14 @@
 const ACTION_TYPE_LABELS = {
   booking_create: 'Tạo đặt phòng',
   account_create: 'Tạo tài khoản',
+  service_order_create: 'Tạo đơn dịch vụ',
+  service_order_update: 'Sửa đơn dịch vụ',
+  service_order_confirm: 'Chốt đơn dịch vụ',
+  service_order_deposit: 'Nhận cọc đơn dịch vụ',
+  service_order_deposit_delete: 'Xoá cọc đơn dịch vụ',
+  service_order_settle: 'Tất toán đơn dịch vụ',
+  service_order_cancel: 'Huỷ đơn dịch vụ',
+  quote_settings_update: 'Sửa mẫu phiếu báo giá',
   deposit_change: 'Đổi tiền cọc',
   booking_cancel: 'Huỷ đặt phòng',
   booking_reject: 'Từ chối đặt phòng',
@@ -51,6 +59,7 @@ const RECORD_HIDE_ENTITY_LABELS = {
   dine_in_order: 'Ẩn/hiện bàn Order ăn uống',
   booking: 'Ẩn/hiện đặt phòng',
   finance_transaction: 'Ẩn/hiện giao dịch thu chi',
+  service_order: 'Ẩn/hiện đơn dịch vụ',
 };
 
 function formatVnd(n) {
